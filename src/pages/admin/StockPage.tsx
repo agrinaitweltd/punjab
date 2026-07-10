@@ -2,6 +2,7 @@ import type { Product, StockItem } from '../../types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
+import { EmptyState } from '../../components/ui/EmptyState'
 
 function statusLabel(status: StockItem['status']) {
   if (status === 'low') return 'Low Stock'
@@ -68,6 +69,10 @@ export function StockPage({
           )
         })}
       </DataTable>
+      {stock.length === 0 && (
+        <EmptyState icon="📦" title="No stock entries yet"
+          description="Add products first, then manage their stock levels and prices here. Connect Supabase to load live stock data." />
+      )}
     </Card>
   )
 }

@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Input, Select, TextArea } from '../../components/ui/Input'
 import { DataTable } from '../../components/ui/Table'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 
 const initialForm = {
@@ -107,6 +108,7 @@ export function CustomersPage({
             </tr>
           ))}
         </DataTable>
+        {filtered.length === 0 && <EmptyState icon="👥" title="No customers yet" description="Create your first customer login above, or connect Supabase to import existing customers." />}
       </Card>
 
       <Modal open={Boolean(editing)} title="Edit Customer" onClose={() => setEditing(null)}>

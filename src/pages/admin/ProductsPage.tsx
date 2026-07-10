@@ -4,6 +4,7 @@ import type { Product, StockItem } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
+import { EmptyState } from "../../components/ui/EmptyState"
 
 const PAGE_SIZE = 10
 
@@ -240,6 +241,9 @@ export function ProductsPage({
               })}
             </tbody>
           </table>
+          {paginated.length === 0 && (
+            <EmptyState icon="🌿" title="No products yet" description='Click "Add New Product" to create your first product. Connect Supabase to load your catalogue.' />
+          )}
         </div>
 
         {/* ── Bottom Selection Bar ── */}
