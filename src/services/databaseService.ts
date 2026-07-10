@@ -1,21 +1,105 @@
-﻿/**
- * Supabase-backed database service.
- * Table names match the types in src/types/index.ts.
- * Run the SQL in src/lib/schema.sql to create them in your Supabase project.
- */
-import { supabase as _sb } from "../lib/supabase"
+﻿import { supabase as _sb } from "../lib/supabase"
 import type {
   ActivityLog, AdminStaff, Customer, DeliveryArea,
   Invoice, Order, Payment, Product, StockItem, SupportTicket,
 } from "../types"
 
-// ── Helpers ─────────────────────────────────────────────────────────
 function genId(prefix: string) { return `${prefix}-${Date.now()}` }
-
-// Throws a readable error when Supabase isn't configured yet
 function db() {
-  if (!_sb) throw new Error("Supabase not configured — run schema.sql first")
+  if (!_sb) throw new Error("Supabase not connected — run schema.sql first")
   return _sb
+}
+
+// ── Field mappers: snake_case DB rows → camelCase TS types ──────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCustomer(r: any): Customer {
+  return {
+    id: r.id, companyName: r.company_name, contactPerson: r.contact_person,
+    email: r.email, phone: r.phone, customerNumber: r.customer_number,
+    password: r.password, address: r.address, deliveryArea: r.delivery_area,
+    paymentTerms: r.payment_terms, balance: r.balance ?? 0,
+    status: r.status ?? "active", lastActivity: r.last_activity ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapProduct(r: any): Product {
+  return {
+    id: r.id, productName: r.product_name, category: r.category ?? "",
+    variety: r.variety ?? "", size: r.size ?? "", sku: r.sku,
+    boxesPerPallet: r.boxes_per_pallet ?? 0, productImage: r.product_image ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapStock(r: any): StockItem {
+  return {
+    id: r.id, productId: r.product_id, availableQuantity: r.available_quantity ?? 0,
+    price: r.price ?? 0, lastUpdated: r.last_updated ?? "", status: r.status ?? "available",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapOrder(r: any): Order {
+  return {
+    id: r.id, orderNumber: r.order_number, customerId: r.customer_id ?? "",
+    customerName: r.customer_name ?? "", date: r.date ?? "",
+    amount: r.amount ?? 0, status: r.status ?? "Pending", items: r.items ?? [],
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapInvoice(r: any): Invoice {
+  return {
+    id: r.id, customerId: r.customer_id ?? "", invoiceNumber: r.invoice_number,
+    amount: r.amount ?? 0, dueDate: r.due_date ?? "", status: r.status ?? "Unpaid",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapPayment(r: any): Payment {
+  return {
+    id: r.id, customerId: r.customer_id ?? "", paymentReference: r.payment_reference,
+    amount: r.amount ?? 0, date: r.date ?? "", method: r.method ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapTicket(r: any): SupportTicket {
+  return {
+    id: r.id, createdByRole: r.created_by_role ?? "customer",
+    customerId: r.customer_id ?? "", subject: r.subject, message: r.message ?? "",
+    status: r.status ?? "Open", createdAt: r.created_at ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapActivity(r: any): ActivityLog {
+  return { id: r.id, customerName: r.customer_name ?? "", action: r.action ?? "", timestamp: r.timestamp ?? "" }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapDeliveryArea(r: any): DeliveryArea {
+  return { id: r.id, name: r.name, chargePerPallet: r.charge_per_pallet ?? 0 }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapAdmin(r: any): AdminStaff {
+  return {
+    id: r.id, name: r.name, email: r.email, password: r.password ?? "",
+    role: r.role ?? "Staff", active: r.active ?? true,
+    isSuperAdmin: r.is_super_admin ?? false, permissions: r.permissions ?? {},
+  }
+}
+
+// ── camelCase input → snake_case for INSERT/UPDATE ───────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toCustomerRow(input: any) {
+  return {
+    company_name: input.companyName, contact_person: input.contactPerson,
+    email: input.email, phone: input.phone, customer_number: input.customerNumber,
+    password: input.password, address: input.address, delivery_area: input.deliveryArea,
+    payment_terms: input.paymentTerms,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toProductRow(input: any) {
+  return {
+    product_name: input.productName, category: input.category, variety: input.variety,
+    size: input.size, sku: input.sku, boxes_per_pallet: input.boxesPerPallet,
+    product_image: input.productImage ?? "",
+  }
 }
 
 class SupabaseDatabaseService {
@@ -24,18 +108,19 @@ class SupabaseDatabaseService {
   async getCustomers(): Promise<Customer[]> {
     const { data, error } = await db().from("customers").select("*").order("company_name")
     if (error) { console.error("getCustomers", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapCustomer)
   }
   async createCustomer(input: Omit<Customer, "id" | "lastActivity" | "status" | "balance">): Promise<Customer> {
-    const row = { ...input, id: genId("c"), last_activity: new Date().toISOString(), status: "active", balance: 0 }
+    const row = { id: genId("c"), ...toCustomerRow(input), last_activity: new Date().toISOString(), status: "active", balance: 0 }
     const { data, error } = await db().from("customers").insert(row).select().single()
     if (error) throw error
-    return data
+    return mapCustomer(data)
   }
   async updateCustomer(id: string, input: Partial<Customer>): Promise<Customer | null> {
-    const { data, error } = await db().from("customers").update(input).eq("id", id).select().single()
+    const row = toCustomerRow(input)
+    const { data, error } = await db().from("customers").update(row).eq("id", id).select().single()
     if (error) { console.error("updateCustomer", error); return null }
-    return data
+    return mapCustomer(data)
   }
   async deleteCustomer(id: string): Promise<boolean> {
     const { error } = await db().from("customers").delete().eq("id", id)
@@ -46,18 +131,19 @@ class SupabaseDatabaseService {
   async getProducts(): Promise<Product[]> {
     const { data, error } = await db().from("products").select("*").order("product_name")
     if (error) { console.error("getProducts", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapProduct)
   }
   async createProduct(input: Omit<Product, "id">): Promise<Product> {
-    const row = { ...input, id: genId("p") }
+    const row = { id: genId("p"), ...toProductRow(input) }
     const { data, error } = await db().from("products").insert(row).select().single()
     if (error) throw error
-    return data
+    return mapProduct(data)
   }
   async updateProduct(id: string, input: Partial<Product>): Promise<Product | null> {
-    const { data, error } = await db().from("products").update(input).eq("id", id).select().single()
+    const row = toProductRow(input)
+    const { data, error } = await db().from("products").update(row).eq("id", id).select().single()
     if (error) { console.error("updateProduct", error); return null }
-    return data
+    return mapProduct(data)
   }
   async deleteProduct(id: string): Promise<boolean> {
     await db().from("stock_items").delete().eq("product_id", id)
@@ -69,91 +155,111 @@ class SupabaseDatabaseService {
   async getStock(): Promise<StockItem[]> {
     const { data, error } = await db().from("stock_items").select("*")
     if (error) { console.error("getStock", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapStock)
   }
   async updateStock(id: string, input: Partial<StockItem>): Promise<StockItem | null> {
-    const row = { ...input, last_updated: new Date().toLocaleString() }
+    const row = {
+      available_quantity: input.availableQuantity,
+      price: input.price,
+      status: input.status,
+      last_updated: new Date().toLocaleString(),
+    }
     const { data, error } = await db().from("stock_items").update(row).eq("id", id).select().single()
     if (error) { console.error("updateStock", error); return null }
-    return data
+    return mapStock(data)
   }
 
   // ── ORDERS ────────────────────────────────────────────────────────
   async getOrders(): Promise<Order[]> {
     const { data, error } = await db().from("orders").select("*").order("created_at", { ascending: false })
     if (error) { console.error("getOrders", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapOrder)
   }
   async createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status">): Promise<Order> {
     const row = {
-      ...input,
       id: genId("o"),
       order_number: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      customer_id: input.customerId,
+      customer_name: input.customerName,
       date: new Date().toISOString().slice(0, 10),
+      amount: input.amount,
       status: "Pending",
+      items: input.items,
     }
     const { data, error } = await db().from("orders").insert(row).select().single()
     if (error) throw error
-    return data
+    return mapOrder(data)
   }
   async updateOrder(id: string, input: Partial<Order>): Promise<Order | null> {
-    const { data, error } = await db().from("orders").update(input).eq("id", id).select().single()
+    const { data, error } = await db().from("orders").update({ status: input.status }).eq("id", id).select().single()
     if (error) { console.error("updateOrder", error); return null }
-    return data
+    return mapOrder(data)
   }
 
   // ── INVOICES ──────────────────────────────────────────────────────
   async getInvoices(): Promise<Invoice[]> {
     const { data, error } = await db().from("invoices").select("*").order("due_date")
     if (error) { console.error("getInvoices", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapInvoice)
   }
 
   // ── PAYMENTS ──────────────────────────────────────────────────────
   async getPayments(): Promise<Payment[]> {
     const { data, error } = await db().from("payments").select("*").order("date", { ascending: false })
     if (error) { console.error("getPayments", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapPayment)
   }
 
   // ── TICKETS ───────────────────────────────────────────────────────
   async getTickets(): Promise<SupportTicket[]> {
     const { data, error } = await db().from("support_tickets").select("*").order("created_at", { ascending: false })
     if (error) { console.error("getTickets", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapTicket)
   }
   async createTicket(input: Omit<SupportTicket, "id" | "createdAt" | "status">): Promise<SupportTicket> {
-    const row = { ...input, id: genId("t"), created_at: new Date().toLocaleString(), status: "Open" }
+    const row = {
+      id: genId("t"),
+      created_by_role: input.createdByRole,
+      customer_id: input.customerId,
+      subject: input.subject,
+      message: input.message,
+      status: "Open",
+    }
     const { data, error } = await db().from("support_tickets").insert(row).select().single()
     if (error) throw error
-    return data
+    return mapTicket(data)
   }
 
   // ── ACTIVITY ──────────────────────────────────────────────────────
   async getActivity(): Promise<ActivityLog[]> {
     const { data, error } = await db().from("activity_log").select("*").order("timestamp", { ascending: false }).limit(50)
     if (error) { console.error("getActivity", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapActivity)
   }
 
   // ── DELIVERY AREAS ────────────────────────────────────────────────
   async getDeliveryAreas(): Promise<DeliveryArea[]> {
     const { data, error } = await db().from("delivery_areas").select("*").order("name")
     if (error) { console.error("getDeliveryAreas", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapDeliveryArea)
   }
 
   // ── ADMINS ────────────────────────────────────────────────────────
   async getAdmins(): Promise<AdminStaff[]> {
     const { data, error } = await db().from("admin_staff").select("*").order("name")
     if (error) { console.error("getAdmins", error); return [] }
-    return data ?? []
+    return (data ?? []).map(mapAdmin)
   }
   async createAdmin(input: Omit<AdminStaff, "id">): Promise<AdminStaff> {
-    const row = { ...input, id: genId("adm") }
+    const row = {
+      id: genId("adm"),
+      name: input.name, email: input.email, password: input.password,
+      role: input.role, active: input.active ?? true,
+      is_super_admin: false, permissions: input.permissions,
+    }
     const { data, error } = await db().from("admin_staff").insert(row).select().single()
     if (error) throw error
-    return data
+    return mapAdmin(data)
   }
 }
 
