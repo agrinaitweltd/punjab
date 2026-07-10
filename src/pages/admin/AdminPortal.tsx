@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
@@ -6,13 +6,19 @@ import { getStock, updateStock } from '../../api/stockApi'
 import { getOrders, updateOrder } from '../../api/ordersApi'
 import {
   createAdmin,
+  createDeliveryArea,
   createTicket,
+  deleteAdmin,
+  deleteDeliveryArea,
   getActivity,
   getAdmins,
   getDeliveryAreas,
   getInvoices,
   getPayments,
   getTickets,
+  toggleAdminActive,
+  updateAdmin,
+  updateDeliveryArea,
 } from '../../api/miscApi'
 import type {
   ActivityLog,
@@ -54,7 +60,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [deliveryAreas, setDeliveryAreas] = useState<DeliveryArea[]>([])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [
       customersData,
       productsData,
@@ -89,11 +95,11 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setPayments(paymentsData)
     setTickets(ticketsData)
     setDeliveryAreas(deliveryAreasData)
-  }
+  }, [])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
 
   const page = () => {
     if (current === 'dashboard') {
@@ -182,7 +188,23 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'delivery-areas') {
-      return <DeliveryAreasPage deliveryAreas={deliveryAreas} />
+      return (
+        <DeliveryAreasPage
+          deliveryAreas={deliveryAreas}
+          onCreate={async (name, charge) => {
+            await createDeliveryArea(name, charge)
+            await load()
+          }}
+          onUpdate={async (id, name, charge) => {
+            await updateDeliveryArea(id, name, charge)
+            await load()
+          }}
+          onDelete={async (id) => {
+            await deleteDeliveryArea(id)
+            await load()
+          }}
+        />
+      )
     }
 
     if (current === 'tickets') {
@@ -209,11 +231,18 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await createAdmin(name, email, password, role, permissions)
             await load()
           }}
-          onDelete={async (id) => {
-            await deleteCustomer(id) // reuse generic delete pattern
+          onUpdate={async (id, data) => {
+            await updateAdmin(id, data)
             await load()
           }}
-          onToggleActive={async () => { await load() }}
+          onDelete={async (id) => {
+            await deleteAdmin(id)
+            await load()
+          }}
+          onToggleActive={async (id, active) => {
+            await toggleAdminActive(id, active)
+            await load()
+          }}
         />
       )
     }

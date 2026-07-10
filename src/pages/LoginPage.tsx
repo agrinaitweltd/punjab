@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react"
+﻿import { useRef, useState } from "react"
 import type { FormEvent } from "react"
 import type { UserRole } from "../types"
 
@@ -36,18 +36,13 @@ export function LoginPage({ onLogin, error }: {
   onLogin: (role: UserRole, username: string, password: string) => Promise<void>
   error: string
 }) {
-  const [role, setRole]         = useState<UserRole>("customer")
+  const [role, setRole]         = useState<UserRole>("admin")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPw, setShowPw]     = useState(false)
   const [agreed, setAgreed]     = useState(false)
   const [loading, setLoading]   = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    timer.current = setInterval(() => getSecsTo5AM(), 60000)
-    return () => { if (timer.current) clearInterval(timer.current) }
-  }, [])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setLoading(true)
@@ -119,7 +114,7 @@ export function LoginPage({ onLogin, error }: {
 
             <label className="lp-check-row">
               <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="lp-checkbox" />
-              <span>I agree to the <a href="#" className="lp-link">Terms &amp; Privacy</a></span>
+              <span>I agree to the <a href="#" className="lp-link">Terms & Privacy</a></span>
             </label>
 
             {error && <p className="lp-error">{error}</p>}
@@ -153,10 +148,6 @@ export function LoginPage({ onLogin, error }: {
               Admin Login
             </button>
           </div>
-
-          <p className="lp-demo">
-            admin&nbsp;/&nbsp;admin123&nbsp;&nbsp;&bull;&nbsp;&nbsp;CUST-001&nbsp;/&nbsp;customer123
-          </p>
         </div>
 
       </div>

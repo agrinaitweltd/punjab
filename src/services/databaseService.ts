@@ -243,6 +243,21 @@ class SupabaseDatabaseService {
     if (error) { console.error("getDeliveryAreas", error); return [] }
     return (data ?? []).map(mapDeliveryArea)
   }
+  async createDeliveryArea(name: string, chargePerPallet: number): Promise<DeliveryArea> {
+    const row = { id: genId("da"), name, charge_per_pallet: chargePerPallet }
+    const { data, error } = await db().from("delivery_areas").insert(row).select().single()
+    if (error) throw error
+    return mapDeliveryArea(data)
+  }
+  async updateDeliveryArea(id: string, name: string, chargePerPallet: number): Promise<DeliveryArea | null> {
+    const { data, error } = await db().from("delivery_areas").update({ name, charge_per_pallet: chargePerPallet }).eq("id", id).select().single()
+    if (error) { console.error("updateDeliveryArea", error); return null }
+    return mapDeliveryArea(data)
+  }
+  async deleteDeliveryArea(id: string): Promise<boolean> {
+    const { error } = await db().from("delivery_areas").delete().eq("id", id)
+    return !error
+  }
 
   // ── ADMINS ────────────────────────────────────────────────────────
   async getAdmins(): Promise<AdminStaff[]> {
@@ -254,12 +269,33 @@ class SupabaseDatabaseService {
     const row = {
       id: genId("adm"),
       name: input.name, email: input.email, password: input.password,
+      username: input.name.toLowerCase().replace(/\s+/g, "."),
       role: input.role, active: input.active ?? true,
       is_super_admin: false, permissions: input.permissions,
     }
     const { data, error } = await db().from("admin_staff").insert(row).select().single()
     if (error) throw error
     return mapAdmin(data)
+  }
+  async updateAdmin(id: string, input: Partial<AdminStaff>): Promise<AdminStaff | null> {
+    const row: Record<string, unknown> = {}
+    if (input.name)        row.name        = input.name
+    if (input.email)       row.email       = input.email
+    if (input.password)    row.password    = input.password
+    if (input.role)        row.role        = input.role
+    if (input.permissions) row.permissions = input.permissions
+    if (input.active !== undefined) row.active = input.active
+    const { data, error } = await db().from("admin_staff").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateAdmin", error); return null }
+    return mapAdmin(data)
+  }
+  async deleteAdmin(id: string): Promise<boolean> {
+    const { error } = await db().from("admin_staff").delete().eq("id", id)
+    return !error
+  }
+  async toggleAdminActive(id: string, active: boolean): Promise<boolean> {
+    const { error } = await db().from("admin_staff").update({ active }).eq("id", id)
+    return !error
   }
 }
 

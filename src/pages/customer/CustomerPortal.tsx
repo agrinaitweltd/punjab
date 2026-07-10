@@ -94,8 +94,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   }
   useEffect(() => { load() }, [])
 
-  const myOrders  = useMemo(() => orders.filter(o => o.customerId === "c-1"), [orders])
-  const myTickets = useMemo(() => tickets.filter(t => t.customerId === "c-1"), [tickets])
+  const myOrders  = useMemo(() => orders.filter(o => o.customerId === user.id), [orders, user.id])
+  const myTickets = useMemo(() => tickets.filter(t => t.customerId === user.id), [tickets, user.id])
   const myBalance = invoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
   const stockMap  = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
 
@@ -353,7 +353,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           e.preventDefault()
           const p = products.find(x => x.id === selProd)
           if (!p) return
-          await createOrder({ customerId: "c-1", customerName: user.displayName, amount: Number(qty) * 20, items: [{ productId: selProd, quantity: Number(qty), unitPrice: 20 }] })
+          await createOrder({ customerId: user.id, customerName: user.displayName, amount: Number(qty) * 20, items: [{ productId: selProd, quantity: Number(qty), unitPrice: 20 }] })
           setQty("1"); setShowOrder(false); load()
         }}>
           <label className="form-control wide">
@@ -374,7 +374,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       <Modal open={showTicket} title="Submit Support Ticket" onClose={() => setShowTicket(false)}>
         <form className="form-grid" onSubmit={async e => {
           e.preventDefault()
-          await createTicket(ticketSubject, ticketMsg, "c-1")
+          await createTicket(ticketSubject, ticketMsg, user.id)
           setTicketSubject(""); setTicketMsg(""); setShowTicket(false); load()
         }}>
           <Input label="Subject" value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} className="wide" required />
