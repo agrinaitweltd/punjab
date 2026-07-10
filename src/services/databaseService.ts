@@ -1,172 +1,154 @@
+﻿/**
+ * Supabase-backed database service.
+ * Table names match the types in src/types/index.ts.
+ * Run the SQL in src/lib/schema.sql to create them in your Supabase project.
+ */
+import { supabase } from "../lib/supabase"
 import type {
-  ActivityLog,
-  AdminStaff,
-  Customer,
-  DeliveryArea,
-  Invoice,
-  Order,
-  Payment,
-  Product,
-  StockItem,
-  SupportTicket,
-} from '../types'
-import {
-  mockActivity,
-  mockAdmins,
-  mockCustomers,
-  mockDeliveryAreas,
-  mockInvoices,
-  mockOrders,
-  mockPayments,
-  mockProducts,
-  mockStock,
-  mockTickets,
-} from '../data/mockData'
+  ActivityLog, AdminStaff, Customer, DeliveryArea,
+  Invoice, Order, Payment, Product, StockItem, SupportTicket,
+} from "../types"
 
-class MockDatabaseService {
-  private customers: Customer[] = [...mockCustomers]
-  private products: Product[] = [...mockProducts]
-  private stock: StockItem[] = [...mockStock]
-  private orders: Order[] = [...mockOrders]
-  private invoices: Invoice[] = [...mockInvoices]
-  private payments: Payment[] = [...mockPayments]
-  private tickets: SupportTicket[] = [...mockTickets]
-  private activity: ActivityLog[] = [...mockActivity]
-  private deliveryAreas: DeliveryArea[] = [...mockDeliveryAreas]
-  private admins: AdminStaff[] = [...mockAdmins]
+// ── Helpers ─────────────────────────────────────────────────────────
+function genId(prefix: string) { return `${prefix}-${Date.now()}` }
 
+class SupabaseDatabaseService {
+
+  // ── CUSTOMERS ──────────────────────────────────────────────────────
   async getCustomers(): Promise<Customer[]> {
-    return [...this.customers]
+    const { data, error } = await supabase.from("customers").select("*").order("company_name")
+    if (error) { console.error("getCustomers", error); return [] }
+    return data ?? []
+  }
+  async createCustomer(input: Omit<Customer, "id" | "lastActivity" | "status" | "balance">): Promise<Customer> {
+    const row = { ...input, id: genId("c"), last_activity: new Date().toISOString(), status: "active", balance: 0 }
+    const { data, error } = await supabase.from("customers").insert(row).select().single()
+    if (error) throw error
+    return data
+  }
+  async updateCustomer(id: string, input: Partial<Customer>): Promise<Customer | null> {
+    const { data, error } = await supabase.from("customers").update(input).eq("id", id).select().single()
+    if (error) { console.error("updateCustomer", error); return null }
+    return data
+  }
+  async deleteCustomer(id: string): Promise<boolean> {
+    const { error } = await supabase.from("customers").delete().eq("id", id)
+    return !error
   }
 
-  async createCustomer(input: Omit<Customer, 'id' | 'lastActivity' | 'status' | 'balance'>): Promise<Customer> {
-    const customer: Customer = {
-      ...input,
-      id: `c-${Date.now()}`,
-      lastActivity: new Date().toISOString(),
-      status: 'active',
-      balance: 0,
-    }
-    this.customers = [customer, ...this.customers]
-    return customer
-  }
-
-  async updateCustomer(customerId: string, input: Partial<Customer>): Promise<Customer | null> {
-    const index = this.customers.findIndex((item) => item.id === customerId)
-    if (index < 0) return null
-    this.customers[index] = { ...this.customers[index], ...input }
-    return this.customers[index]
-  }
-
-  async deleteCustomer(customerId: string): Promise<boolean> {
-    const before = this.customers.length
-    this.customers = this.customers.filter((item) => item.id !== customerId)
-    return before !== this.customers.length
-  }
-
+  // ── PRODUCTS ───────────────────────────────────────────────────────
   async getProducts(): Promise<Product[]> {
-    return [...this.products]
+    const { data, error } = await supabase.from("products").select("*").order("product_name")
+    if (error) { console.error("getProducts", error); return [] }
+    return data ?? []
+  }
+  async createProduct(input: Omit<Product, "id">): Promise<Product> {
+    const row = { ...input, id: genId("p") }
+    const { data, error } = await supabase.from("products").insert(row).select().single()
+    if (error) throw error
+    return data
+  }
+  async updateProduct(id: string, input: Partial<Product>): Promise<Product | null> {
+    const { data, error } = await supabase.from("products").update(input).eq("id", id).select().single()
+    if (error) { console.error("updateProduct", error); return null }
+    return data
+  }
+  async deleteProduct(id: string): Promise<boolean> {
+    await supabase.from("stock_items").delete().eq("product_id", id)
+    const { error } = await supabase.from("products").delete().eq("id", id)
+    return !error
   }
 
-  async createProduct(input: Omit<Product, 'id'>): Promise<Product> {
-    const product: Product = { ...input, id: `p-${Date.now()}` }
-    this.products = [product, ...this.products]
-    return product
-  }
-
-  async updateProduct(productId: string, input: Partial<Product>): Promise<Product | null> {
-    const index = this.products.findIndex((item) => item.id === productId)
-    if (index < 0) return null
-    this.products[index] = { ...this.products[index], ...input }
-    return this.products[index]
-  }
-
-  async deleteProduct(productId: string): Promise<boolean> {
-    const before = this.products.length
-    this.products = this.products.filter((item) => item.id !== productId)
-    this.stock = this.stock.filter((item) => item.productId !== productId)
-    return before !== this.products.length
-  }
-
+  // ── STOCK ─────────────────────────────────────────────────────────
   async getStock(): Promise<StockItem[]> {
-    return [...this.stock]
+    const { data, error } = await supabase.from("stock_items").select("*")
+    if (error) { console.error("getStock", error); return [] }
+    return data ?? []
+  }
+  async updateStock(id: string, input: Partial<StockItem>): Promise<StockItem | null> {
+    const row = { ...input, last_updated: new Date().toLocaleString() }
+    const { data, error } = await supabase.from("stock_items").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateStock", error); return null }
+    return data
   }
 
-  async updateStock(stockId: string, input: Partial<StockItem>): Promise<StockItem | null> {
-    const index = this.stock.findIndex((item) => item.id === stockId)
-    if (index < 0) return null
-    this.stock[index] = {
-      ...this.stock[index],
-      ...input,
-      lastUpdated: new Date().toLocaleString(),
-    }
-    return this.stock[index]
-  }
-
+  // ── ORDERS ────────────────────────────────────────────────────────
   async getOrders(): Promise<Order[]> {
-    return [...this.orders]
+    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false })
+    if (error) { console.error("getOrders", error); return [] }
+    return data ?? []
   }
-
-  async createOrder(input: Omit<Order, 'id' | 'orderNumber' | 'date' | 'status'>): Promise<Order> {
-    const order: Order = {
+  async createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status">): Promise<Order> {
+    const row = {
       ...input,
-      id: `o-${Date.now()}`,
-      orderNumber: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: genId("o"),
+      order_number: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
       date: new Date().toISOString().slice(0, 10),
-      status: 'Pending',
+      status: "Pending",
     }
-    this.orders = [order, ...this.orders]
-    return order
+    const { data, error } = await supabase.from("orders").insert(row).select().single()
+    if (error) throw error
+    return data
+  }
+  async updateOrder(id: string, input: Partial<Order>): Promise<Order | null> {
+    const { data, error } = await supabase.from("orders").update(input).eq("id", id).select().single()
+    if (error) { console.error("updateOrder", error); return null }
+    return data
   }
 
-  async updateOrder(orderId: string, input: Partial<Order>): Promise<Order | null> {
-    const index = this.orders.findIndex((item) => item.id === orderId)
-    if (index < 0) return null
-    this.orders[index] = { ...this.orders[index], ...input }
-    return this.orders[index]
-  }
-
+  // ── INVOICES ──────────────────────────────────────────────────────
   async getInvoices(): Promise<Invoice[]> {
-    return [...this.invoices]
+    const { data, error } = await supabase.from("invoices").select("*").order("due_date")
+    if (error) { console.error("getInvoices", error); return [] }
+    return data ?? []
   }
 
+  // ── PAYMENTS ──────────────────────────────────────────────────────
   async getPayments(): Promise<Payment[]> {
-    return [...this.payments]
+    const { data, error } = await supabase.from("payments").select("*").order("date", { ascending: false })
+    if (error) { console.error("getPayments", error); return [] }
+    return data ?? []
   }
 
+  // ── TICKETS ───────────────────────────────────────────────────────
   async getTickets(): Promise<SupportTicket[]> {
-    return [...this.tickets]
+    const { data, error } = await supabase.from("support_tickets").select("*").order("created_at", { ascending: false })
+    if (error) { console.error("getTickets", error); return [] }
+    return data ?? []
+  }
+  async createTicket(input: Omit<SupportTicket, "id" | "createdAt" | "status">): Promise<SupportTicket> {
+    const row = { ...input, id: genId("t"), created_at: new Date().toLocaleString(), status: "Open" }
+    const { data, error } = await supabase.from("support_tickets").insert(row).select().single()
+    if (error) throw error
+    return data
   }
 
-  async createTicket(input: Omit<SupportTicket, 'id' | 'createdAt' | 'status'>): Promise<SupportTicket> {
-    const ticket: SupportTicket = {
-      ...input,
-      id: `t-${Date.now()}`,
-      createdAt: new Date().toLocaleString(),
-      status: 'Open',
-    }
-    this.tickets = [ticket, ...this.tickets]
-    return ticket
-  }
-
+  // ── ACTIVITY ──────────────────────────────────────────────────────
   async getActivity(): Promise<ActivityLog[]> {
-    return [...this.activity]
+    const { data, error } = await supabase.from("activity_log").select("*").order("timestamp", { ascending: false }).limit(50)
+    if (error) { console.error("getActivity", error); return [] }
+    return data ?? []
   }
 
+  // ── DELIVERY AREAS ────────────────────────────────────────────────
   async getDeliveryAreas(): Promise<DeliveryArea[]> {
-    return [...this.deliveryAreas]
+    const { data, error } = await supabase.from("delivery_areas").select("*").order("name")
+    if (error) { console.error("getDeliveryAreas", error); return [] }
+    return data ?? []
   }
 
+  // ── ADMINS ────────────────────────────────────────────────────────
   async getAdmins(): Promise<AdminStaff[]> {
-    return [...this.admins]
+    const { data, error } = await supabase.from("admin_staff").select("*").order("name")
+    if (error) { console.error("getAdmins", error); return [] }
+    return data ?? []
   }
-
-  async createAdmin(input: Omit<AdminStaff, 'id'>): Promise<AdminStaff> {
-    const admin = { ...input, id: `adm-${Date.now()}` }
-    this.admins = [admin, ...this.admins]
-    return admin
+  async createAdmin(input: Omit<AdminStaff, "id">): Promise<AdminStaff> {
+    const row = { ...input, id: genId("adm") }
+    const { data, error } = await supabase.from("admin_staff").insert(row).select().single()
+    if (error) throw error
+    return data
   }
 }
 
-export const databaseService = new MockDatabaseService()
-
+export const databaseService = new SupabaseDatabaseService()
