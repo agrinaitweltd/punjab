@@ -1,80 +1,148 @@
-import type { Customer, Order, Product, ActivityLog } from '../../types'
-import { Card } from '../../components/ui/Card'
-import { DataTable } from '../../components/ui/Table'
+﻿import type { Customer, Order, Product, ActivityLog } from "../../types"
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function StatCard({ label, value, delta, color }: { label: string; value: string; delta?: string; color?: string }) {
   return (
-    <div className="stat-card">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value">{value}</div>
-      {sub && <div className="stat-sub">{sub}</div>}
+    <div className="cd-stat">
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <p className="cd-stat-label">{label}</p>
+        <button style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16 }}>⋮</button>
+      </div>
+      <div className="cd-stat-value">{value}</div>
+      {delta && (
+        <div style={{ marginTop: 4, fontSize: 12.5, fontWeight: 700, color: color ?? "#16a34a" }}>
+          {delta}
+        </div>
+      )}
     </div>
   )
 }
 
-export function DashboardHome({
-  customers, products, orders, activity,
-}: {
-  customers: Customer[]
-  products: Product[]
-  orders: Order[]
-  activity: ActivityLog[]
-}) {
-  const openBalance = customers.reduce((s, c) => s + c.balance, 0)
-  const unpaidTickets = 0
-  const liveProducts = products.length
-  const activeOrders = orders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled').length
+const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
+  Pending:   { bg: "#fef9c3", color: "#a16207" },
+  Confirmed: { bg: "#dbeafe", color: "#1d4ed8" },
+  Preparing: { bg: "#ede9fe", color: "#7c3aed" },
+  Delivered: { bg: "#dcfce7", color: "#15803d" },
+  Cancelled: { bg: "#fee2e2", color: "#b91c1c" },
+}
 
-  const statusBadge = (status: string) => {
-    const map: Record<string, string> = {
-      Pending: 'badge badge-yellow', Confirmed: 'badge badge-blue',
-      Preparing: 'badge badge-blue', Delivered: 'badge badge-green', Cancelled: 'badge badge-red',
-    }
-    return <span className={map[status] ?? 'badge badge-gray'}>{status}</span>
-  }
+export function DashboardHome({ customers, products, orders }: {
+  customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
+}) {
+  const openBalance   = customers.reduce((s, c) => s + c.balance, 0)
+  const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
 
   return (
-    <div className="stack">
-      <div>
-        <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
-        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0d2b1e' }}>Overview</h2>
-        <p style={{ fontSize: 13.5, color: '#6b7a70', marginTop: 3 }}>
-          Manage stock, customers, orders, credit control, tickets and exports from one place.
-        </p>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* Page header */}
+      <div className="cd-header">
+        <div>
+          <h2 className="cd-title">Overview</h2>
+          <p className="cd-subtitle">Punjab Exotic Foods — Admin Control Centre</p>
+        </div>
+        <div style={{ display: "flex", gap: 10, paddingBottom: 14 }}>
+          <button className="cd-import-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Export
+          </button>
+        </div>
       </div>
 
-      <div className="stats-row">
-        <StatCard label="Open Balance"    value={`�${openBalance.toFixed(2)}`}    sub="vs last month" />
-        <StatCard label="Unpaid Tickets"  value={`�${unpaidTickets.toFixed(2)}`}  sub="outstanding" />
-        <StatCard label="Live Products"   value={String(liveProducts)}            sub="in catalogue" />
-        <StatCard label="Active Orders"   value={String(activeOrders)}            sub="in progress" />
+      {/* Stats strip */}
+      <div className="cd-stats-strip" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+        <StatCard label="Open Balance"   value={`£${openBalance.toFixed(2)}`}   delta="▲ +9% vs last month" />
+        <StatCard label="Unpaid Tickets" value="£0.00"                            delta="▲ +7% vs last month" />
+        <StatCard label="Live Products"  value={String(products.length)}          delta={`▲ +${Math.ceil(products.length * 0.12)} products`} />
+        <StatCard label="Active Orders"  value={String(activeOrders)}             delta="▲ +5% vs last month" />
       </div>
 
-      <Card title="Recent Orders">
-        <DataTable columns={['Order #', 'Customer', 'Date', 'Amount', 'Status']}>
-          {orders.slice(0, 6).map((order) => (
-            <tr key={order.id}>
-              <td><strong>{order.orderNumber}</strong></td>
-              <td>{order.customerName}</td>
-              <td>{order.date}</td>
-              <td>�{order.amount.toFixed(2)}</td>
-              <td>{statusBadge(order.status)}</td>
-            </tr>
-          ))}
-        </DataTable>
-      </Card>
+      {/* Tabs */}
+      <div className="cd-tabs">
+        {["Overview","Orders","Customers","Activity"].map((t, i) => (
+          <button key={t} className={"cd-tab" + (i === 0 ? " active" : "")}>{t}</button>
+        ))}
+      </div>
 
-      <Card title="Recent Activity">
-        <DataTable columns={['Customer', 'Activity', 'Time']}>
-          {activity.slice(0, 6).map((item) => (
-            <tr key={item.id}>
-              <td>{item.customerName}</td>
-              <td>{item.action}</td>
-              <td style={{ color: '#6b7a70' }}>{item.timestamp}</td>
-            </tr>
-          ))}
-        </DataTable>
-      </Card>
+      {/* Filter row */}
+      <div className="cd-filter-row">
+        <div style={{ display: "flex", gap: 8 }}>
+          <span className="cd-chip">All time <button className="cd-chip-x">×</button></span>
+          <span className="cd-chip">All Status <button className="cd-chip-x">×</button></span>
+          <button className="cd-more-filters">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            More filters
+          </button>
+        </div>
+        <div className="cd-search-wrap">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input className="cd-search" placeholder="Search orders, customers…" />
+        </div>
+      </div>
+
+      {/* Orders table */}
+      <div className="cd-table-card">
+        <table className="cd-table">
+          <thead><tr>
+            <th style={{ width: 36 }}><input type="checkbox" /></th>
+            <th>Customer</th>
+            <th>Status</th>
+            <th>About</th>
+            <th>Users</th>
+            <th>Order Value</th>
+            <th>Fulfilment</th>
+          </tr></thead>
+          <tbody>
+            {orders.slice(0, 8).map(order => {
+              const sc = STATUS_COLORS[order.status] ?? { bg: "#f3f4f6", color: "#6b7280" }
+              const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
+              return (
+                <tr key={order.id} className="cd-row">
+                  <td><input type="checkbox" /></td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 9, background: "#22913f", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                        {order.customerName.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, color: "#111827", fontSize: 13.5 }}>{order.customerName}</div>
+                        <div style={{ fontSize: 12, color: "#9ca3af" }}>{order.orderNumber}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span className="cd-status-badge" style={{ background: sc.bg, color: sc.color }}>
+                      {order.status}
+                    </span>
+                  </td>
+                  <td style={{ fontSize: 13, color: "#6b7280" }}>
+                    {order.items.length} product{order.items.length > 1 ? "s" : ""} ordered<br />
+                    <span style={{ fontSize: 12 }}>Placed {order.date}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      {[0,1,2].map(i => (
+                        <div key={i} style={{ width: 26, height: 26, borderRadius: "50%", background: ["#22913f","#3b82f6","#8b5cf6"][i], border: "2px solid #fff", marginLeft: i ? -8 : 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff", fontWeight: 700 }}>
+                          {String.fromCharCode(65+i)}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td><strong>£{order.amount.toFixed(2)}</strong></td>
+                  <td>
+                    <div style={{ width: 80, height: 6, background: "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: sc.color, borderRadius: 99 }} />
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <div className="cd-table-footer">
+          <button className="cd-prev-btn">← Previous</button>
+          <span style={{ fontSize: 13, color: "#6b7280" }}>Page 1 of {Math.ceil(orders.length / 8) || 1}</span>
+          <button className="cd-prev-btn">Next →</button>
+        </div>
+      </div>
     </div>
   )
 }
