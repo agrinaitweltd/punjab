@@ -1,8 +1,8 @@
 ﻿import type { Customer, Order, Product, ActivityLog } from "../../types"
 
-function StatCard({ label, value, delta, color }: { label: string; value: string; delta?: string; color?: string }) {
+function StatCard({ label, value, delta, color, onClick }: { label: string; value: string; delta?: string; color?: string; onClick?: () => void }) {
   return (
-    <div className="cd-stat">
+    <div className="cd-stat" onClick={onClick} style={onClick ? { cursor: "pointer" } : undefined}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <p className="cd-stat-label">{label}</p>
         <button style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16 }}>⋮</button>
@@ -25,11 +25,16 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Cancelled: { bg: "#fee2e2", color: "#b91c1c" },
 }
 
-export function DashboardHome({ customers, products, orders }: {
+export function DashboardHome({
+  customers, products, orders, activity, onNavigate,
+}: {
   customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
+  onNavigate?: (page: string) => void
 }) {
   const openBalance   = customers.reduce((s, c) => s + c.balance, 0)
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
+  const totalRevenue  = orders.reduce((s, o) => s + o.amount, 0)
+  const pendingOrders = orders.filter(o => o.status === "Pending").length
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -40,7 +45,7 @@ export function DashboardHome({ customers, products, orders }: {
           <p className="cd-subtitle">Punjab Exotic Foods — Admin Control Centre</p>
         </div>
         <div style={{ display: "flex", gap: 10, paddingBottom: 14 }}>
-          <button className="cd-import-btn">
+          <button className="cd-import-btn" onClick={() => onNavigate?.("export")}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Export
           </button>
@@ -49,10 +54,42 @@ export function DashboardHome({ customers, products, orders }: {
 
       {/* Stats strip */}
       <div className="cd-stats-strip" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
-        <StatCard label="Open Balance"   value={`£${openBalance.toFixed(2)}`}   delta="▲ +9% vs last month" />
-        <StatCard label="Unpaid Tickets" value="£0.00"                            delta="▲ +7% vs last month" />
-        <StatCard label="Live Products"  value={String(products.length)}          delta={`▲ +${Math.ceil(products.length * 0.12)} products`} />
-        <StatCard label="Active Orders"  value={String(activeOrders)}             delta="▲ +5% vs last month" />
+        <StatCard label="Total Customers" value={String(customers.length)} onClick={() => onNavigate?.("customers")} />
+        <StatCard label="Products" value={String(products.length)} onClick={() => onNavigate?.("products")} />
+        <StatCard label="Open Balance" value={`£${openBalance.toFixed(2)}`} delta="▲ +9% vs last month" />
+        <StatCard label="Active Orders" value={String(activeOrders)} delta={`${pendingOrders} pending`} color="#f59e0b" onClick={() => onNavigate?.("orders")} />
+      </div>
+
+      {/* Quick Actions */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("customers")}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>👥</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Add Customer</div>
+            <div style={{ fontSize: 11.5, color: "#6b7280" }}>Create new account</div>
+          </div>
+        </button>
+        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("products")}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#dbeafe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🌿</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Add Product</div>
+            <div style={{ fontSize: 11.5, color: "#6b7280" }}>New stock item</div>
+          </div>
+        </button>
+        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("orders")}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📋</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>New Order</div>
+            <div style={{ fontSize: 11.5, color: "#6b7280" }}>Place an order</div>
+          </div>
+        </button>
+        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("admins")}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#ede9fe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔐</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Manage Admins</div>
+            <div style={{ fontSize: 11.5, color: "#6b7280" }}>Add staff accounts</div>
+          </div>
+        </button>
       </div>
 
       {/* Tabs */}
@@ -86,7 +123,7 @@ export function DashboardHome({ customers, products, orders }: {
             <th>Customer</th>
             <th>Status</th>
             <th>About</th>
-            <th>Users</th>
+            <th>Items</th>
             <th>Order Value</th>
             <th>Fulfilment</th>
           </tr></thead>
@@ -137,6 +174,13 @@ export function DashboardHome({ customers, products, orders }: {
             })}
           </tbody>
         </table>
+        {orders.length === 0 && (
+          <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>No orders yet</div>
+            <div style={{ fontSize: 13 }}>Orders will appear here once customers start placing them.</div>
+          </div>
+        )}
         <div className="cd-table-footer">
           <button className="cd-prev-btn">← Previous</button>
           <span style={{ fontSize: 13, color: "#6b7280" }}>Page 1 of {Math.ceil(orders.length / 8) || 1}</span>
