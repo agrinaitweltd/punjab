@@ -1,13 +1,6 @@
-﻿import { useRef, useState } from "react"
+﻿import { useState } from "react"
 import type { FormEvent } from "react"
 import type { UserRole } from "../types"
-
-function getSecsTo5AM() {
-  const now = new Date(), t = new Date(now)
-  t.setHours(5, 0, 0, 0)
-  if (now >= t) t.setDate(t.getDate() + 1)
-  return Math.floor((t.getTime() - now.getTime()) / 1000)
-}
 
 /* ── tiny SVG icons for partner strip ── */
 function DiscordIcon() {
@@ -42,8 +35,6 @@ export function LoginPage({ onLogin, error }: {
   const [showPw, setShowPw]     = useState(false)
   const [agreed, setAgreed]     = useState(false)
   const [loading, setLoading]   = useState(false)
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setLoading(true)
     await onLogin(role, username.trim(), password)

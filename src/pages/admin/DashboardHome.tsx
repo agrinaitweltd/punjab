@@ -26,14 +26,13 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 }
 
 export function DashboardHome({
-  customers, products, orders, activity, onNavigate,
+  customers, products, orders, onNavigate,
 }: {
   customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
   onNavigate?: (page: string) => void
 }) {
   const openBalance   = customers.reduce((s, c) => s + c.balance, 0)
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
-  const totalRevenue  = orders.reduce((s, o) => s + o.amount, 0)
   const pendingOrders = orders.filter(o => o.status === "Pending").length
 
   return (
