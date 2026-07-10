@@ -52,17 +52,19 @@ export function LoginPage({ onLogin, error }: {
           <div className="lp-hero-inner">
             <p className="lp-eyebrow">You can easily</p>
             <h2 className="lp-hero-h">
-              Manage your wholesale<br />with Punjab Foods
+              Speed up your work<br />with Punjab Foods
             </h2>
           </div>
-          {/* countdown bar at bottom */}
+          {/* bottom — countdown + partner-style logos */}
           <div className="lp-hero-bottom">
-            <p className="lp-partners-label">Next Price Release — Daily 5:00 AM</p>
+            <p className="lp-partners-label">Next Price Release</p>
             <div className="lp-countdown">{fmt(countdown)}</div>
-            <div className="lp-hero-tags">
-              <span>Fresh Daily</span>
-              <span>UK Wholesale</span>
-              <span>Fast Delivery</span>
+            <p className="lp-partners-label" style={{ marginBottom: 10 }}>Our partners</p>
+            <div className="lp-partner-logos">
+              <span>🌿 Fresh Daily</span>
+              <span>📦 Wholesale</span>
+              <span>🚚 UK Delivery</span>
+              <span>⭐ Quality</span>
             </div>
           </div>
         </div>

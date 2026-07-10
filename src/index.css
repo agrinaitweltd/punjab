@@ -282,31 +282,32 @@ tbody tr:hover td { background: #fafbfc; }
 }
 .lp-card {
   display: flex;
-  width: 960px;
+  width: 940px;
   max-width: 100%;
-  min-height: 580px;
+  min-height: 560px;
   background: #fff;
-  border-radius: 24px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.13), 0 4px 16px rgba(0,0,0,0.06);
+  border-radius: 22px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.14), 0 4px 18px rgba(0,0,0,0.07);
   overflow: hidden;
 }
 
 /* Left gradient panel */
 .lp-hero {
-  width: 420px;
+  width: 380px;
   flex-shrink: 0;
   background:
-    radial-gradient(ellipse at 30% 20%, rgba(80,200,160,0.55) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 70%, rgba(60,100,230,0.5) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 50%, rgba(30,60,200,0.7) 0%, transparent 80%),
-    linear-gradient(160deg, #1a1fa8 0%, #2a3ee8 35%, #1e3ab8 60%, #0d2b8a 100%);
+    radial-gradient(ellipse at 25% 45%, rgba(0,220,200,0.72) 0%, transparent 48%),
+    radial-gradient(ellipse at 75% 80%, rgba(80,50,220,0.55) 0%, transparent 45%),
+    radial-gradient(ellipse at 60% 20%, rgba(60,100,255,0.45) 0%, transparent 50%),
+    radial-gradient(ellipse at 10% 85%, rgba(0,180,160,0.4) 0%, transparent 40%),
+    linear-gradient(155deg, #1520c8 0%, #1e2edc 30%, #1828c4 55%, #1020a8 100%);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 44px 38px 36px;
+  padding: 40px 34px 32px;
   position: relative;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 18px;
   margin: 8px;
 }
 .lp-hero::before {
@@ -314,53 +315,54 @@ tbody tr:hover td { background: #fafbfc; }
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 20% 80%, rgba(0,210,150,0.25) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 20%, rgba(100,80,255,0.3) 0%, transparent 50%);
+    radial-gradient(ellipse at 35% 55%, rgba(0,240,210,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 15%, rgba(120,100,255,0.22) 0%, transparent 45%);
   pointer-events: none;
 }
 .lp-hero-inner { position: relative; z-index: 1; }
 .lp-eyebrow {
   font-size: 13px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.65);
-  margin-bottom: 16px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 14px;
+  letter-spacing: 0.1px;
 }
 .lp-hero-h {
-  font-size: 34px;
+  font-size: 32px;
   font-weight: 800;
   color: #fff;
-  line-height: 1.2;
-  letter-spacing: -0.5px;
+  line-height: 1.18;
+  letter-spacing: -0.4px;
 }
 .lp-hero-bottom { position: relative; z-index: 1; }
 .lp-partners-label {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.45);
-  margin-bottom: 8px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 12px;
+  letter-spacing: 0.3px;
 }
 .lp-countdown {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 800;
   color: #fff;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 3px;
-  margin-bottom: 14px;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+  opacity: 0.92;
 }
-.lp-hero-tags {
+.lp-partner-logos {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  overflow: hidden;
 }
-.lp-hero-tags span {
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.55);
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 99px;
-  padding: 4px 12px;
+.lp-partner-logos span {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  white-space: nowrap;
+  letter-spacing: 0.2px;
 }
 
 /* Right form panel */
@@ -369,28 +371,28 @@ tbody tr:hover td { background: #fafbfc; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 50px 52px;
+  padding: 44px 52px 44px 48px;
 }
 .lp-heading {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 800;
   color: #111827;
   letter-spacing: -0.5px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 .lp-subheading {
-  font-size: 14px;
+  font-size: 13px;
   color: #9ca3af;
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 .lp-form { display: flex; flex-direction: column; gap: 0; }
-.lp-field { margin-bottom: 18px; }
+.lp-field { margin-bottom: 14px; }
 .lp-label {
   display: block;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #374151;
-  margin-bottom: 7px;
+  margin-bottom: 5px;
 }
 .lp-label-row {
   display: flex;
@@ -410,11 +412,11 @@ tbody tr:hover td { background: #fafbfc; }
 .lp-forgot:hover { text-decoration: underline; }
 .lp-input {
   width: 100%;
-  padding: 11px 15px;
+  padding: 10px 14px;
   border: 1.5px solid #e5e7eb;
-  border-radius: 9px;
+  border-radius: 8px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   color: #111827;
   background: #fff;
   outline: none;
@@ -422,9 +424,9 @@ tbody tr:hover td { background: #fafbfc; }
 }
 .lp-input:focus {
   border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79,70,229,0.10);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.09);
 }
-.lp-input::placeholder { color: #d1d5db; }
+.lp-input::placeholder { color: #d1d5db; font-size: 13px; }
 .lp-pw-wrap { position: relative; }
 .lp-pw-wrap .lp-input { padding-right: 46px; }
 .lp-pw-toggle {
@@ -445,10 +447,10 @@ tbody tr:hover td { background: #fafbfc; }
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 13.5px;
+  font-size: 13px;
   color: #374151;
   cursor: pointer;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 .lp-checkbox {
   width: 16px;
@@ -463,26 +465,26 @@ tbody tr:hover td { background: #fafbfc; }
 .lp-error { color: #b91c1c; font-size: 13px; margin-bottom: 12px; }
 .lp-btn {
   width: 100%;
-  padding: 13px;
-  border-radius: 10px;
+  padding: 12px;
+  border-radius: 9px;
   border: none;
-  background: #3730a3;
+  background: #4338ca;
   color: #fff;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s;
   letter-spacing: 0.2px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
-.lp-btn:hover:not(:disabled) { background: #312e81; }
+.lp-btn:hover:not(:disabled) { background: #3730a3; }
 .lp-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .lp-switch-text {
   text-align: center;
-  font-size: 13.5px;
+  font-size: 13px;
   color: #9ca3af;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 .lp-link-btn {
   background: none;
@@ -498,9 +500,9 @@ tbody tr:hover td { background: #fafbfc; }
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
-  color: #d1d5db;
-  font-size: 13px;
+  margin-bottom: 14px;
+  color: #9ca3af;
+  font-size: 12.5px;
 }
 .lp-divider::before, .lp-divider::after {
   content: "";
@@ -515,12 +517,12 @@ tbody tr:hover td { background: #fafbfc; }
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: 9px;
+  padding: 9px 12px;
+  border-radius: 8px;
   border: 1.5px solid #e5e7eb;
   background: #fff;
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #374151;
   cursor: pointer;
