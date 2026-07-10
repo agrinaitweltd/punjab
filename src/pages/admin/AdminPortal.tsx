@@ -213,7 +213,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <TicketsPage
           tickets={tickets}
           onCreate={async (subject, message) => {
-            await createTicket(subject, message)
+            await createTicket('admin', undefined, subject, message)
             await load()
           }}
         />
@@ -229,7 +229,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <AdminsPage
           admins={admins}
           onCreate={async (name, email, password, role, permissions) => {
-            await createAdmin(name, email, password, role, permissions)
+            await createAdmin({ name, email, password, role, active: true, isSuperAdmin: false, permissions })
             await load()
           }}
           onUpdate={async (id, data) => {

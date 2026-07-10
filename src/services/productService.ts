@@ -1,0 +1,50 @@
+import type { Product } from "../types"
+import { mockProducts, mockStock } from "../data/mockData"
+
+let products = [...mockProducts]
+let stock = [...mockStock]
+
+function nextId(prefix: string) {
+  const max = products.reduce((m, p) => {
+    const n = parseInt(p.id.replace(/[^0-9]/g, "")) || 0
+    return n > m ? n : m
+  }, 0)
+  return `${prefix}-${String(max + 1).padStart(3, "0")}`
+}
+
+export async function getProducts(): Promise<Product[]> {
+  await new Promise(r => setTimeout(r, 100))
+  return [...products].sort((a, b) => a.productName.localeCompare(b.productName))
+}
+
+export async function createProduct(input: Omit<Product, "id">): Promise<Product> {
+  await new Promise(r => setTimeout(r, 150))
+  const product: Product = { ...input, id: nextId("p") }
+  products.push(product)
+  // Create stock entry
+  stock.push({
+    id: nextId("s"),
+    productId: product.id,
+    availableQuantity: 0,
+    price: 0,
+    lastUpdated: new Date().toISOString().slice(0, 10),
+    status: "out",
+  })
+  return product
+}
+
+export async function updateProduct(id: string, input: Partial<Product>): Promise<Product | null> {
+  await new Promise(r => setTimeout(r, 100))
+  const idx = products.findIndex(p => p.id === id)
+  if (idx === -1) return null
+  const updated = { ...products[idx], ...input } as Product
+  products[idx] = updated
+  return updated
+}
+
+export async function deleteProduct(id: string): Promise<boolean> {
+  await new Promise(r => setTimeout(r, 100))
+  products = products.filter(p => p.id !== id)
+  stock = stock.filter(s => s.productId !== id)
+  return true
+}

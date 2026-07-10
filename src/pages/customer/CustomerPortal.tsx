@@ -374,7 +374,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       <Modal open={showTicket} title="Submit Support Ticket" onClose={() => setShowTicket(false)}>
         <form className="form-grid" onSubmit={async e => {
           e.preventDefault()
-          await createTicket(ticketSubject, ticketMsg, user.id)
+          await createTicket('customer', user.id, ticketSubject, ticketMsg)
           setTicketSubject(""); setTicketMsg(""); setShowTicket(false); load()
         }}>
           <Input label="Subject" value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} className="wide" required />

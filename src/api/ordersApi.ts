@@ -1,15 +1,10 @@
-import { databaseService } from '../services/databaseService'
+import { createOrder, getOrders, updateOrderStatus } from '../services/orderService'
 import type { Order } from '../types'
 
-export function getOrders() {
-  return databaseService.getOrders()
-}
+export { getOrders, createOrder }
 
-export function createOrder(input: Omit<Order, 'id' | 'orderNumber' | 'date' | 'status'>) {
-  return databaseService.createOrder(input)
-}
-
-export function updateOrder(orderId: string, input: Partial<Order>) {
-  return databaseService.updateOrder(orderId, input)
+export function updateOrder(_id: string, input: Partial<Order>) {
+  if (input.status) return updateOrderStatus(_id, input.status)
+  return Promise.resolve(null)
 }
 

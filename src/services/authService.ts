@@ -1,96 +1,50 @@
-﻿/**
- * Auth service — tries Supabase first, falls back to built-in credentials
- * so the app never goes blank while tables are being set up.
- *
- * Built-in fallback: admin / admin123
- * Once you run schema.sql the real table takes over.
- */
-import { supabase } from "../lib/supabase"
-import type { User, UserRole } from "../types"
-
-const FALLBACK_ADMIN: User = {
-  id: "adm-owner",
-  role: "admin",
-  username: "admin",
-  email: "admin@punjabfoods.co.uk",
-  displayName: "Owner Admin",
-  isSuperAdmin: true,
-  permissions: {
-    customers: true, prices: true, stock: true, orders: true, enquiries: true,
-    tickets: true, payments: true, complaints: true, extracts: true,
-    stats: true, admins: true, products: true,
-  },
-}
-
-interface LoginInput { role: UserRole; usernameOrEmail: string; password: string }
+﻿import type { User, UserRole } from "../types"
+import { mockAdmins, mockCustomers } from "../data/mockData"
 
 class AuthService {
   private currentUser: User | null = null
 
-  async login(input: LoginInput): Promise<User | null> {
-    // ── Try Supabase if client is available ──────────────────────────
-    if (supabase) {
-      try {
-        if (input.role === "admin") {
-          const { data } = await supabase
-            .from("admin_staff")
-            .select("*")
-            .eq("username", input.usernameOrEmail)
-            .eq("password", input.password)
-            .eq("active", true)
-            .maybeSingle()
+  async login(role: UserRole, usernameOrEmail: string, password: string): Promise<User | null> {
+    await new Promise(r => setTimeout(r, 200))
 
-          if (data) {
-            this.currentUser = {
-              id: data.id,
-              role: "admin",
-              username: data.username ?? data.name,
-              email: data.email,
-              displayName: data.name,
-              isSuperAdmin: data.is_super_admin ?? false,
-              permissions: data.permissions ?? {},
-            }
-            return this.currentUser
-          }
-        } else {
-          const { data } = await supabase
-            .from("customers")
-            .select("*")
-            .or(`customer_number.eq.${input.usernameOrEmail},username.eq.${input.usernameOrEmail}`)
-            .eq("password", input.password)
-            .maybeSingle()
-
-          if (data) {
-            this.currentUser = {
-              id: data.id,
-              role: "customer",
-              username: data.customer_number,
-              email: data.email,
-              displayName: data.company_name,
-              customerNumber: data.customer_number,
-            }
-            return this.currentUser
-          }
+    if (role === "admin") {
+      const admin = mockAdmins.find(a =>
+        a.email === usernameOrEmail && a.password === password && a.active
+      )
+      if (admin) {
+        this.currentUser = {
+          id: admin.id,
+          role: "admin",
+          username: admin.name.toLowerCase().replace(/\s+/g, "."),
+          email: admin.email,
+          displayName: admin.name,
+          isSuperAdmin: admin.isSuperAdmin ?? false,
+          permissions: admin.permissions ?? {},
         }
-      } catch (e) {
-        console.warn("Supabase auth error, trying fallback:", e)
+        return this.currentUser
       }
-    }
-
-    // ── Built-in fallback (works before tables are set up) ────────────
-    if (
-      input.role === "admin" &&
-      input.usernameOrEmail === "admin" &&
-      input.password === "admin123"
-    ) {
-      this.currentUser = FALLBACK_ADMIN
-      return this.currentUser
+    } else {
+      const customer = mockCustomers.find(c =>
+        (c.customerNumber === usernameOrEmail || c.email === usernameOrEmail) && c.password === password
+      )
+      if (customer) {
+        this.currentUser = {
+          id: customer.id,
+          role: "customer",
+          username: customer.customerNumber,
+          email: customer.email,
+          displayName: customer.companyName,
+          customerNumber: customer.customerNumber,
+        }
+        return this.currentUser
+      }
     }
 
     return null
   }
 
   async logout(): Promise<void> {
+    await new Promise(r => setTimeout(r, 100))
     this.currentUser = null
   }
 
