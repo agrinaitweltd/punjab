@@ -658,3 +658,54 @@ tbody tr:hover td { background: #fafbfc; }
   .lp-form-side { padding: 36px 26px; }
   .lp-heading { font-size: 24px; }
 }
+/* ── ADMIN USERS PAGE ── */
+.adm-super-notice {
+  display: flex; align-items: center; gap: 10px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px;
+  padding: 12px 16px; font-size: 13px; color: #374151;
+}
+.adm-super-notice strong { color: #15803d; }
+.adm-avatar {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: #e8f8ec; color: #22913f;
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.adm-super-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700; color: #b45309;
+  background: #fef9c3; border-radius: 99px; padding: 1px 8px; margin-top: 2px;
+}
+.adm-perm-bar {
+  width: 60px; height: 6px; background: #e5e7eb; border-radius: 99px; overflow: hidden;
+}
+.adm-perm-fill {
+  height: 100%; background: #22913f; border-radius: 99px; transition: width 0.2s;
+}
+.adm-toggle-wrap {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+}
+.adm-toggle {
+  position: relative; width: 36px; height: 20px;
+  border-radius: 99px; background: #e5e7eb; transition: background 0.18s;
+}
+.adm-toggle.on { background: #22913f; }
+.adm-toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  transition: transform 0.18s; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.adm-toggle.on .adm-toggle-knob { transform: translateX(16px); }
+.adm-perm-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px; padding: 4px 0;
+}
+.adm-perm-item {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; color: #374151; cursor: pointer;
+  padding: 6px 10px; border-radius: 7px; border: 1px solid #e5e7eb;
+  transition: background 0.1s;
+}
+.adm-perm-item:hover { background: #f3f4f6; }
+.adm-select-all { border-color: #bbf7d0; background: #f0fdf4; }
+.adm-select-all:hover { background: #dcfce7; }

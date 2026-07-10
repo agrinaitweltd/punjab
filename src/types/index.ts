@@ -22,6 +22,7 @@ export interface User {
   email: string
   displayName: string
   customerNumber?: string
+  isSuperAdmin?: boolean
   permissions?: PermissionSet
 }
 
@@ -132,5 +133,7 @@ export interface AdminStaff {
   email: string
   password: string
   role: string
+  active: boolean
+  isSuperAdmin?: boolean
   permissions: PermissionSet
 }

@@ -40,6 +40,8 @@ export function createAdmin(name: string, email: string, password: string, role:
     email,
     password,
     role,
+    active: true,
+    isSuperAdmin: false,
     permissions,
   })
 }

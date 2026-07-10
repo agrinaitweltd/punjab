@@ -13,7 +13,7 @@
 } from "../types"
 
 export const mockUsers: User[] = [
-  { id: "u-admin-1", role: "admin", username: "admin", email: "admin@punjabfoods.co.uk", displayName: "Owner Admin", permissions: { customers: true, prices: true, stock: true, orders: true, enquiries: true, tickets: true, payments: true, complaints: true, extracts: true, stats: true, admins: true, products: true } },
+  { id: "u-admin-1", role: "admin", username: "admin", email: "admin@punjabfoods.co.uk", displayName: "Owner Admin", isSuperAdmin: true, permissions: { customers: true, prices: true, stock: true, orders: true, enquiries: true, tickets: true, payments: true, complaints: true, extracts: true, stats: true, admins: true, products: true } },
   { id: "u-customer-1", role: "customer", username: "cust001", email: "buyer@greenmarket.co.uk", customerNumber: "CUST-001", displayName: "Green Market Buyer" },
 ]
 
@@ -86,5 +86,7 @@ export const mockDeliveryAreas: DeliveryArea[] = [
 ]
 
 export const mockAdmins: AdminStaff[] = [
-  { id: "adm-1", name: "Owner Admin", email: "admin@punjabfoods.co.uk", password: "admin123", role: "Owner", permissions: { customers: true, prices: true, stock: true, orders: true, enquiries: true, tickets: true, payments: true, complaints: true, extracts: true, stats: true, admins: true, products: true } },
+  { id: "adm-1", name: "Owner Admin", email: "admin@punjabfoods.co.uk", password: "admin123", role: "Owner", active: true, isSuperAdmin: true, permissions: { customers: true, prices: true, stock: true, orders: true, enquiries: true, tickets: true, payments: true, complaints: true, extracts: true, stats: true, admins: true, products: true } },
+  { id: "adm-2", name: "Warehouse Manager", email: "warehouse@punjabfoods.co.uk", password: "staff123", role: "Staff", active: true, isSuperAdmin: false, permissions: { customers: false, prices: true, stock: true, orders: true, enquiries: false, tickets: true, payments: false, complaints: false, extracts: false, stats: false, admins: false, products: true } },
+  { id: "adm-3", name: "Accounts Staff", email: "accounts@punjabfoods.co.uk", password: "staff123", role: "Staff", active: false, isSuperAdmin: false, permissions: { customers: true, prices: false, stock: false, orders: false, enquiries: false, tickets: false, payments: true, complaints: false, extracts: true, stats: true, admins: false, products: false } },
 ]

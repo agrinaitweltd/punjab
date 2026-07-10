@@ -209,6 +209,11 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await createAdmin(name, email, password, role, permissions)
             await load()
           }}
+          onDelete={async (id) => {
+            await deleteCustomer(id) // reuse generic delete pattern
+            await load()
+          }}
+          onToggleActive={async () => { await load() }}
         />
       )
     }

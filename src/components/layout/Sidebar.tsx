@@ -56,8 +56,8 @@ function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
   )
 }
 
-export function Sidebar({ role, current, onNavigate }: {
-  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string
+export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
+  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
 }) {
   const [query, setQuery] = useState("")
   const isAdmin = role === "admin"
@@ -112,6 +112,15 @@ export function Sidebar({ role, current, onNavigate }: {
               <NavItem key={item.key} label={item.label} dot={item.dot} badge={item.badge}
                 active={current === item.key} onClick={() => onNavigate(item.key)} />
             ))}
+            {/* Only super-admins see the Admins management link */}
+            {isSuperAdmin && (
+              <NavItem
+                label="Admin Users"
+                d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+                active={current === "admins"}
+                onClick={() => onNavigate("admins")}
+              />
+            )}
           </nav>
         </div>
       </>}
