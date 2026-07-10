@@ -22,7 +22,7 @@ export function AppLayout({
     <div className="app-layout">
       <Sidebar role={role} current={current} onNavigate={onNavigate} userName={user.displayName} />
       <div className="main-layout">
-        <Topbar user={user} onLogout={onLogout} />
+        <Topbar user={user} onLogout={onLogout} current={current} />
         <main className="content">{children}</main>
       </div>
     </div>
