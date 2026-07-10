@@ -1,5 +1,7 @@
 import type { Order } from "../types"
 import { mockOrders } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 let orders = [...mockOrders]
 
@@ -12,11 +14,13 @@ function nextOrderNumber(): string {
 }
 
 export async function getOrders(): Promise<Order[]> {
+  if (supabaseReady) return databaseService.getOrders()
   await new Promise(r => setTimeout(r, 100))
   return [...orders].sort((a, b) => b.date.localeCompare(a.date))
 }
 
 export async function createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status">): Promise<Order> {
+  if (supabaseReady) return databaseService.createOrder(input)
   await new Promise(r => setTimeout(r, 150))
   const order: Order = {
     ...input,
@@ -31,6 +35,7 @@ export async function createOrder(input: Omit<Order, "id" | "orderNumber" | "dat
 }
 
 export async function updateOrderStatus(id: string, status: Order["status"]): Promise<Order | null> {
+  if (supabaseReady) return databaseService.updateOrder(id, { status })
   await new Promise(r => setTimeout(r, 100))
   const idx = orders.findIndex(o => o.id === id)
   if (idx === -1) return null
@@ -39,6 +44,7 @@ export async function updateOrderStatus(id: string, status: Order["status"]): Pr
 }
 
 export async function getCustomerOrders(customerId: string): Promise<Order[]> {
+  if (supabaseReady) return databaseService.getOrders().then(data => data.filter(o => o.customerId === customerId))
   await new Promise(r => setTimeout(r, 100))
   return orders.filter(o => o.customerId === customerId).sort((a, b) => b.date.localeCompare(a.date))
 }

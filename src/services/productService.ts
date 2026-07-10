@@ -1,5 +1,7 @@
 import type { Product } from "../types"
 import { mockProducts, mockStock } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 let products = [...mockProducts]
 let stock = [...mockStock]
@@ -13,15 +15,16 @@ function nextId(prefix: string) {
 }
 
 export async function getProducts(): Promise<Product[]> {
+  if (supabaseReady) return databaseService.getProducts()
   await new Promise(r => setTimeout(r, 100))
   return [...products].sort((a, b) => a.productName.localeCompare(b.productName))
 }
 
 export async function createProduct(input: Omit<Product, "id">): Promise<Product> {
+  if (supabaseReady) return databaseService.createProduct(input)
   await new Promise(r => setTimeout(r, 150))
   const product: Product = { ...input, id: nextId("p") }
   products.push(product)
-  // Create stock entry
   stock.push({
     id: nextId("s"),
     productId: product.id,
@@ -34,6 +37,7 @@ export async function createProduct(input: Omit<Product, "id">): Promise<Product
 }
 
 export async function updateProduct(id: string, input: Partial<Product>): Promise<Product | null> {
+  if (supabaseReady) return databaseService.updateProduct(id, input)
   await new Promise(r => setTimeout(r, 100))
   const idx = products.findIndex(p => p.id === id)
   if (idx === -1) return null
@@ -43,6 +47,7 @@ export async function updateProduct(id: string, input: Partial<Product>): Promis
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
+  if (supabaseReady) return databaseService.deleteProduct(id)
   await new Promise(r => setTimeout(r, 100))
   products = products.filter(p => p.id !== id)
   stock = stock.filter(s => s.productId !== id)

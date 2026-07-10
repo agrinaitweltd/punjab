@@ -1,45 +1,80 @@
 ﻿import type { User, UserRole } from "../types"
 import { mockAdmins, mockCustomers } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 class AuthService {
   private currentUser: User | null = null
 
   async login(role: UserRole, usernameOrEmail: string, password: string): Promise<User | null> {
     await new Promise(r => setTimeout(r, 200))
-
     if (role === "admin") {
-      const admin = mockAdmins.find(a =>
-        a.email === usernameOrEmail && a.password === password && a.active
-      )
-      if (admin) {
-        this.currentUser = {
-          id: admin.id,
-          role: "admin",
-          username: admin.name.toLowerCase().replace(/\s+/g, "."),
-          email: admin.email,
-          displayName: admin.name,
-          isSuperAdmin: admin.isSuperAdmin ?? false,
-          permissions: admin.permissions ?? {},
+      if (supabaseReady) {
+        const data = await databaseService.getAdmins()
+        const admin = data.find(a => a.email === usernameOrEmail && a.password === password && a.active)
+        if (admin) {
+          this.currentUser = {
+            id: admin.id,
+            role: "admin",
+            username: admin.name.toLowerCase().replace(/\s+/g, "."),
+            email: admin.email,
+            displayName: admin.name,
+            isSuperAdmin: admin.isSuperAdmin ?? false,
+            permissions: admin.permissions ?? {},
+          }
+          return this.currentUser
         }
-        return this.currentUser
+      } else {
+        const admin = mockAdmins.find(a =>
+          a.email === usernameOrEmail && a.password === password && a.active
+        )
+        if (admin) {
+          this.currentUser = {
+            id: admin.id,
+            role: "admin",
+            username: admin.name.toLowerCase().replace(/\s+/g, "."),
+            email: admin.email,
+            displayName: admin.name,
+            isSuperAdmin: admin.isSuperAdmin ?? false,
+            permissions: admin.permissions ?? {},
+          }
+          return this.currentUser
+        }
       }
     } else {
-      const customer = mockCustomers.find(c =>
-        (c.customerNumber === usernameOrEmail || c.email === usernameOrEmail) && c.password === password
-      )
-      if (customer) {
-        this.currentUser = {
-          id: customer.id,
-          role: "customer",
-          username: customer.customerNumber,
-          email: customer.email,
-          displayName: customer.companyName,
-          customerNumber: customer.customerNumber,
+      if (supabaseReady) {
+        const data = await databaseService.getCustomers()
+        const customer = data.find(c =>
+          (c.customerNumber === usernameOrEmail || c.email === usernameOrEmail) && c.password === password
+        )
+        if (customer) {
+          this.currentUser = {
+            id: customer.id,
+            role: "customer",
+            username: customer.customerNumber,
+            email: customer.email,
+            displayName: customer.companyName,
+            customerNumber: customer.customerNumber,
+          }
+          return this.currentUser
         }
-        return this.currentUser
+      } else {
+        const customer = mockCustomers.find(c =>
+          (c.customerNumber === usernameOrEmail || c.email === usernameOrEmail) && c.password === password
+        )
+        if (customer) {
+          this.currentUser = {
+            id: customer.id,
+            role: "customer",
+            username: customer.customerNumber,
+            email: customer.email,
+            displayName: customer.companyName,
+            customerNumber: customer.customerNumber,
+          }
+          return this.currentUser
+        }
       }
     }
-
     return null
   }
 

@@ -1,5 +1,7 @@
 import type { SupportTicket } from "../types"
 import { mockTickets } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 let tickets = [...mockTickets]
 
@@ -12,23 +14,24 @@ function nextId() {
 }
 
 export async function getTickets(): Promise<SupportTicket[]> {
+  if (supabaseReady) return databaseService.getTickets()
   await new Promise(r => setTimeout(r, 100))
   return [...tickets].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 export async function createTicket(
   createdByRole: SupportTicket["createdByRole"],
-  customerId?: string,
-  subject?: string,
-  message?: string
+  customerId: string | undefined,
+  subject: string,
+  message: string
 ): Promise<SupportTicket> {
   await new Promise(r => setTimeout(r, 150))
   const ticket: SupportTicket = {
     id: nextId(),
     createdByRole,
     customerId,
-    subject: subject || "New Ticket",
-    message: message || "",
+    subject,
+    message,
     status: "Open",
     createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
   }

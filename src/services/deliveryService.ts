@@ -1,5 +1,7 @@
 import type { DeliveryArea } from "../types"
 import { mockDeliveryAreas } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 let areas = [...mockDeliveryAreas]
 
@@ -12,11 +14,13 @@ function nextId() {
 }
 
 export async function getDeliveryAreas(): Promise<DeliveryArea[]> {
+  if (supabaseReady) return databaseService.getDeliveryAreas()
   await new Promise(r => setTimeout(r, 100))
   return [...areas].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function createDeliveryArea(name: string, chargePerPallet: number): Promise<DeliveryArea> {
+  if (supabaseReady) return databaseService.createDeliveryArea(name, chargePerPallet)
   await new Promise(r => setTimeout(r, 150))
   const area: DeliveryArea = { id: nextId(), name, chargePerPallet }
   areas.push(area)
@@ -24,6 +28,7 @@ export async function createDeliveryArea(name: string, chargePerPallet: number):
 }
 
 export async function updateDeliveryArea(id: string, name: string, chargePerPallet: number): Promise<DeliveryArea | null> {
+  if (supabaseReady) return databaseService.updateDeliveryArea(id, name, chargePerPallet)
   await new Promise(r => setTimeout(r, 100))
   const idx = areas.findIndex(a => a.id === id)
   if (idx === -1) return null
@@ -32,6 +37,7 @@ export async function updateDeliveryArea(id: string, name: string, chargePerPall
 }
 
 export async function deleteDeliveryArea(id: string): Promise<boolean> {
+  if (supabaseReady) return databaseService.deleteDeliveryArea(id)
   await new Promise(r => setTimeout(r, 100))
   areas = areas.filter(a => a.id !== id)
   return true

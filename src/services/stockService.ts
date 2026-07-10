@@ -1,5 +1,7 @@
 import type { StockItem } from "../types"
 import { mockStock } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 let stock = [...mockStock]
 
@@ -12,11 +14,13 @@ function nextId() {
 }
 
 export async function getStock(): Promise<StockItem[]> {
+  if (supabaseReady) return databaseService.getStock()
   await new Promise(r => setTimeout(r, 100))
   return [...stock]
 }
 
 export async function updateStock(id: string, input: Partial<StockItem>): Promise<StockItem | null> {
+  if (supabaseReady) return databaseService.updateStock(id, input)
   await new Promise(r => setTimeout(r, 100))
   const idx = stock.findIndex(s => s.id === id)
   if (idx === -1) return null

@@ -1,5 +1,7 @@
 import type { AdminStaff } from "../types"
 import { mockAdmins } from "../data/mockData"
+import { databaseService } from "./databaseService"
+import { supabaseReady } from "../lib/supabase"
 
 let admins = [...mockAdmins]
 
@@ -12,11 +14,13 @@ function nextId() {
 }
 
 export async function getAdmins(): Promise<AdminStaff[]> {
+  if (supabaseReady) return databaseService.getAdmins()
   await new Promise(r => setTimeout(r, 100))
   return [...admins].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function createAdmin(input: Omit<AdminStaff, "id">): Promise<AdminStaff> {
+  if (supabaseReady) return databaseService.createAdmin(input)
   await new Promise(r => setTimeout(r, 150))
   const admin: AdminStaff = {
     ...input,
@@ -27,6 +31,7 @@ export async function createAdmin(input: Omit<AdminStaff, "id">): Promise<AdminS
 }
 
 export async function updateAdmin(id: string, input: Partial<AdminStaff>): Promise<AdminStaff | null> {
+  if (supabaseReady) return databaseService.updateAdmin(id, input)
   await new Promise(r => setTimeout(r, 100))
   const idx = admins.findIndex(a => a.id === id)
   if (idx === -1) return null
@@ -35,12 +40,14 @@ export async function updateAdmin(id: string, input: Partial<AdminStaff>): Promi
 }
 
 export async function deleteAdmin(id: string): Promise<boolean> {
+  if (supabaseReady) return databaseService.deleteAdmin(id)
   await new Promise(r => setTimeout(r, 100))
   admins = admins.filter(a => a.id !== id)
   return true
 }
 
 export async function toggleAdminActive(id: string, active: boolean): Promise<boolean> {
+  if (supabaseReady) return databaseService.toggleAdminActive(id, active)
   await new Promise(r => setTimeout(r, 100))
   const idx = admins.findIndex(a => a.id === id)
   if (idx === -1) return false
