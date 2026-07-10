@@ -71,10 +71,10 @@ export function LoginPage({ onLogin, error }: {
           <form onSubmit={submit} className="lp-form">
 
             <div className="lp-field">
-              <label className="lp-label">{role === "admin" ? "Username" : "Customer Number"}</label>
+              <label className="lp-label">{role === "admin" ? "Email" : "Customer Number"}</label>
               <input
                 className="lp-input"
-                placeholder={role === "admin" ? "Enter your username…" : "Enter your customer number…"}
+                placeholder={role === "admin" ? "Enter your email…" : "Enter your customer number…"}
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 required
