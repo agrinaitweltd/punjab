@@ -131,6 +131,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <ProductsPage
           products={products}
+          stock={stock}
           onCreate={async (input) => {
             await createProduct(input)
             await load()
