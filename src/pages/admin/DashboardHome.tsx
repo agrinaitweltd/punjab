@@ -1,18 +1,30 @@
-﻿import type { Customer, Order, Product, ActivityLog } from "../../types"
+import { useMemo, useState } from "react"
+import type { Customer, Order, Product, ActivityLog } from "../../types"
 
-function StatCard({ label, value, delta, color, onClick }: { label: string; value: string; delta?: string; color?: string; onClick?: () => void }) {
+const PAGE_SIZE = 8
+
+function InfoIcon() {
   return (
-    <div className="cd-stat" onClick={onClick} style={onClick ? { cursor: "pointer" } : undefined}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <p className="cd-stat-label">{label}</p>
-        <button style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16 }}>⋮</button>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#c3c9d2" }}>
+      <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  )
+}
+
+function StatCard({ label, value, delta, deltaColor, sub, onClick }: {
+  label: string; value: string; delta?: string; deltaColor?: string; sub?: string; onClick?: () => void
+}) {
+  return (
+    <div className="db-stat" onClick={onClick} style={onClick ? { cursor: "pointer" } : undefined}>
+      <div className="db-stat-head">
+        <span className="db-stat-label">{label}</span>
+        <InfoIcon />
       </div>
-      <div className="cd-stat-value">{value}</div>
-      {delta && (
-        <div style={{ marginTop: 4, fontSize: 12.5, fontWeight: 700, color: color ?? "#16a34a" }}>
-          {delta}
-        </div>
-      )}
+      <div className="db-stat-value">{value}</div>
+      <div className="db-stat-sub">
+        {sub ?? "vs last month"}
+        {delta && <span className="db-stat-delta" style={{ color: deltaColor ?? "#16a34a" }}>{delta}</span>}
+      </div>
     </div>
   )
 }
@@ -25,173 +37,248 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Cancelled: { bg: "#fee2e2", color: "#b91c1c" },
 }
 
+const AVATAR_COLORS = ["#22913f", "#3b82f6", "#8b5cf6", "#e05c2a", "#0ea5e9"]
+
 export function DashboardHome({
   customers, products, orders, onNavigate,
 }: {
   customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
   onNavigate?: (page: string) => void
 }) {
-  const openBalance   = customers.reduce((s, c) => s + c.balance, 0)
+  const [showStats, setShowStats] = useState(true)
+  const [query, setQuery]         = useState("")
+  const [page, setPage]           = useState(1)
+  const [selected, setSelected]   = useState<Set<string>>(new Set())
+
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
   const pendingOrders = orders.filter(o => o.status === "Pending").length
+  const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return orders
+    return orders.filter(o =>
+      `${o.customerName} ${o.orderNumber} ${o.status}`.toLowerCase().includes(q)
+    )
+  }, [orders, query])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage    = Math.min(page, totalPages)
+  const paginated   = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const toggleRow = (id: string) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    setSelected(next)
+  }
+  const toggleAll = () => {
+    if (paginated.every(o => selected.has(o.id))) {
+      const next = new Set(selected)
+      paginated.forEach(o => next.delete(o.id))
+      setSelected(next)
+    } else {
+      const next = new Set(selected)
+      paginated.forEach(o => next.add(o.id))
+      setSelected(next)
+    }
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      {/* Page header */}
-      <div className="cd-header">
+    <div className="ps-wrap">
+      {/* ── Page Header ── */}
+      <div className="ps-header">
         <div>
-          <h2 className="cd-title">Overview</h2>
-          <p className="cd-subtitle">Punjab Exotic Foods — Admin Control Centre</p>
+          <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
+          <h2 className="ps-title">Overview</h2>
         </div>
-        <div style={{ display: "flex", gap: 10, paddingBottom: 14 }}>
-          <button className="cd-import-btn" onClick={() => onNavigate?.("export")}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div className="ps-header-actions">
+          <button className="ps-icon-btn" title="Customise" onClick={() => onNavigate?.("settings")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M4.93 4.93a10 10 0 0 0 14.14 14.14"/></svg>
+          </button>
+          <button className="ps-icon-btn" title="Notifications" onClick={() => onNavigate?.("tickets")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+          <button className="db-primary-btn" onClick={() => onNavigate?.("orders")}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Order
+          </button>
+        </div>
+      </div>
+
+      {/* ── Toolbar ── */}
+      <div className="ps-toolbar">
+        <div className="ps-toolbar-left">
+          <button className="ps-tool-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Table View
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div className="ps-toolbar-divider" />
+          <button className="ps-tool-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filter
+          </button>
+          <button className="ps-tool-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Sort
+          </button>
+          <label className="ps-toggle-row">
+            Show Statistics
+            <button
+              className={"ps-toggle" + (showStats ? " on" : "")}
+              onClick={() => setShowStats(v => !v)}
+              type="button"
+              aria-label="Toggle statistics"
+            >
+              <span className="ps-toggle-knob" />
+            </button>
+          </label>
+        </div>
+        <div className="ps-toolbar-right">
+          <div className="ps-search-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input className="ps-search" placeholder="Search orders, customers…" value={query} onChange={e => { setQuery(e.target.value); setPage(1) }} />
+          </div>
+          <button className="ps-tool-btn" onClick={() => onNavigate?.("stats")}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            Customise
+          </button>
+          <button className="ps-tool-btn" onClick={() => onNavigate?.("data-extract")}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export
           </button>
         </div>
       </div>
 
-      {/* Stats strip */}
-      <div className="cd-stats-strip" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
-        <StatCard label="Total Customers" value={String(customers.length)} onClick={() => onNavigate?.("customers")} />
-        <StatCard label="Products" value={String(products.length)} onClick={() => onNavigate?.("products")} />
-        <StatCard label="Open Balance" value={`£${openBalance.toFixed(2)}`} delta="▲ +9% vs last month" />
-        <StatCard label="Active Orders" value={String(activeOrders)} delta={`${pendingOrders} pending`} color="#f59e0b" onClick={() => onNavigate?.("orders")} />
-      </div>
-
-      {/* Quick Actions */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("customers")}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", color: "#15803d" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Add Customer</div>
-            <div style={{ fontSize: 11.5, color: "#6b7280" }}>Create new account</div>
-          </div>
-        </button>
-        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("products")}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#dbeafe", display: "flex", alignItems: "center", justifyContent: "center", color: "#1d4ed8" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Add Product</div>
-            <div style={{ fontSize: 11.5, color: "#6b7280" }}>New stock item</div>
-          </div>
-        </button>
-        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("orders")}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", color: "#a16207" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>New Order</div>
-            <div style={{ fontSize: 11.5, color: "#6b7280" }}>Place an order</div>
-          </div>
-        </button>
-        <button className="card" style={{ padding: "16px 18px", border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }} onClick={() => onNavigate?.("admins")}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#ede9fe", display: "flex", alignItems: "center", justifyContent: "center", color: "#7c3aed" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Manage Admins</div>
-            <div style={{ fontSize: 11.5, color: "#6b7280" }}>Add staff accounts</div>
-          </div>
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="cd-tabs">
-        {["Overview","Orders","Customers","Activity"].map((t, i) => (
-          <button key={t} className={"cd-tab" + (i === 0 ? " active" : "")}>{t}</button>
-        ))}
-      </div>
-
-      {/* Filter row */}
-      <div className="cd-filter-row">
-        <div style={{ display: "flex", gap: 8 }}>
-          <span className="cd-chip">All time <button className="cd-chip-x">×</button></span>
-          <span className="cd-chip">All Status <button className="cd-chip-x">×</button></span>
-          <button className="cd-more-filters">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            More filters
-          </button>
+      {/* ── Stats Row ── */}
+      {showStats && (
+        <div className="ps-stats-row">
+          <StatCard label="Total Customers" value={String(customers.length)} delta={`+${Math.max(1, Math.ceil(customers.length * 0.08))} new`} onClick={() => onNavigate?.("customers")} />
+          <StatCard label="Products" value={String(products.length)} delta="↑ 3%" onClick={() => onNavigate?.("products")} />
+          <StatCard label="Order Revenue" value={`£${orderRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`} delta="↑ 9%" onClick={() => onNavigate?.("orders")} />
+          <StatCard label="Active Orders" value={String(activeOrders)} delta={`${pendingOrders} pending`} deltaColor="#f59e0b" onClick={() => onNavigate?.("orders")} />
         </div>
-        <div className="cd-search-wrap">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input className="cd-search" placeholder="Search orders, customers…" />
-        </div>
-      </div>
+      )}
 
-      {/* Orders table */}
-      <div className="cd-table-card">
-        <table className="cd-table">
-          <thead><tr>
-            <th style={{ width: 36 }}><input type="checkbox" /></th>
-            <th>Customer</th>
-            <th>Status</th>
-            <th>About</th>
-            <th>Items</th>
-            <th>Order Value</th>
-            <th>Fulfilment</th>
-          </tr></thead>
-          <tbody>
-            {orders.slice(0, 8).map(order => {
-              const sc = STATUS_COLORS[order.status] ?? { bg: "#f3f4f6", color: "#6b7280" }
-              const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
-              return (
-                <tr key={order.id} className="cd-row">
-                  <td><input type="checkbox" /></td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: 9, background: "#22913f", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-                        {order.customerName.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 600, color: "#111827", fontSize: 13.5 }}>{order.customerName}</div>
-                        <div style={{ fontSize: 12, color: "#9ca3af" }}>{order.orderNumber}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="cd-status-badge" style={{ background: sc.bg, color: sc.color }}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: 13, color: "#6b7280" }}>
-                    {order.items.length} product{order.items.length > 1 ? "s" : ""} ordered<br />
-                    <span style={{ fontSize: 12 }}>Placed {order.date}</span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      {[0,1,2].map(i => (
-                        <div key={i} style={{ width: 26, height: 26, borderRadius: "50%", background: ["#22913f","#3b82f6","#8b5cf6"][i], border: "2px solid #fff", marginLeft: i ? -8 : 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff", fontWeight: 700 }}>
-                          {String.fromCharCode(65+i)}
+      {/* ── Table ── */}
+      <div className="ps-table-card">
+        <div className="ps-table-wrap">
+          <table className="ps-table">
+            <thead>
+              <tr>
+                <th className="ps-th-check">
+                  <input type="checkbox" checked={paginated.length > 0 && paginated.every(o => selected.has(o.id))} onChange={toggleAll} />
+                </th>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>About</th>
+                <th>Team</th>
+                <th>Order Value</th>
+                <th>Fulfilment</th>
+                <th className="ps-th-plus">+</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.map(order => {
+                const sc = STATUS_COLORS[order.status] ?? { bg: "#f3f4f6", color: "#6b7280" }
+                const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
+                const isSelected = selected.has(order.id)
+                return (
+                  <tr key={order.id} className={isSelected ? "ps-row ps-row-selected" : "ps-row"}>
+                    <td className="ps-td-check">
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleRow(order.id)} />
+                    </td>
+                    <td>
+                      <div className="ps-product-cell">
+                        <div className="ps-product-avatar" style={{ background: "#e8f8ec", color: "#1a5c2d" }}>
+                          {order.customerName.slice(0, 2).toUpperCase()}
                         </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td><strong>£{order.amount.toFixed(2)}</strong></td>
-                  <td>
-                    <div style={{ width: 80, height: 6, background: "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: sc.color, borderRadius: 99 }} />
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        {orders.length === 0 && (
-          <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>No orders yet</div>
-            <div style={{ fontSize: 13 }}>Orders will appear here once customers start placing them.</div>
+                        <div>
+                          <div className="ps-product-name">{order.customerName}</div>
+                          <div className="ps-product-variety">{order.orderNumber}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{order.status}</span>
+                    </td>
+                    <td style={{ color: "#6b7280", fontSize: 13 }}>
+                      {order.items.length} product{order.items.length !== 1 ? "s" : ""} ordered
+                      <div style={{ fontSize: 12, color: "#9ca3af" }}>Placed {order.date}</div>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center" }}>
+                        {[0, 1, 2].map(i => (
+                          <div key={i} style={{ width: 26, height: 26, borderRadius: "50%", background: AVATAR_COLORS[i], border: "2px solid #fff", marginLeft: i ? -8 : 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff", fontWeight: 700 }}>
+                            {String.fromCharCode(65 + i)}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td><strong>£{order.amount.toFixed(2)}</strong></td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 70, height: 6, background: "#eef0f3", borderRadius: 99, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: sc.color, borderRadius: 99 }} />
+                        </div>
+                        <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600 }}>{pct}%</span>
+                      </div>
+                    </td>
+                    <td />
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {paginated.length === 0 && (
+            <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: "#374151" }}>No orders found</div>
+              <div style={{ fontSize: 13 }}>Orders will appear here once customers start placing them.</div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Selection bar ── */}
+        {selected.size > 0 && (
+          <div className="ps-selection-bar">
+            <span className="ps-sel-count">{selected.size} Selected</span>
+            <div className="ps-sel-divider" />
+            <button className="ps-sel-btn" onClick={() => onNavigate?.("orders")}>Update Status</button>
+            <div className="ps-sel-divider" />
+            <button className="ps-sel-btn" onClick={() => onNavigate?.("invoices")}>Create Invoice</button>
+            <div className="ps-sel-divider" />
+            <button className="ps-sel-btn ps-sel-danger" onClick={() => setSelected(new Set())}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              Clear
+            </button>
+            <button className="ps-sel-close" onClick={() => setSelected(new Set())}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
         )}
-        <div className="cd-table-footer">
-          <button className="cd-prev-btn">← Previous</button>
-          <span style={{ fontSize: 13, color: "#6b7280" }}>Page 1 of {Math.ceil(orders.length / 8) || 1}</span>
-          <button className="cd-prev-btn">Next →</button>
+
+        {/* ── Pagination ── */}
+        <div className="ps-pagination">
+          <div className="ps-page-size">
+            Showing {paginated.length} of {filtered.length}
+          </div>
+          <div className="ps-page-nav">
+            <button className="ps-pager" onClick={() => setPage(1)} disabled={safePage === 1}>&laquo;</button>
+            <button className="ps-pager" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>&lsaquo;</button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(n => (
+              <button key={n} className={"ps-pager" + (n === safePage ? " ps-pager-active" : "")} onClick={() => setPage(n)}>{n}</button>
+            ))}
+            {totalPages > 5 && <span className="ps-pager-ellipsis">…</span>}
+            {totalPages > 5 && (
+              <button className={"ps-pager" + (safePage === totalPages ? " ps-pager-active" : "")} onClick={() => setPage(totalPages)}>{totalPages}</button>
+            )}
+            <button className="ps-pager" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>&rsaquo;</button>
+            <button className="ps-pager" onClick={() => setPage(totalPages)} disabled={safePage === totalPages}>&raquo;</button>
+          </div>
+          <div className="ps-go-page">
+            Page {safePage} of {totalPages}
+          </div>
         </div>
       </div>
     </div>

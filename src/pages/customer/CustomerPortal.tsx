@@ -157,7 +157,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                   const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
                   return (
                     <tr key={order.id} className={isSelected ? "cd-row selected" : "cd-row"}>
-                      <td><input type="checkbox" checked={isSelected} onChange={() => { const s = new Set(selected); isSelected ? s.delete(order.id) : s.add(order.id); setSelected(s) }} /></td>
+                      <td><input type="checkbox" checked={isSelected} onChange={() => { const s = new Set(selected); if (isSelected) s.delete(order.id); else s.add(order.id); setSelected(s) }} /></td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <Avatar name={order.orderNumber} color="#22913f" />

@@ -216,6 +216,27 @@ tbody tr:hover td { background: #fafbfc; }
   color: #374151; cursor: pointer; transition: background 0.1s; white-space: nowrap;
 }
 .tb-customize-btn:hover { background: #f9fafb; }
+.tb-user {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 4px; border-radius: 99px;
+  border: 1px solid #eaecf0; background: #fff; margin-left: 4px;
+}
+.tb-user-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg,#22913f,#1a5c2d); color: #fff;
+  font-size: 10.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tb-user-name { font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap; }
+.tb-signout-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 14px; border-radius: 8px;
+  border: 1px solid #eaecf0; background: #fff;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #b91c1c; cursor: pointer; transition: all 0.1s; white-space: nowrap;
+}
+.tb-signout-btn:hover { background: #fef2f2; border-color: #fca5a5; }
+@media (max-width: 640px) { .tb-user-name { display: none; } }
 
 /* ── PAGE COMMON LABELS ── */
 .control-centre-label { font-size: 11px; font-weight: 700; color: var(--green-500); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; }
@@ -779,6 +800,27 @@ tbody tr:hover td { background: #fafbfc; }
 .adm-perm-item:hover { background: #f3f4f6; }
 .adm-select-all { border-color: #bbf7d0; background: #f0fdf4; }
 .adm-select-all:hover { background: #dcfce7; }
+/* ══════════════════════════════════════════
+   ADMIN DASHBOARD — stat strip + primary btn
+══════════════════════════════════════════ */
+.db-stat { padding: 20px 28px; border-right: 1px solid var(--border); transition: background 0.12s; }
+.db-stat:last-child { border-right: none; }
+.db-stat[style*="cursor"]:hover { background: #fafbfc; }
+.db-stat-head { display: flex; align-items: center; gap: 6px; }
+.db-stat-label { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+.db-stat-value { font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 6px 0 4px; letter-spacing: -0.5px; }
+.db-stat-sub { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 7px; }
+.db-stat-delta { font-weight: 700; }
+
+.db-primary-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 16px; border-radius: 8px; border: none;
+  background: var(--green-500); color: #fff;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: background 0.12s; white-space: nowrap;
+}
+.db-primary-btn:hover { background: var(--green-600); }
+
 /* ══════════════════════════════════════════
    CUSTOMER DASHBOARD — matches image 2
 ══════════════════════════════════════════ */

@@ -28,14 +28,18 @@ export function Topbar({ user, onLogout, current }: { user: User; onLogout: () =
           <div className="tb-avatar" style={{ background: "#4f46e5", marginLeft: -8 }}>C</div>
           <div className="tb-avatar-count" style={{ marginLeft: -8 }}>+3</div>
         </div>
-        {/* Person */}
-        <button className="tb-icon-btn">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        {/* Add member */}
+        <button className="tb-icon-btn" title="Invite team member">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
         </button>
-        {/* Customize Widget */}
-        <button className="tb-customize-btn" onClick={onLogout} title={`Signed in as ${user.displayName}`}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          Customise Widget
+        {/* Signed-in user + sign out */}
+        <div className="tb-user" title={`Signed in as ${user.displayName}`}>
+          <span className="tb-user-avatar">{user.displayName.slice(0, 2).toUpperCase()}</span>
+          <span className="tb-user-name">{user.displayName}</span>
+        </div>
+        <button className="tb-signout-btn" onClick={onLogout} title="Sign out">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign out
         </button>
       </div>
     </header>
