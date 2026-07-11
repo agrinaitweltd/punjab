@@ -8,12 +8,15 @@ class AuthService {
 
   async login(role: UserRole, usernameOrEmail: string, password: string): Promise<User | null> {
     await new Promise(r => setTimeout(r, 200))
+    console.log("Login attempt:", { role, usernameOrEmail, password })
     
     if (role === "admin") {
       // Always use mock data for now since Supabase might not be configured
+      console.log("Mock admins available:", mockAdmins)
       const admin = mockAdmins.find(a =>
         a.email === usernameOrEmail && a.password === password && a.active
       )
+      console.log("Found admin:", admin)
       if (admin) {
         this.currentUser = {
           id: admin.id,
@@ -24,7 +27,10 @@ class AuthService {
           isSuperAdmin: admin.isSuperAdmin ?? false,
           permissions: admin.permissions ?? {},
         }
+        console.log("Returning user:", this.currentUser)
         return this.currentUser
+      } else {
+        console.log("Admin not found or credentials don't match")
       }
     } else {
       if (supabaseReady) {
