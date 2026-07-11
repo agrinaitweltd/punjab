@@ -125,7 +125,7 @@ export function DashboardHome({
       <div className="ps-header">
         <div>
           <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
-          <h2 className="ps-title">Overview</h2>
+          <h2 className="ps-title">Dashboard</h2>
         </div>
         <div className="ps-header-actions">
           <button className="ps-icon-btn" title="Customise" onClick={() => onNavigate?.("settings")}>
