@@ -317,6 +317,11 @@ export function DashboardHome({
           </div>
         </div>
       </div>
+      </div>
+      </div>
+      </div>
+      </div>
+      </div>
     </div>
   )
 }
