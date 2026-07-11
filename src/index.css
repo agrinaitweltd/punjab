@@ -349,12 +349,80 @@ tbody tr:hover td { background: #fafbfc; }
 .demo-box strong { display: block; font-weight: 700; color: var(--text-heading); margin-bottom: 3px; }
 
 /* ── MODAL ── */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100; display: flex; align-items: center; justify-content: center; }
-.modal { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
-.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid var(--border); }
-.modal-header h3 { font-size: 16px; font-weight: 700; color: var(--text-heading); }
-.modal-body { padding: 22px; }
-.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-muted); line-height: 1; }
+.modal-backdrop { 
+  position: fixed; inset: 0; 
+  background: rgba(0,0,0,0.4); 
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 100; 
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal { 
+  background: #fff; 
+  border-radius: var(--radius-lg); 
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1);
+  width: 90%; 
+  max-width: 600px; 
+  max-height: 90vh; 
+  overflow-y: auto;
+  animation: slideUp 0.3s ease-out;
+  border: 1px solid rgba(255,255,255,0.8);
+}
+
+.modal-header { 
+  display: flex; align-items: center; justify-content: space-between; 
+  padding: 20px 24px; 
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(to bottom, #ffffff, #fafbfc);
+}
+
+.modal-header h3 { 
+  font-size: 18px; 
+  font-weight: 700; 
+  color: var(--text-heading);
+  letter-spacing: -0.3px;
+}
+
+.modal-body { padding: 24px; }
+
+.modal-close { 
+  background: #f3f4f6; 
+  border: none; 
+  width: 32px; 
+  height: 32px;
+  border-radius: 8px;
+  font-size: 18px; 
+  cursor: pointer; 
+  color: var(--text-muted); 
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.modal-close:hover { 
+  background: #e5e7eb; 
+  color: var(--text-heading);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 
 /* ── PERMISSIONS ── */
 .permission-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0; }
