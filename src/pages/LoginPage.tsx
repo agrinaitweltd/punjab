@@ -37,6 +37,7 @@ export function LoginPage({ onLogin, error }: {
   const [loading, setLoading]   = useState(false)
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setLoading(true)
+    console.log("Form submission:", { role, username: username.trim(), password })
     await onLogin(role, username.trim(), password)
     setLoading(false)
   }
