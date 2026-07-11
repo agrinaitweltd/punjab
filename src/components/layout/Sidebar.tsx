@@ -66,7 +66,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
       {/* Brand */}
       <div className="sb-brand">
         <div className="sb-logo">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M17 8C8 10 5.9 16.17 3.82 20.77L5.71 22l1-2.3A4.49 4.49 0 0 0 8 20C19 20 22 3 22 3c-1 2-8 2-8 8"/></svg>
+          <img src="/logo.png" alt="Punjab Foods Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         </div>
         <div>
           <div className="sb-brand-name">Punjab Exotic Foods</div>

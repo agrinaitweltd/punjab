@@ -19,7 +19,17 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: string |
       return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f7f2', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: '36px 40px', maxWidth: 480, boxShadow: '0 4px 24px rgba(0,0,0,0.10)', textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
+            <div style={{ 
+              width: 64, height: 64, borderRadius: 16, background: '#fef3c7',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginBottom: 16, color: '#d97706', margin: '0 auto 16px'
+            }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 800, color: '#111827', marginBottom: 8 }}>Something went wrong</h2>
             <p style={{ fontSize: 13.5, color: '#6b7280', marginBottom: 20 }}>{this.state.error}</p>
             <p style={{ fontSize: 12.5, color: '#9ca3af' }}>

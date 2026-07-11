@@ -100,8 +100,10 @@ tbody tr:hover td { background: #fafbfc; }
 }
 .sb-logo {
   width: 32px; height: 32px; border-radius: 8px;
-  background: linear-gradient(135deg,#22913f,#1a5c2d);
+  background: #fff;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  overflow: hidden;
+  padding: 4px;
 }
 .sb-brand-name { font-size: 12px; font-weight: 700; color: #111827; line-height: 1.3; }
 .sb-brand-plan  { font-size: 10.5px; color: #9ca3af; }
@@ -320,7 +322,7 @@ tbody tr:hover td { background: #fafbfc; }
 .login-outer { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; }
 .login-topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 40px; background: #fff; border-bottom: 1px solid var(--border); }
 .login-topbar-brand { display: flex; align-items: center; gap: 12px; }
-.login-topbar-brand .sb-logo { width: 36px; height: 36px; }
+.login-topbar-brand .sb-logo { width: 36px; height: 36px; background: #fff; padding: 6px; }
 .login-topbar-brand strong { font-size: 15px; color: var(--green-900); font-weight: 800; }
 .login-topbar-brand span   { font-size: 12px; color: var(--text-muted); display: block; }
 .role-toggle { display: flex; background: #f3f4f6; border-radius: var(--radius); padding: 4px; gap: 4px; }
