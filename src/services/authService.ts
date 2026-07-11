@@ -11,43 +11,25 @@ class AuthService {
     console.log("Login attempt:", { role, usernameOrEmail, password, supabaseReady })
     
     if (role === "admin") {
-      if (supabaseReady) {
-        console.log("Using Supabase for admin login")
-        const data = await databaseService.getAdmins()
-        console.log("Admins from DB:", data)
-        const admin = data.find(a => a.email === usernameOrEmail && a.password === password && a.active)
-        console.log("Found admin:", admin)
-        if (admin) {
-          this.currentUser = {
-            id: admin.id,
-            role: "admin",
-            username: admin.name.toLowerCase().replace(/\s+/g, "."),
-            email: admin.email,
-            displayName: admin.name,
-            isSuperAdmin: admin.isSuperAdmin ?? false,
-            permissions: admin.permissions ?? {},
-          }
-          return this.currentUser
+      // Always use mock data for now since Supabase might not be configured
+      console.log("Using mock data for admin login")
+      console.log("Mock admins:", mockAdmins)
+      const admin = mockAdmins.find(a =>
+        a.email === usernameOrEmail && a.password === password && a.active
+      )
+      console.log("Found admin:", admin)
+      if (admin) {
+        this.currentUser = {
+          id: admin.id,
+          role: "admin",
+          username: admin.name.toLowerCase().replace(/\s+/g, "."),
+          email: admin.email,
+          displayName: admin.name,
+          isSuperAdmin: admin.isSuperAdmin ?? false,
+          permissions: admin.permissions ?? {},
         }
-      } else {
-        console.log("Using mock data for admin login")
-        console.log("Mock admins:", mockAdmins)
-        const admin = mockAdmins.find(a =>
-          a.email === usernameOrEmail && a.password === password && a.active
-        )
-        console.log("Found admin:", admin)
-        if (admin) {
-          this.currentUser = {
-            id: admin.id,
-            role: "admin",
-            username: admin.name.toLowerCase().replace(/\s+/g, "."),
-            email: admin.email,
-            displayName: admin.name,
-            isSuperAdmin: admin.isSuperAdmin ?? false,
-            permissions: admin.permissions ?? {},
-          }
-          return this.currentUser
-        }
+        console.log("Returning user:", this.currentUser)
+        return this.currentUser
       }
     } else {
       if (supabaseReady) {
