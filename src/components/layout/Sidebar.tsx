@@ -66,7 +66,10 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
       {/* Brand */}
       <div className="sb-brand">
         <div className="sb-logo">
-          <img src="/logo.png" alt="Punjab Foods Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          <img src="/logo.png" alt="Punjab Foods Logo" onError={(e) => {
+            console.error("Logo failed to load:", e);
+            (e.target as HTMLImageElement).style.display = 'none';
+          }} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         </div>
         <div>
           <div className="sb-brand-name">Punjab Exotic Foods</div>
