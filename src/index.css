@@ -80,7 +80,7 @@ tbody tr:hover td { background: #fafbfc; }
 
 /* ── APP LAYOUT ── */
 .app-layout { display: flex; min-height: 100vh; }
-.main-layout { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+.main-layout { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); padding-left: 220px; }
 .content { flex: 1; overflow-y: auto; }
 .stack { display: flex; flex-direction: column; gap: 20px; padding: 28px 32px; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
@@ -89,10 +89,11 @@ tbody tr:hover td { background: #fafbfc; }
 
 /* ── SIDEBAR — light theme matching reference ── */
 .sidebar {
-  width: 220px; min-height: 100vh; background: #fff;
+  width: 220px; height: 100vh; background: #fff;
   display: flex; flex-direction: column;
-  position: sticky; top: 0; flex-shrink: 0; overflow-y: auto;
+  position: fixed; top: 0; left: 0; flex-shrink: 0; overflow-y: auto;
   border-right: 1px solid #eaecf0;
+  z-index: 40;
 }
 .sb-brand {
   display: flex; align-items: center; gap: 9px;
@@ -954,7 +955,7 @@ tbody tr:hover td { background: #fafbfc; }
 .sidebar {
   transition: width 0.24s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.sidebar.sidebar-collapsed { width: 74px; min-width: 74px; flex: 0 0 74px; overflow: hidden; }
+.sidebar.sidebar-collapsed { width: 74px !important; min-width: 74px !important; flex: 0 0 74px; overflow: hidden; }
 .sidebar-collapsed .sb-brand-name,
 .sidebar-collapsed .sb-brand-plan,
 .sidebar-collapsed .sb-brand > div,

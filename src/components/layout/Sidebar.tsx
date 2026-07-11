@@ -1,4 +1,4 @@
-﻿import { useState } from "react"
+﻿import { useState, useEffect } from "react"
 import type { UserRole } from "../../types"
 
 const adminMain = [
@@ -62,6 +62,12 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
   const [query, setQuery] = useState("")
   const [collapsed, setCollapsed] = useState(false)
   const isAdmin = role === "admin"
+
+  useEffect(() => {
+    const main = document.querySelector('.main-layout') as HTMLElement
+    if (main) main.style.paddingLeft = collapsed ? '74px' : '220px'
+  }, [collapsed])
+
   return (
     <aside className={collapsed ? "sidebar sidebar-collapsed" : "sidebar"}>
       {/* Brand */}
