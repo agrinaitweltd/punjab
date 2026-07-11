@@ -930,3 +930,119 @@ tbody tr:hover td { background: #fafbfc; }
 
 @media (max-width: 900px) { .cd-stats-strip { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .cd-stats-strip { grid-template-columns: 1fr; } .cd-header { padding: 16px; } }
+
+/* ══════════════════════════════════════════════
+   INTERACTION & ANIMATION POLISH
+══════════════════════════════════════════════ */
+
+/* Active states for toolbar / topbar controls */
+.ps-tool-active {
+  background: var(--green-50) !important;
+  border-color: var(--green-300) !important;
+  color: var(--green-700) !important;
+  font-weight: 600;
+}
+.tb-icon-active { color: #f59e0b !important; border-color: #fde68a !important; background: #fffbeb !important; }
+.tb-icon-btn { position: relative; }
+.tb-bell-dot {
+  position: absolute; top: 7px; right: 8px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #ef4444; border: 1.5px solid #fff;
+}
+
+/* ── Sidebar collapse ── */
+.sidebar {
+  transition: width 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar.sidebar-collapsed { width: 74px; min-width: 74px; flex: 0 0 74px; overflow: hidden; }
+.sidebar-collapsed .sb-brand-name,
+.sidebar-collapsed .sb-brand-plan,
+.sidebar-collapsed .sb-brand > div,
+.sidebar-collapsed .sb-section-label,
+.sidebar-collapsed .sb-label,
+.sidebar-collapsed .sb-badge,
+.sidebar-collapsed .sb-search .sb-kshortcut,
+.sidebar-collapsed .sb-kshortcut,
+.sidebar-collapsed .sb-search,
+.sidebar-collapsed .sb-upgrade-title,
+.sidebar-collapsed .sb-upgrade-sub,
+.sidebar-collapsed .sb-upgrade > svg {
+  display: none;
+}
+.sidebar-collapsed .sb-item { justify-content: center; padding: 9px 0; }
+.sidebar-collapsed .sb-search-wrap { justify-content: center; padding: 8px; }
+.sidebar-collapsed .sb-brand { justify-content: center; padding: 16px 0 12px; flex-wrap: wrap; gap: 6px; }
+.sidebar-collapsed .sb-collapse { margin-left: 0; }
+.sidebar-collapsed .sb-upgrade { justify-content: center; padding: 10px 0; }
+
+/* Nav item icon nudge on hover */
+.sb-item svg, .sb-item .sb-dot { transition: transform 0.15s ease; }
+.sb-item:hover svg { transform: translateX(2px); }
+.sb-collapse svg, .sb-upgrade svg { transition: transform 0.2s ease; }
+.sb-upgrade:hover svg:last-child { transform: translateX(3px); }
+
+/* ── Universal button press / hover feel ── */
+.btn, .ps-tool-btn, .ps-icon-btn, .db-primary-btn, .tb-icon-btn,
+.tb-signout-btn, .ps-pager, .ps-sel-btn, .ps-go-btn, .cd-prev-btn,
+.sb-collapse, .ps-action-btn {
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease,
+              box-shadow 0.14s ease, transform 0.1s ease;
+}
+.btn:active:not(:disabled),
+.ps-tool-btn:active, .ps-icon-btn:active, .db-primary-btn:active,
+.tb-icon-btn:active, .tb-signout-btn:active, .ps-pager:active:not(:disabled),
+.ps-sel-btn:active, .ps-go-btn:active, .cd-prev-btn:active,
+.ps-action-btn:active {
+  transform: scale(0.95);
+}
+.btn-primary:hover:not(:disabled), .db-primary-btn:hover {
+  box-shadow: 0 4px 14px rgba(34,145,63,0.28);
+  transform: translateY(-1px);
+}
+
+/* ── Stat cards: hover lift + entrance ── */
+.db-stat, .ps-stat { transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
+.ps-stats-row .db-stat, .ps-stats-row .ps-stat {
+  animation: statIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.ps-stats-row > *:nth-child(1) { animation-delay: 0.02s; }
+.ps-stats-row > *:nth-child(2) { animation-delay: 0.08s; }
+.ps-stats-row > *:nth-child(3) { animation-delay: 0.14s; }
+.ps-stats-row > *:nth-child(4) { animation-delay: 0.20s; }
+@keyframes statIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Page content entrance ── */
+.content > * { animation: pageIn 0.32s ease both; }
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Table rows: gentle hover + entrance ── */
+.ps-table tbody tr, .cd-row { transition: background 0.13s ease; }
+.ps-table tbody tr td { transition: background 0.13s ease; }
+
+/* ── Selection bar slide-up ── */
+.ps-selection-bar { animation: barUp 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes barUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Toggle knob subtle shadow ── */
+.ps-toggle-knob { box-shadow: 0 1px 2px rgba(0,0,0,0.18); }
+
+/* ── Badges pop slightly on row hover ── */
+.ps-table tbody tr:hover .ps-badge { filter: saturate(1.12); }
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { EmptyState } from "../../components/ui/EmptyState"
+import { exportToCsv } from "../../lib/exportCsv"
 
 const PAGE_SIZE = 10
 
@@ -73,6 +74,17 @@ export function ProductsPage({
   const totalRevenue = stock.reduce((s, i) => s + (i.price * i.availableQuantity), 0)
   const totalSold    = stock.reduce((s, i) => s + i.availableQuantity, 0)
   const avgPrice     = stock.length ? stock.reduce((s, i) => s + i.price, 0) / stock.length : 0
+
+  const exportProducts = () => {
+    exportToCsv(
+      "products",
+      ["Product", "Variety", "SKU", "Size", "Category", "Price", "Stock", "Boxes/Pallet", "Status"],
+      filtered.map(p => {
+        const s = stockMap[p.id]
+        return [p.productName, p.variety, p.sku, p.size, p.category, s ? s.price.toFixed(2) : "", s ? s.availableQuantity : "", p.boxesPerPallet, s ? s.status : "unknown"]
+      }),
+    )
+  }
 
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
@@ -148,7 +160,7 @@ export function ProductsPage({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
             Customise
           </button>
-          <button className="ps-tool-btn">
+          <button className="ps-tool-btn" onClick={exportProducts} title="Download products as CSV">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export
           </button>

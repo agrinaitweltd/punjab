@@ -1,7 +1,16 @@
 import { useMemo, useState } from "react"
-import type { Customer, Order, Product, ActivityLog } from "../../types"
+import type { Customer, Order, Product, ActivityLog, OrderStatus } from "../../types"
+import { exportToCsv } from "../../lib/exportCsv"
 
 const PAGE_SIZE = 8
+
+type SortMode = "recent" | "value-desc" | "value-asc"
+const SORT_LABELS: Record<SortMode, string> = {
+  "recent": "Newest first",
+  "value-desc": "Value: high → low",
+  "value-asc": "Value: low → high",
+}
+const STATUS_FILTERS: (OrderStatus | "All")[] = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
 
 function InfoIcon() {
   return (
@@ -45,10 +54,14 @@ export function DashboardHome({
   customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
   onNavigate?: (page: string) => void
 }) {
-  const [showStats, setShowStats] = useState(true)
-  const [query, setQuery]         = useState("")
-  const [page, setPage]           = useState(1)
-  const [selected, setSelected]   = useState<Set<string>>(new Set())
+  const [showStats, setShowStats]   = useState(true)
+  const [query, setQuery]           = useState("")
+  const [page, setPage]             = useState(1)
+  const [selected, setSelected]     = useState<Set<string>>(new Set())
+  const [sortMode, setSortMode]     = useState<SortMode>("recent")
+  const [statusIdx, setStatusIdx]   = useState(0)
+
+  const statusFilter = STATUS_FILTERS[statusIdx]
 
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
   const pendingOrders = orders.filter(o => o.status === "Pending").length
@@ -56,11 +69,34 @@ export function DashboardHome({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return orders
-    return orders.filter(o =>
-      `${o.customerName} ${o.orderNumber} ${o.status}`.toLowerCase().includes(q)
+    let list = orders.filter(o =>
+      (statusFilter === "All" || o.status === statusFilter) &&
+      (!q || `${o.customerName} ${o.orderNumber} ${o.status}`.toLowerCase().includes(q))
     )
-  }, [orders, query])
+    list = [...list].sort((a, b) => {
+      if (sortMode === "value-desc") return b.amount - a.amount
+      if (sortMode === "value-asc")  return a.amount - b.amount
+      return b.date.localeCompare(a.date) // recent
+    })
+    return list
+  }, [orders, query, statusFilter, sortMode])
+
+  const cycleSort = () => {
+    const modes: SortMode[] = ["recent", "value-desc", "value-asc"]
+    setSortMode(m => modes[(modes.indexOf(m) + 1) % modes.length])
+    setPage(1)
+  }
+  const cycleStatus = () => {
+    setStatusIdx(i => (i + 1) % STATUS_FILTERS.length)
+    setPage(1)
+  }
+  const exportOrders = () => {
+    exportToCsv(
+      "orders",
+      ["Order Number", "Customer", "Status", "Items", "Order Value", "Date"],
+      filtered.map(o => [o.orderNumber, o.customerName, o.status, o.items.length, o.amount.toFixed(2), o.date]),
+    )
+  }
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage    = Math.min(page, totalPages)
@@ -114,11 +150,11 @@ export function DashboardHome({
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div className="ps-toolbar-divider" />
-          <button className="ps-tool-btn">
+          <button className={"ps-tool-btn" + (statusFilter !== "All" ? " ps-tool-active" : "")} onClick={cycleStatus} title="Cycle status filter">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            Filter
+            {statusFilter === "All" ? "Filter" : statusFilter}
           </button>
-          <button className="ps-tool-btn">
+          <button className={"ps-tool-btn" + (sortMode !== "recent" ? " ps-tool-active" : "")} onClick={cycleSort} title={SORT_LABELS[sortMode]}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             Sort
           </button>
@@ -143,7 +179,7 @@ export function DashboardHome({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
             Customise
           </button>
-          <button className="ps-tool-btn" onClick={() => onNavigate?.("data-extract")}>
+          <button className="ps-tool-btn" onClick={exportOrders} title="Download orders as CSV">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export
           </button>

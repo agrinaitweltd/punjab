@@ -60,9 +60,10 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
   role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
 }) {
   const [query, setQuery] = useState("")
+  const [collapsed, setCollapsed] = useState(false)
   const isAdmin = role === "admin"
   return (
-    <aside className="sidebar">
+    <aside className={collapsed ? "sidebar sidebar-collapsed" : "sidebar"}>
       {/* Brand */}
       <div className="sb-brand">
         <div className="sb-logo">
@@ -75,8 +76,11 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
           <div className="sb-brand-name">Punjab Exotic Foods</div>
           <div className="sb-brand-plan">{isAdmin ? "Admin Software" : "Customer Portal"}</div>
         </div>
-        <button className="sb-collapse" title="Collapse">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        <button className="sb-collapse" title={collapsed ? "Expand" : "Collapse"} onClick={() => setCollapsed(c => !c)} type="button">
+          {collapsed
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+          }
         </button>
       </div>
 
