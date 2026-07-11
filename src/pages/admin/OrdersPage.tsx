@@ -33,7 +33,7 @@ export function OrdersPage({ orders, onUpdateOrder }: {
           ))}
         </DataTable>
         {orders.length === 0 && (
-          <EmptyState icon="📋" title="No orders yet"
+          <EmptyState title="No orders yet"
             description="Orders placed by customers will appear here. Connect Supabase to load live order data." />
         )}
       </Card>

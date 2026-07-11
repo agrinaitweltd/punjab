@@ -78,21 +78,21 @@ export function StockPage({
                 <div className="table-actions">
                   <Button
                     variant="secondary"
-                    size="sm"
+                    className="btn-sm"
                     onClick={() => handleQuickUpdate(item.id, 10)}
                   >
                     +10
                   </Button>
                   <Button
                     variant="secondary"
-                    size="sm"
+                    className="btn-sm"
                     onClick={() => handleQuickUpdate(item.id, -10)}
                   >
                     -10
                   </Button>
                   <Button
                     variant="secondary"
-                    size="sm"
+                    className="btn-sm"
                     onClick={() => handleEdit(item)}
                   >
                     Edit
