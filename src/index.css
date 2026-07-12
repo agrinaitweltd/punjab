@@ -544,6 +544,40 @@ tbody tr:hover td { background: #fafbfc; }
 .ps-go-btn { padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border); background: #fff; font-family: inherit; font-size: 13px; cursor: pointer; font-weight: 600; color: var(--text); }
 .ps-go-btn:hover { background: #f3f4f6; }
 
+/* Dashboard insights row — Top Customers + Recent Activity side by side */
+.db-insights-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  margin: 16px 0;
+}
+.db-insights-row .db-quick-section { margin: 0; height: 100%; }
+
+/* Recent Activity list */
+.db-activity-list { display: flex; flex-direction: column; gap: 2px; }
+.db-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+.db-activity-item:hover { background: var(--green-50); }
+.db-activity-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  margin-top: 6px; flex-shrink: 0;
+}
+.db-activity-body { min-width: 0; flex: 1; }
+.db-activity-action { font-size: 13.5px; color: var(--text); line-height: 1.4; }
+.db-activity-action strong { color: var(--text-heading); font-weight: 600; }
+.db-activity-time { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.db-empty { padding: 20px 4px; color: var(--text-muted); font-size: 13px; text-align: center; }
+
+@media (max-width: 900px) {
+  .db-insights-row { grid-template-columns: 1fr; }
+}
+
 /* Dashboard quick sections */
 .db-quick-section {
   background: #fff;
@@ -579,7 +613,7 @@ tbody tr:hover td { background: #fafbfc; }
 
 .db-customers-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .db-customer-card {

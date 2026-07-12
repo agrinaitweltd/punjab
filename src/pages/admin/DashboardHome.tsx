@@ -49,7 +49,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 const AVATAR_COLORS = ["#22913f", "#3b82f6", "#8b5cf6", "#e05c2a", "#0ea5e9"]
 
 export function DashboardHome({
-  customers, products, orders, onNavigate,
+  customers, products, orders, activity = [], onNavigate,
 }: {
   customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
   onNavigate?: (page: string) => void
@@ -196,25 +196,51 @@ export function DashboardHome({
         </div>
       )}
 
-      {/* ── Quick Customers Section ── */}
-      <div className="db-quick-section">
-        <div className="db-section-head">
-          <h3 className="db-section-title">Top Customers</h3>
-          <button className="db-section-btn" onClick={() => onNavigate?.("customers")}>View All →</button>
+      {/* ── Insights Row: Top Customers + Recent Activity ── */}
+      <div className="db-insights-row">
+        {/* Top Customers */}
+        <div className="db-quick-section">
+          <div className="db-section-head">
+            <h3 className="db-section-title">Top Customers</h3>
+            <button className="db-section-btn" onClick={() => onNavigate?.("customers")}>View All →</button>
+          </div>
+          <div className="db-customers-grid">
+            {customers.slice(0, 4).map((customer, i) => (
+              <div key={customer.id} className="db-customer-card" onClick={() => onNavigate?.("customers")} style={{ cursor: "pointer" }}>
+                <div className="db-customer-avatar" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                  {customer.companyName.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="db-customer-info">
+                  <div className="db-customer-name">{customer.companyName}</div>
+                  <div className="db-customer-meta">{customer.customerNumber}</div>
+                </div>
+                <div className="db-customer-balance">£{customer.balance.toLocaleString("en-GB")}</div>
+              </div>
+            ))}
+            {customers.length === 0 && <div className="db-empty">No customers yet.</div>}
+          </div>
         </div>
-        <div className="db-customers-grid">
-          {customers.slice(0, 4).map((customer, i) => (
-            <div key={customer.id} className="db-customer-card">
-              <div className="db-customer-avatar" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
-                {customer.companyName.slice(0, 2).toUpperCase()}
+
+        {/* Recent Activity */}
+        <div className="db-quick-section">
+          <div className="db-section-head">
+            <h3 className="db-section-title">Recent Activity</h3>
+            <button className="db-section-btn" onClick={() => onNavigate?.("stats")}>View All →</button>
+          </div>
+          <div className="db-activity-list">
+            {activity.slice(0, 5).map((a, i) => (
+              <div key={a.id} className="db-activity-item">
+                <span className="db-activity-dot" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }} />
+                <div className="db-activity-body">
+                  <div className="db-activity-action">
+                    <strong>{a.customerName}</strong> — {a.action}
+                  </div>
+                  <div className="db-activity-time">{a.timestamp}</div>
+                </div>
               </div>
-              <div className="db-customer-info">
-                <div className="db-customer-name">{customer.companyName}</div>
-                <div className="db-customer-meta">{customer.customerNumber}</div>
-              </div>
-              <div className="db-customer-balance">£{customer.balance.toLocaleString("en-GB")}</div>
-            </div>
-          ))}
+            ))}
+            {activity.length === 0 && <div className="db-empty">No recent activity.</div>}
+          </div>
         </div>
       </div>
 
