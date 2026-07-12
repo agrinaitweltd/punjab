@@ -56,8 +56,8 @@ function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
   )
 }
 
-export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
-  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
+export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }: {
+  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean; mobileOpen?: boolean
 }) {
   const [query, setQuery] = useState("")
   const [collapsed, setCollapsed] = useState(false)
@@ -68,8 +68,14 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin }: {
     if (main) main.style.paddingLeft = collapsed ? '74px' : '220px'
   }, [collapsed])
 
+  const asideClass = [
+    "sidebar",
+    collapsed ? "sidebar-collapsed" : "",
+    mobileOpen ? "sidebar-mobile-open" : "",
+  ].filter(Boolean).join(" ")
+
   return (
-    <aside className={collapsed ? "sidebar sidebar-collapsed" : "sidebar"}>
+    <aside className={asideClass}>
       {/* Brand */}
       <div className="sb-brand">
         <div className="sb-logo">

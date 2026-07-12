@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { User, UserRole } from '../../types'
 import { Sidebar } from './Sidebar'
@@ -18,11 +19,26 @@ export function AppLayout({
   onLogout: () => void
   children: ReactNode
 }) {
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  const handleNavigate = (key: string) => {
+    setMobileOpen(false)
+    onNavigate(key)
+  }
+
   return (
     <div className="app-layout">
-      <Sidebar role={role} current={current} onNavigate={onNavigate} userName={user.displayName} isSuperAdmin={user.isSuperAdmin} />
+      {mobileOpen && <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />}
+      <Sidebar
+        role={role}
+        current={current}
+        onNavigate={handleNavigate}
+        userName={user.displayName}
+        isSuperAdmin={user.isSuperAdmin}
+        mobileOpen={mobileOpen}
+      />
       <div className="main-layout">
-        <Topbar user={user} onLogout={onLogout} current={current} onNavigate={onNavigate} />
+        <Topbar user={user} onLogout={onLogout} current={current} onNavigate={onNavigate} onMenuOpen={() => setMobileOpen(true)} />
         <main className="content">{children}</main>
       </div>
     </div>
