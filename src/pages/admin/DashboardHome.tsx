@@ -196,6 +196,28 @@ export function DashboardHome({
         </div>
       )}
 
+      {/* ── Quick Customers Section ── */}
+      <div className="db-quick-section">
+        <div className="db-section-head">
+          <h3 className="db-section-title">Top Customers</h3>
+          <button className="db-section-btn" onClick={() => onNavigate?.("customers")}>View All →</button>
+        </div>
+        <div className="db-customers-grid">
+          {customers.slice(0, 4).map((customer, i) => (
+            <div key={customer.id} className="db-customer-card">
+              <div className="db-customer-avatar" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                {customer.companyName.slice(0, 2).toUpperCase()}
+              </div>
+              <div className="db-customer-info">
+                <div className="db-customer-name">{customer.companyName}</div>
+                <div className="db-customer-meta">{customer.customerNumber}</div>
+              </div>
+              <div className="db-customer-balance">£{customer.balance.toLocaleString("en-GB")}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── Table ── */}
       <div className="ps-table-card">
         <div className="ps-table-wrap">
