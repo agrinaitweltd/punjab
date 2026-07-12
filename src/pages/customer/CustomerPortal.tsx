@@ -141,6 +141,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
           {/* orders table */}
           <div className="cd-table-card">
+            <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr>
                 <th style={{ width: 36 }}><input type="checkbox" onChange={e => setSelected(e.target.checked ? new Set(filteredOrders.map(o => o.id)) : new Set())} /></th>
@@ -177,6 +178,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 })}
               </tbody>
             </table>
+            </div>
             {filteredOrders.length === 0 && <div style={{ padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>No orders found</div>}
             <div className="cd-table-footer">
               <button className="cd-prev-btn">← Previous</button>
@@ -196,6 +198,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <StatCard label="Out of Stock"       value={String(stock.filter(s => s.status === "out").length)} delta="-2%" />
           </div>
           <div className="cd-table-card">
+            <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr>
                 <th>Product</th>
@@ -231,6 +234,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )
@@ -243,6 +247,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>All Orders ({myOrders.length})</span>
               <Button onClick={() => setShowOrder(true)}>+ Place Order</Button>
             </div>
+            <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr><th>Order #</th><th>Date</th><th>Products</th><th>Amount</th><th>Status</th><th>Progress</th></tr></thead>
               <tbody>
@@ -261,6 +266,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 })}
               </tbody>
             </table>
+            </div>
             {myOrders.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No orders yet</div>}
           </div>
         </div>
@@ -274,6 +280,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>Support Tickets</span>
               <Button onClick={() => setShowTicket(true)}>+ New Ticket</Button>
             </div>
+            <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr><th>Subject</th><th>Status</th><th>Created</th></tr></thead>
               <tbody>
@@ -286,6 +293,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )
@@ -300,6 +308,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           </div>
           <div className="cd-table-card">
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0" }}><span style={{ fontWeight: 700, fontSize: 14 }}>Invoice History</span></div>
+            <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
               <tbody>
@@ -313,6 +322,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )
