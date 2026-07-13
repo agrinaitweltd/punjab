@@ -20,14 +20,17 @@ function InfoIcon() {
   )
 }
 
-function StatCard({ label, value, delta, deltaColor, sub, onClick }: {
+function StatCard({ label, value, delta, deltaColor, sub, onClick, icon, iconBg, iconColor }: {
   label: string; value: string; delta?: string; deltaColor?: string; sub?: string; onClick?: () => void
+  icon?: React.ReactNode; iconBg?: string; iconColor?: string
 }) {
   return (
     <div className="db-stat" onClick={onClick} style={onClick ? { cursor: "pointer" } : undefined}>
       <div className="db-stat-head">
         <span className="db-stat-label">{label}</span>
-        <InfoIcon />
+        {icon
+          ? <span className="db-stat-icon" style={{ background: iconBg ?? "var(--green-100)", color: iconColor ?? "var(--green-600)" }}>{icon}</span>
+          : <InfoIcon />}
       </div>
       <div className="db-stat-value">{value}</div>
       <div className="db-stat-sub">
@@ -60,6 +63,7 @@ export function DashboardHome({
   const [selected, setSelected]     = useState<Set<string>>(new Set())
   const [sortMode, setSortMode]     = useState<SortMode>("recent")
   const [statusIdx, setStatusIdx]   = useState(0)
+  const [dense, setDense]           = useState(false)
 
   const statusFilter = STATUS_FILTERS[statusIdx]
 
@@ -144,9 +148,9 @@ export function DashboardHome({
       {/* ── Toolbar ── */}
       <div className="ps-toolbar">
         <div className="ps-toolbar-left">
-          <button className="ps-tool-btn ps-hide-mobile">
+          <button className={"ps-tool-btn ps-hide-mobile" + (dense ? " ps-tool-active" : "")} onClick={() => setDense(d => !d)} title={dense ? "Switch to comfortable rows" : "Switch to compact rows"}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            Table View
+            {dense ? "Compact View" : "Table View"}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div className="ps-toolbar-divider" />
@@ -189,10 +193,18 @@ export function DashboardHome({
       {/* ── Stats Row ── */}
       {showStats && (
         <div className="ps-stats-row">
-          <StatCard label="Total Customers" value={String(customers.length)} delta={`+${Math.max(1, Math.ceil(customers.length * 0.08))} new`} onClick={() => onNavigate?.("customers")} />
-          <StatCard label="Products" value={String(products.length)} delta="↑ 3%" onClick={() => onNavigate?.("products")} />
-          <StatCard label="Order Revenue" value={`£${orderRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`} delta="↑ 9%" onClick={() => onNavigate?.("orders")} />
-          <StatCard label="Active Orders" value={String(activeOrders)} delta={`${pendingOrders} pending`} deltaColor="#f59e0b" onClick={() => onNavigate?.("orders")} />
+          <StatCard label="Total Customers" value={String(customers.length)} delta={`+${Math.max(1, Math.ceil(customers.length * 0.08))} new`} onClick={() => onNavigate?.("customers")}
+            iconBg="#e8f8ec" iconColor="#1f7a3a"
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
+          <StatCard label="Products" value={String(products.length)} delta="↑ 3%" onClick={() => onNavigate?.("products")}
+            iconBg="#dbeafe" iconColor="#1d4ed8"
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>} />
+          <StatCard label="Order Revenue" value={`£${orderRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`} delta="↑ 9%" onClick={() => onNavigate?.("orders")}
+            iconBg="#ede9fe" iconColor="#7c3aed"
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
+          <StatCard label="Active Orders" value={String(activeOrders)} delta={`${pendingOrders} pending`} deltaColor="#f59e0b" onClick={() => onNavigate?.("orders")}
+            iconBg="#fef3c7" iconColor="#b45309"
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>} />
         </div>
       )}
 
@@ -245,7 +257,7 @@ export function DashboardHome({
       </div>
 
       {/* ── Table ── */}
-      <div className="ps-table-card">
+      <div className={"ps-table-card" + (dense ? " ps-table-dense" : "")}>
         <div className="ps-table-wrap">
           <table className="ps-table">
             <thead>

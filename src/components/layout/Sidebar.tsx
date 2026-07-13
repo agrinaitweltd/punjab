@@ -63,6 +63,14 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }:
   const [collapsed, setCollapsed] = useState(false)
   const isAdmin = role === "admin"
 
+  const q = query.trim().toLowerCase()
+  const matches = <T extends { label: string }>(items: T[]) =>
+    q ? items.filter(i => i.label.toLowerCase().includes(q)) : items
+  const mainItems      = matches(isAdmin ? adminMain : customerMain)
+  const toolItems      = matches(adminTools)
+  const workspaceItems = matches(adminWorkspace)
+  const bottomItems    = matches(adminBottom)
+
   useEffect(() => {
     const main = document.querySelector('.main-layout') as HTMLElement
     if (main) main.style.paddingLeft = collapsed ? '74px' : '220px'
@@ -104,44 +112,53 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }:
       </div>
 
       {/* Main menu */}
-      <div className="sb-section">
-        <p className="sb-section-label">Main Menu</p>
-        <nav>
-          {(isAdmin ? adminMain : customerMain).map(item => (
-            <NavItem key={item.key} label={item.label} d={item.d} badge={item.badge}
-              active={current === item.key} onClick={() => onNavigate(item.key)} />
-          ))}
-        </nav>
-      </div>
+      {mainItems.length > 0 && (
+        <div className="sb-section">
+          <p className="sb-section-label">Main Menu</p>
+          <nav>
+            {mainItems.map(item => (
+              <NavItem key={item.key} label={item.label} d={item.d} badge={item.badge}
+                active={current === item.key} onClick={() => onNavigate(item.key)} />
+            ))}
+          </nav>
+        </div>
+      )}
 
       {isAdmin && <>
-        <div className="sb-section">
-          <p className="sb-section-label">Tools</p>
-          <nav>
-            {adminTools.map(item => (
-              <NavItem key={item.key} label={item.label} d={item.d}
-                active={current === item.key} onClick={() => onNavigate(item.key)} />
-            ))}
-          </nav>
-        </div>
-        <div className="sb-section">
-          <p className="sb-section-label">Workspace</p>
-          <nav>
-            {adminWorkspace.map(item => (
-              <NavItem key={item.key} label={item.label} dot={item.dot} badge={item.badge}
-                active={current === item.key} onClick={() => onNavigate(item.key)} />
-            ))}
-            {/* Only super-admins see the Admins management link */}
-            {isSuperAdmin && (
-              <NavItem
-                label="Admin Users"
-                d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
-                active={current === "admins"}
-                onClick={() => onNavigate("admins")}
-              />
-            )}
-          </nav>
-        </div>
+        {toolItems.length > 0 && (
+          <div className="sb-section">
+            <p className="sb-section-label">Tools</p>
+            <nav>
+              {toolItems.map(item => (
+                <NavItem key={item.key} label={item.label} d={item.d}
+                  active={current === item.key} onClick={() => onNavigate(item.key)} />
+              ))}
+            </nav>
+          </div>
+        )}
+        {(workspaceItems.length > 0 || (isSuperAdmin && (!q || "admin users".includes(q)))) && (
+          <div className="sb-section">
+            <p className="sb-section-label">Workspace</p>
+            <nav>
+              {workspaceItems.map(item => (
+                <NavItem key={item.key} label={item.label} dot={item.dot} badge={item.badge}
+                  active={current === item.key} onClick={() => onNavigate(item.key)} />
+              ))}
+              {/* Only super-admins see the Admins management link */}
+              {isSuperAdmin && (!q || "admin users".includes(q)) && (
+                <NavItem
+                  label="Admin Users"
+                  d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+                  active={current === "admins"}
+                  onClick={() => onNavigate("admins")}
+                />
+              )}
+            </nav>
+          </div>
+        )}
+        {q && mainItems.length + toolItems.length + workspaceItems.length === 0 && (
+          <p className="sb-no-results">No menu items match “{query}”</p>
+        )}
       </>}
 
       <div className="sb-spacer" />
@@ -149,7 +166,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }:
       {/* Bottom links */}
       {isAdmin && (
         <div className="sb-bottom">
-          {adminBottom.map(item => (
+          {bottomItems.map(item => (
             <NavItem key={item.key} label={item.label} d={item.d}
               active={current === item.key} onClick={() => onNavigate(item.key)} />
           ))}

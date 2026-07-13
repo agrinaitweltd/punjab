@@ -8,6 +8,7 @@ import type { Invoice, Order, Payment, Product, StockItem, SupportTicket, User }
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
+import { exportToCsv } from "../../lib/exportCsv"
 
 const STATUS_COLORS: Record<string, string> = {
   Pending: "#f59e0b", Confirmed: "#3b82f6", Preparing: "#8b5cf6",
@@ -45,12 +46,15 @@ function ProgressBar({ pct, color }: { pct: number; color?: string }) {
     </div>
   )
 }
-function StatCard({ label, value, delta, positive, children }: { label: string; value: string; delta?: string; positive?: boolean; children?: React.ReactNode }) {
+function StatCard({ label, value, delta, positive, icon, iconBg, iconColor, children }: {
+  label: string; value: string; delta?: string; positive?: boolean
+  icon?: React.ReactNode; iconBg?: string; iconColor?: string; children?: React.ReactNode
+}) {
   return (
     <div className="cd-stat">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <p className="cd-stat-label">{label}</p>
-        <button style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16 }}>⋮</button>
+        {icon && <span className="db-stat-icon" style={{ background: iconBg ?? "var(--green-100)", color: iconColor ?? "var(--green-600)" }}>{icon}</span>}
       </div>
       <div className="cd-stat-value">{value}</div>
       {delta && (
@@ -78,6 +82,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [selected, setSelected]         = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [search, setSearch]             = useState("")
+  const [orderPage, setOrderPage]       = useState(1)
   const [showOrder, setShowOrder]       = useState(false)
   const [showTicket, setShowTicket]     = useState(false)
   const [selProd, setSelProd]           = useState("")
@@ -90,14 +95,17 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets()
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
-    setSelProd(p[0]?.id ?? "")
+    const firstInStock = p.find(prod => s.some(si => si.productId === prod.id && si.status !== "out"))
+    setSelProd(firstInStock?.id ?? "")
   }
   useEffect(() => { load() }, [])
 
-  const myOrders  = useMemo(() => orders.filter(o => o.customerId === user.id), [orders, user.id])
-  const myTickets = useMemo(() => tickets.filter(t => t.customerId === user.id), [tickets, user.id])
-  const myBalance = invoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
-  const stockMap  = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
+  const myOrders   = useMemo(() => orders.filter(o => o.customerId === user.id), [orders, user.id])
+  const myTickets  = useMemo(() => tickets.filter(t => t.customerId === user.id), [tickets, user.id])
+  const myInvoices = useMemo(() => invoices.filter(i => i.customerId === user.id), [invoices, user.id])
+  const myPayments = useMemo(() => payments.filter(p => p.customerId === user.id), [payments, user.id])
+  const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
+  const stockMap   = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
 
   const filteredOrders = useMemo(() => {
     return myOrders.filter(o => {
@@ -106,6 +114,29 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       return true
     })
   }, [myOrders, statusFilter, search])
+
+  const ORDER_PAGE_SIZE = 6
+  const totalOrderPages = Math.max(1, Math.ceil(filteredOrders.length / ORDER_PAGE_SIZE))
+  const safeOrderPage   = Math.min(orderPage, totalOrderPages)
+  const pagedOrders     = filteredOrders.slice((safeOrderPage - 1) * ORDER_PAGE_SIZE, safeOrderPage * ORDER_PAGE_SIZE)
+
+  const cycleStatusFilter = () => {
+    const cycle = ["", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
+    setStatusFilter(f => cycle[(cycle.indexOf(f) + 1) % cycle.length])
+    setOrderPage(1)
+  }
+
+  const exportMyOrders = () => {
+    exportToCsv(
+      "my-orders",
+      ["Order Number", "Date", "Status", "Items", "Order Value"],
+      myOrders.map(o => [o.orderNumber, o.date, o.status, o.items.length, o.amount.toFixed(2)]),
+    )
+  }
+
+  const selectedStock = stockMap[selProd]
+  const unitPrice     = selectedStock?.price ?? 0
+  const orderTotal    = unitPrice * Math.max(1, Number(qty) || 1)
 
   const activeStock = stock.filter(s => s.status !== "out")
 
@@ -116,26 +147,34 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         <div className="cd-content">
           {/* stat strip */}
           <div className="cd-stats-strip">
-            <StatCard label="Total Orders" value={String(myOrders.length)} delta="+20%" positive>
+            <StatCard label="Total Orders" value={String(myOrders.length)} delta="+20%" positive
+              iconBg="#e8f8ec" iconColor="#1f7a3a"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>}>
               <AvatarStack count={3} />
             </StatCard>
-            <StatCard label="Balance Owing" value={`£${myBalance.toFixed(2)}`} delta="+15%" positive />
-            <StatCard label="Open Tickets" value={String(myTickets.filter(t => t.status === "Open").length)} delta="Active" positive />
+            <StatCard label="Balance Owing" value={`£${myBalance.toFixed(2)}`} delta="+15%" positive
+              iconBg="#ede9fe" iconColor="#7c3aed"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
+            <StatCard label="Open Tickets" value={String(myTickets.filter(t => t.status === "Open").length)} delta="Active" positive
+              iconBg="#fef3c7" iconColor="#b45309"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>} />
           </div>
 
           {/* filter row */}
           <div className="cd-filter-row">
-            <div style={{ display: "flex", gap: 8 }}>
-              <span className="cd-chip">All time <button className="cd-chip-x">×</button></span>
-              {statusFilter && <span className="cd-chip">{statusFilter} <button className="cd-chip-x" onClick={() => setStatusFilter("")}>×</button></span>}
-              <button className="cd-more-filters">
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="cd-chip">
+                {statusFilter || "All statuses"}
+                {statusFilter && <button className="cd-chip-x" onClick={() => { setStatusFilter(""); setOrderPage(1) }} title="Clear status filter">×</button>}
+              </span>
+              <button className="cd-more-filters" onClick={cycleStatusFilter} title="Cycle through order statuses">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                More filters
+                Filter status
               </button>
             </div>
             <div className="cd-search-wrap">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input className="cd-search" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="cd-search" placeholder="Search orders…" value={search} onChange={e => { setSearch(e.target.value); setOrderPage(1) }} />
             </div>
           </div>
 
@@ -144,7 +183,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr>
-                <th style={{ width: 36 }}><input type="checkbox" onChange={e => setSelected(e.target.checked ? new Set(filteredOrders.map(o => o.id)) : new Set())} /></th>
+                <th style={{ width: 36 }}><input type="checkbox" onChange={e => setSelected(e.target.checked ? new Set(pagedOrders.map(o => o.id)) : new Set())} /></th>
                 <th>Order</th>
                 <th>Status</th>
                 <th>Details</th>
@@ -153,7 +192,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 <th>Fulfilment</th>
               </tr></thead>
               <tbody>
-                {filteredOrders.map(order => {
+                {pagedOrders.map(order => {
                   const isSelected = selected.has(order.id)
                   const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
                   return (
@@ -181,9 +220,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             </div>
             {filteredOrders.length === 0 && <div style={{ padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>No orders found</div>}
             <div className="cd-table-footer">
-              <button className="cd-prev-btn">← Previous</button>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>Page 1 of 1</span>
-              <button className="cd-prev-btn">Next →</button>
+              <button className="cd-prev-btn" onClick={() => setOrderPage(p => Math.max(1, p - 1))} disabled={safeOrderPage === 1}>← Previous</button>
+              <span style={{ fontSize: 13, color: "#6b7280" }}>Page {safeOrderPage} of {totalOrderPages}</span>
+              <button className="cd-prev-btn" onClick={() => setOrderPage(p => Math.min(totalOrderPages, p + 1))} disabled={safeOrderPage === totalOrderPages}>Next →</button>
             </div>
           </div>
         </div>
@@ -302,9 +341,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       case "balance": return (
         <div className="cd-content">
           <div className="cd-stats-strip">
-            <StatCard label="Outstanding Balance" value={`£${myBalance.toFixed(2)}`} delta="+15%" positive />
-            <StatCard label="Invoices"            value={String(invoices.length)} />
-            <StatCard label="Payments Made"       value={String(payments.length)} delta="+5%" positive />
+            <StatCard label="Outstanding Balance" value={`£${myBalance.toFixed(2)}`} delta="+15%" positive
+              iconBg="#fee2e2" iconColor="#b91c1c"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
+            <StatCard label="Invoices" value={String(myInvoices.length)}
+              iconBg="#dbeafe" iconColor="#1d4ed8"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
+            <StatCard label="Payments Made" value={String(myPayments.length)} delta="+5%" positive
+              iconBg="#e8f8ec" iconColor="#1f7a3a"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>} />
           </div>
           <div className="cd-table-card">
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0" }}><span style={{ fontWeight: 700, fontSize: 14 }}>Invoice History</span></div>
@@ -312,7 +357,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <table className="cd-table">
               <thead><tr><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
               <tbody>
-                {invoices.map(inv => (
+                {myInvoices.map(inv => (
                   <tr key={inv.id} className="cd-row">
                     <td><strong>{inv.invoiceNumber}</strong></td>
                     <td>£{inv.amount.toFixed(2)}</td>
@@ -323,6 +368,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               </tbody>
             </table>
             </div>
+            {myInvoices.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No invoices yet</div>}
           </div>
         </div>
       )
@@ -338,7 +384,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           <p className="cd-subtitle">{user.displayName} — Customer Portal</p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="cd-import-btn">
+          <button className="cd-import-btn" onClick={exportMyOrders} title="Download my orders as CSV">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Export
           </button>
@@ -362,19 +408,34 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         <form className="form-grid" onSubmit={async e => {
           e.preventDefault()
           const p = products.find(x => x.id === selProd)
-          if (!p) return
-          await createOrder({ customerId: user.id, customerName: user.displayName, amount: Number(qty) * 20, items: [{ productId: selProd, quantity: Number(qty), unitPrice: 20 }] })
+          if (!p || unitPrice <= 0) return
+          const quantity = Math.max(1, Number(qty) || 1)
+          await createOrder({
+            customerId: user.id,
+            customerName: user.displayName,
+            amount: quantity * unitPrice,
+            items: [{ productId: selProd, quantity, unitPrice }],
+          })
           setQty("1"); setShowOrder(false); load()
         }}>
           <label className="form-control wide">
             <span>Product</span>
             <select value={selProd} onChange={e => setSelProd(e.target.value)}>
-              {products.map(p => <option key={p.id} value={p.id}>{p.productName} — {p.size}</option>)}
+              {products.filter(p => stockMap[p.id] && stockMap[p.id].status !== "out").map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.productName} — {p.size} (£{(stockMap[p.id]?.price ?? 0).toFixed(2)}/box)
+                </option>
+              ))}
             </select>
           </label>
           <Input label="Quantity (boxes)" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} />
+          <div className="wide cd-order-total">
+            <span>Order total</span>
+            <strong>£{orderTotal.toFixed(2)}</strong>
+            {selectedStock && <span className="cd-order-total-note">{selectedStock.availableQuantity} boxes available</span>}
+          </div>
           <div className="wide actions-row">
-            <Button type="submit">Confirm Order</Button>
+            <Button type="submit" disabled={!selProd || unitPrice <= 0}>Confirm Order — £{orderTotal.toFixed(2)}</Button>
             <Button type="button" variant="secondary" onClick={() => setShowOrder(false)}>Cancel</Button>
           </div>
         </form>
