@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { AdminPortal } from './pages/admin/AdminPortal'
 import { CustomerPortal } from './pages/customer/CustomerPortal'
 import { SyncStatus } from './components/SyncStatus'
+import { CookieConsent } from './components/CookieConsent'
 import type { User } from './types'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
@@ -75,6 +76,7 @@ function App() {
       {user?.role === 'admin' ? <AdminPortal user={user} onLogout={handleLogout} /> : null}
       {user?.role === 'customer' ? <CustomerPortal user={user} onLogout={handleLogout} /> : null}
       <SyncStatus />
+      <CookieConsent />
     </ErrorBoundary>
   )
 }
