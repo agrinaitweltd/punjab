@@ -286,8 +286,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             </div>
             {filteredOrders.length === 0 && (
               <div style={{ padding: "36px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
-                <div style={{ fontSize: 30, marginBottom: 8 }}>🍍</div>
-                No orders yet — hit “+ Place Order” to get started.
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+                <div>No orders yet — hit “+ Place Order” to get started.</div>
               </div>
             )}
             <div className="sh-pager-row">
@@ -457,13 +457,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
   return (
     <AppLayout role="customer" user={user} current={current} onNavigate={setCurrent} onLogout={onLogout}>
-      {/* Page header */}
-      <div className="cd-header">
-        <div>
-          <h2 className="cd-title">My Account</h2>
-          <p className="cd-subtitle">{user.displayName} — Customer Portal</p>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
+      {/* Breadcrumb bar — Shopall style */}
+      <div className="cb-bar">
+        <button className="cb-arrow" onClick={() => setTab("overview")} disabled={tab === "overview"} title="Back to overview">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button className="cb-arrow" onClick={() => setTab("stock")} disabled={tab !== "overview"} title="Go to stock">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <span className="cb-path">Pages / <strong>{tab.charAt(0).toUpperCase() + tab.slice(1)}</strong></span>
+        <div className="cb-right">
           <button className="cd-import-btn" onClick={exportMyOrders} title="Download my orders as CSV">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Export

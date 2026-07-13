@@ -139,7 +139,10 @@ export function AdminsPage({
                           <div>
                             <div style={{ fontWeight: 600, color: "#111827", fontSize: 13.5 }}>{admin.name}</div>
                             {admin.isSuperAdmin && (
-                              <span className="adm-super-badge">⚡ Super Admin</span>
+                              <span className="adm-super-badge">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: 3, verticalAlign: "-1px" }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                                Super Admin
+                              </span>
                             )}
                           </div>
                         </div>
