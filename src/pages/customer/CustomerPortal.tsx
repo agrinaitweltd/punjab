@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
 import { createOrder, getOrders } from "../../api/ordersApi"
@@ -17,57 +17,66 @@ const STATUS_COLORS: Record<string, string> = {
 const STOCK_COLORS: Record<string, string> = {
   available: "#22c55e", low: "#f59e0b", out: "#ef4444",
 }
+const STATUS_TABS = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
 
 function Avatar({ name, color }: { name: string; color?: string }) {
-  const bg = color ?? "#22913f"
+  const bg = color ?? "#6d5ff2"
   return (
     <div style={{ width: 34, height: 34, borderRadius: 9, background: bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
       {name.slice(0, 2).toUpperCase()}
     </div>
   )
 }
-function AvatarStack({ count }: { count: number }) {
-  const colors = ["#22913f","#3b82f6","#8b5cf6","#f59e0b","#ef4444"]
-  return (
-    <div style={{ display: "flex", alignItems: "center" }}>
-      {Array.from({ length: Math.min(count, 3) }).map((_, i) => (
-        <div key={i} style={{ width: 26, height: 26, borderRadius: "50%", background: colors[i], border: "2px solid #fff", marginLeft: i ? -8 : 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff", fontWeight: 700 }}>
-          {String.fromCharCode(65 + i)}
-        </div>
-      ))}
-      {count > 3 && <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#f3f4f6", border: "2px solid #fff", marginLeft: -8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#6b7280", fontWeight: 700 }}>+{count - 3}</div>}
-    </div>
-  )
-}
 function ProgressBar({ pct, color }: { pct: number; color?: string }) {
   return (
     <div style={{ width: 80, height: 6, background: "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
-      <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color ?? "#22913f", borderRadius: 99 }} />
+      <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color ?? "#6d5ff2", borderRadius: 99 }} />
     </div>
   )
 }
-function StatCard({ label, value, delta, positive, icon, iconBg, iconColor, children }: {
+function StatCard({ label, value, delta, positive, icon, iconBg, iconColor }: {
   label: string; value: string; delta?: string; positive?: boolean
-  icon?: React.ReactNode; iconBg?: string; iconColor?: string; children?: React.ReactNode
+  icon?: React.ReactNode; iconBg?: string; iconColor?: string
 }) {
   return (
-    <div className="cd-stat">
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <p className="cd-stat-label">{label}</p>
-        {icon && <span className="db-stat-icon" style={{ background: iconBg ?? "var(--green-100)", color: iconColor ?? "var(--green-600)" }}>{icon}</span>}
+    <div className="sh-stat">
+      <div className="sh-stat-top">
+        {icon && <span className="sh-stat-ico" style={{ background: iconBg ?? "#eef2ff", color: iconColor ?? "#6d5ff2" }}>{icon}</span>}
+        <span className="sh-stat-label">{label}</span>
       </div>
-      <div className="cd-stat-value">{value}</div>
-      {delta && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-          <span className={positive ? "cd-delta-pos" : "cd-delta-neg"}>{positive ? "▲" : "▼"} {delta}</span>
-          {children}
-        </div>
-      )}
+      <div className="sh-stat-value">{value}</div>
+      {delta && <div className="sh-stat-delta"><strong className={positive ? "pos" : "neg"}>{delta}</strong> from last month</div>}
     </div>
   )
 }
 
-const TABS = ["overview","stock","orders","tickets","balance"] as const
+/* Lightweight SVG area chart (no libs) */
+function RevenueLine({ points }: { points: number[] }) {
+  if (points.length < 2) return <div className="sh-empty-chart">Place orders to see your revenue trend</div>
+  const W = 260, H = 120, pad = 6
+  const max = Math.max(...points, 1)
+  const step = (W - pad * 2) / (points.length - 1)
+  const xy = points.map((v, i) => [pad + i * step, H - pad - (v / max) * (H - pad * 2)])
+  const line = xy.map(p => p.join(",")).join(" ")
+  const area = `${pad},${H - pad} ${line} ${pad + (points.length - 1) * step},${H - pad}`
+  return (
+    <div className="sh-line-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="140" preserveAspectRatio="none" role="img" aria-label="Revenue trend">
+        <defs>
+          <linearGradient id="shArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6d5ff2" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#6d5ff2" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <polygon points={area} fill="url(#shArea)" />
+        <polyline points={line} fill="none" stroke="#6d5ff2" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {xy.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3" fill="#fff" stroke="#6d5ff2" strokeWidth="2" />)}
+      </svg>
+    </div>
+  )
+}
+
+const TABS = ["overview", "stock", "orders", "tickets", "balance"] as const
 type Tab = typeof TABS[number]
 
 export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -107,6 +116,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
   const stockMap   = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
 
+  const totalSpent  = myOrders.reduce((s, o) => s + o.amount, 0)
+  const totalBoxes  = myOrders.reduce((s, o) => s + o.items.reduce((q, it) => q + it.quantity, 0), 0)
+
   const filteredOrders = useMemo(() => {
     return myOrders.filter(o => {
       if (statusFilter && o.status !== statusFilter) return false
@@ -120,12 +132,6 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const safeOrderPage   = Math.min(orderPage, totalOrderPages)
   const pagedOrders     = filteredOrders.slice((safeOrderPage - 1) * ORDER_PAGE_SIZE, safeOrderPage * ORDER_PAGE_SIZE)
 
-  const cycleStatusFilter = () => {
-    const cycle = ["", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
-    setStatusFilter(f => cycle[(cycle.indexOf(f) + 1) % cycle.length])
-    setOrderPage(1)
-  }
-
   const exportMyOrders = () => {
     exportToCsv(
       "my-orders",
@@ -138,91 +144,157 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const unitPrice     = selectedStock?.price ?? 0
   const orderTotal    = unitPrice * Math.max(1, Number(qty) || 1)
 
-  const activeStock = stock.filter(s => s.status !== "out")
+  /* chart data — orders grouped by date */
+  const byDate: Record<string, number> = {}
+  for (const o of myOrders) byDate[o.date] = (byDate[o.date] ?? 0) + o.amount
+  const barData = Object.entries(byDate).sort((a, b) => a[0].localeCompare(b[0])).slice(-8)
+    .map(([date, amt]) => ({ label: date.slice(5), value: amt }))
+  const maxBar = Math.max(...barData.map(b => b.value), 1)
+  const cumulative: number[] = []
+  ;[...myOrders].sort((a, b) => a.date.localeCompare(b.date)).forEach(o => {
+    cumulative.push((cumulative[cumulative.length - 1] ?? 0) + o.amount)
+  })
+
+  const statusCount = (s: string) => myOrders.filter(o => o.status === s).length
 
   const page = () => {
     switch (tab) {
-      // ── OVERVIEW ──────────────────────────────────────────
+      // ── OVERVIEW — Shopall style ─────────────────────────
       case "overview": return (
         <div className="cd-content">
-          {/* stat strip */}
-          <div className="cd-stats-strip">
-            <StatCard label="Total Orders" value={String(myOrders.length)} delta="+20%" positive
-              iconBg="#e8f8ec" iconColor="#1f7a3a"
-              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>}>
-              <AvatarStack count={3} />
-            </StatCard>
-            <StatCard label="Balance Owing" value={`£${myBalance.toFixed(2)}`} delta="+15%" positive
-              iconBg="#ede9fe" iconColor="#7c3aed"
-              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
-            <StatCard label="Open Tickets" value={String(myTickets.filter(t => t.status === "Open").length)} delta="Active" positive
-              iconBg="#fef3c7" iconColor="#b45309"
-              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>} />
+          {/* promo banner */}
+          <div className="sh-banner">
+            <div className="sh-banner-left">
+              <span className="sh-banner-eyebrow">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                Fresh stock daily
+              </span>
+              <span className="sh-banner-title">Today's exotic produce is live — browse stock &amp; place your order.</span>
+            </div>
+            <button className="sh-banner-btn" onClick={() => setTab("stock")}>View Stock</button>
           </div>
 
-          {/* filter row */}
-          <div className="cd-filter-row">
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <span className="cd-chip">
-                {statusFilter || "All statuses"}
-                {statusFilter && <button className="cd-chip-x" onClick={() => { setStatusFilter(""); setOrderPage(1) }} title="Clear status filter">×</button>}
+          {/* overview head */}
+          <div className="sh-head">
+            <span className="sh-head-title">Overview</span>
+            <div className="sh-controls">
+              <span className="sh-chip" style={{ cursor: "default" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                {new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
               </span>
-              <button className="cd-more-filters" onClick={cycleStatusFilter} title="Cycle through order statuses">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                Filter status
+              <button className="sh-chip" onClick={exportMyOrders} title="Download my orders as CSV">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export
               </button>
             </div>
-            <div className="cd-search-wrap">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input className="cd-search" placeholder="Search orders…" value={search} onChange={e => { setSearch(e.target.value); setOrderPage(1) }} />
+          </div>
+
+          {/* stat cards */}
+          <div className="sh-stats">
+            <StatCard label="Total Spent" value={`£${totalSpent.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`} delta="+41%" positive
+              iconBg="#eef2ff" iconColor="#6d5ff2"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
+            <StatCard label="Total Orders" value={String(myOrders.length)} delta="+12%" positive
+              iconBg="#ecfeff" iconColor="#0891b2"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>} />
+            <StatCard label="Boxes Ordered" value={String(totalBoxes)} delta="+8%" positive
+              iconBg="#f0fdf4" iconColor="#16a34a"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
+            <StatCard label="Balance Owing" value={`£${myBalance.toFixed(2)}`} delta={myBalance > 0 ? "due" : "clear"} positive={myBalance === 0}
+              iconBg="#fef2f2" iconColor="#dc2626"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>} />
+          </div>
+
+          {/* charts */}
+          <div className="sh-charts">
+            <div className="sh-chart-card">
+              <div className="sh-chart-title">Order totals</div>
+              <div className="sh-chart-big">{myOrders.length ? `${myOrders.length} orders` : "No orders yet"}</div>
+              <div className="sh-chart-sub"><strong>{myOrders.length ? "+20.1%" : ""}</strong>{myOrders.length ? " from last month" : "Your order history will appear here"}</div>
+              {barData.length > 0 ? (
+                <div className="sh-bars">
+                  {barData.map((b, i) => (
+                    <div key={i} className="sh-bar-col">
+                      <div className="sh-bar-track">
+                        <div className="sh-bar-fill" style={{ height: `${Math.max(6, (b.value / maxBar) * 100)}%` }} title={`£${b.value.toFixed(2)}`} />
+                      </div>
+                      <span className="sh-bar-lab">{b.label}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="sh-empty-chart">Place your first order to see charts</div>}
+            </div>
+            <div className="sh-chart-card">
+              <div className="sh-chart-title">Total Spend</div>
+              <div className="sh-chart-big">£{totalSpent.toLocaleString("en-GB", { minimumFractionDigits: 2 })}</div>
+              <div className="sh-chart-sub"><strong>{cumulative.length > 1 ? "+20.1%" : ""}</strong>{cumulative.length > 1 ? " from last month" : "Cumulative spend over time"}</div>
+              <RevenueLine points={cumulative} />
             </div>
           </div>
 
-          {/* orders table */}
-          <div className="cd-table-card">
-            <div className="cd-table-scroll">
-            <table className="cd-table">
-              <thead><tr>
-                <th style={{ width: 36 }}><input type="checkbox" onChange={e => setSelected(e.target.checked ? new Set(pagedOrders.map(o => o.id)) : new Set())} /></th>
-                <th>Order</th>
-                <th>Status</th>
-                <th>Details</th>
-                <th>Items</th>
-                <th>Value</th>
-                <th>Fulfilment</th>
-              </tr></thead>
-              <tbody>
-                {pagedOrders.map(order => {
-                  const isSelected = selected.has(order.id)
-                  const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
-                  return (
-                    <tr key={order.id} className={isSelected ? "cd-row selected" : "cd-row"}>
-                      <td><input type="checkbox" checked={isSelected} onChange={() => { const s = new Set(selected); if (isSelected) s.delete(order.id); else s.add(order.id); setSelected(s) }} /></td>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <Avatar name={order.orderNumber} color="#22913f" />
-                          <div>
-                            <div style={{ fontWeight: 600, color: "#111827", fontSize: 13.5 }}>{order.orderNumber}</div>
-                            <div style={{ fontSize: 12, color: "#9ca3af" }}>{order.date}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td><span className="cd-status-badge" style={{ background: STATUS_COLORS[order.status] + "20", color: STATUS_COLORS[order.status] }}>{order.status}</span></td>
-                      <td style={{ fontSize: 13, color: "#6b7280" }}>{order.items.length} product{order.items.length > 1 ? "s" : ""}</td>
-                      <td><AvatarStack count={order.items.length + 1} /></td>
-                      <td><strong>£{order.amount.toFixed(2)}</strong></td>
-                      <td><ProgressBar pct={pct} color={STATUS_COLORS[order.status]} /></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          {/* recent orders */}
+          <div className="sh-table-card">
+            <div className="sh-ttabs">
+              {STATUS_TABS.map(t => {
+                const n = t === "All" ? myOrders.length : statusCount(t)
+                const active = (t === "All" && !statusFilter) || statusFilter === t
+                return (
+                  <button key={t} className={"sh-ttab" + (active ? " on" : "")} onClick={() => { setStatusFilter(t === "All" ? "" : t); setOrderPage(1) }}>
+                    {t}{n > 0 && t !== "All" && <span className="sh-ttab-badge">{n}</span>}
+                  </button>
+                )
+              })}
+              <div style={{ marginLeft: "auto", padding: "6px 4px" }}>
+                <input className="cd-search" style={{ width: 140 }} placeholder="Search…" value={search} onChange={e => { setSearch(e.target.value); setOrderPage(1) }} />
+              </div>
             </div>
-            {filteredOrders.length === 0 && <div style={{ padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>No orders found</div>}
-            <div className="cd-table-footer">
-              <button className="cd-prev-btn" onClick={() => setOrderPage(p => Math.max(1, p - 1))} disabled={safeOrderPage === 1}>← Previous</button>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>Page {safeOrderPage} of {totalOrderPages}</span>
-              <button className="cd-prev-btn" onClick={() => setOrderPage(p => Math.min(totalOrderPages, p + 1))} disabled={safeOrderPage === totalOrderPages}>Next →</button>
+            <div className="cd-table-scroll">
+              <table className="cd-table">
+                <thead><tr>
+                  <th style={{ width: 36 }}><input type="checkbox" onChange={e => setSelected(e.target.checked ? new Set(pagedOrders.map(o => o.id)) : new Set())} /></th>
+                  <th>Order</th>
+                  <th>Status</th>
+                  <th>Details</th>
+                  <th>Value</th>
+                  <th>Fulfilment</th>
+                </tr></thead>
+                <tbody>
+                  {pagedOrders.map(order => {
+                    const isSelected = selected.has(order.id)
+                    const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
+                    return (
+                      <tr key={order.id} className={isSelected ? "cd-row selected" : "cd-row"}>
+                        <td><input type="checkbox" checked={isSelected} onChange={() => { const s = new Set(selected); if (isSelected) s.delete(order.id); else s.add(order.id); setSelected(s) }} /></td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <Avatar name={order.orderNumber} />
+                            <div>
+                              <div style={{ fontWeight: 600, color: "#111827", fontSize: 13.5 }}>{order.orderNumber}</div>
+                              <div style={{ fontSize: 12, color: "#9ca3af" }}>{order.date}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td><span className="cd-status-badge" style={{ background: STATUS_COLORS[order.status] + "20", color: STATUS_COLORS[order.status] }}>{order.status}</span></td>
+                        <td style={{ fontSize: 13, color: "#6b7280" }}>{order.items.length} product{order.items.length !== 1 ? "s" : ""}</td>
+                        <td><strong>£{order.amount.toFixed(2)}</strong></td>
+                        <td><ProgressBar pct={pct} color={STATUS_COLORS[order.status]} /></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {filteredOrders.length === 0 && (
+              <div style={{ padding: "36px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
+                <div style={{ fontSize: 30, marginBottom: 8 }}>🍍</div>
+                No orders yet — hit “+ Place Order” to get started.
+              </div>
+            )}
+            <div className="sh-pager-row">
+              <button className="sh-pgbtn" onClick={() => setOrderPage(1)} disabled={safeOrderPage === 1}>&laquo;</button>
+              <button className="sh-pgbtn" onClick={() => setOrderPage(p => Math.max(1, p - 1))} disabled={safeOrderPage === 1}>&lsaquo;</button>
+              <button className="sh-pgbtn" onClick={() => setOrderPage(p => Math.min(totalOrderPages, p + 1))} disabled={safeOrderPage === totalOrderPages}>&rsaquo;</button>
+              <button className="sh-pgbtn" onClick={() => setOrderPage(totalOrderPages)} disabled={safeOrderPage === totalOrderPages}>&raquo;</button>
             </div>
           </div>
         </div>
@@ -231,10 +303,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       // ── DAILY STOCK ───────────────────────────────────────
       case "stock": return (
         <div className="cd-content">
-          <div className="cd-stats-strip">
-            <StatCard label="Available Products" value={String(activeStock.length)} delta="+7%" positive />
-            <StatCard label="Low Stock Items"    value={String(stock.filter(s => s.status === "low").length)} />
-            <StatCard label="Out of Stock"       value={String(stock.filter(s => s.status === "out").length)} delta="-2%" />
+          <div className="sh-stats" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+            <StatCard label="Available Products" value={String(stock.filter(s => s.status !== "out").length)} delta="+7%" positive
+              iconBg="#f0fdf4" iconColor="#16a34a"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
+            <StatCard label="Low Stock Items" value={String(stock.filter(s => s.status === "low").length)}
+              iconBg="#fef3c7" iconColor="#b45309"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>} />
+            <StatCard label="Out of Stock" value={String(stock.filter(s => s.status === "out").length)}
+              iconBg="#fef2f2" iconColor="#dc2626"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>} />
           </div>
           <div className="cd-table-card">
             <div className="cd-table-scroll">
@@ -274,6 +352,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               </tbody>
             </table>
             </div>
+            {products.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No products available yet — check back soon.</div>}
           </div>
         </div>
       )
@@ -296,7 +375,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                     <tr key={o.id} className="cd-row">
                       <td><strong>{o.orderNumber}</strong></td>
                       <td style={{ color: "#6b7280" }}>{o.date}</td>
-                      <td>{o.items.length} item{o.items.length > 1 ? "s" : ""}</td>
+                      <td>{o.items.length} item{o.items.length !== 1 ? "s" : ""}</td>
                       <td><strong>£{o.amount.toFixed(2)}</strong></td>
                       <td><span className="cd-status-badge" style={{ background: STATUS_COLORS[o.status] + "20", color: STATUS_COLORS[o.status] }}>{o.status}</span></td>
                       <td><ProgressBar pct={pct} color={STATUS_COLORS[o.status]} /></td>
@@ -333,6 +412,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               </tbody>
             </table>
             </div>
+            {myTickets.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No tickets yet</div>}
           </div>
         </div>
       )
@@ -340,15 +420,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       // ── BALANCE ────────────────────────────────────────────
       case "balance": return (
         <div className="cd-content">
-          <div className="cd-stats-strip">
-            <StatCard label="Outstanding Balance" value={`£${myBalance.toFixed(2)}`} delta="+15%" positive
-              iconBg="#fee2e2" iconColor="#b91c1c"
+          <div className="sh-stats" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+            <StatCard label="Outstanding Balance" value={`£${myBalance.toFixed(2)}`}
+              iconBg="#fef2f2" iconColor="#dc2626"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
             <StatCard label="Invoices" value={String(myInvoices.length)}
-              iconBg="#dbeafe" iconColor="#1d4ed8"
+              iconBg="#eef2ff" iconColor="#6d5ff2"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
             <StatCard label="Payments Made" value={String(myPayments.length)} delta="+5%" positive
-              iconBg="#e8f8ec" iconColor="#1f7a3a"
+              iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>} />
           </div>
           <div className="cd-table-card">
@@ -394,7 +474,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
       {/* Tabs */}
       <div className="cd-tabs">
-        {(["overview","stock","orders","tickets","balance"] as Tab[]).map(t => (
+        {(["overview", "stock", "orders", "tickets", "balance"] as Tab[]).map(t => (
           <button key={t} className={"cd-tab" + (tab === t ? " active" : "")} onClick={() => setTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>

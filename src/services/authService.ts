@@ -10,8 +10,16 @@ class AuthService {
     await new Promise(r => setTimeout(r, 200))
 
     if (role === "admin") {
-      // Admin auth uses the local admin roster (mock data) regardless of Supabase.
-      const admin = mockAdmins.find(a =>
+      // Prefer the live Supabase admin roster; the built-in owner
+      // credentials remain as a fallback so the portal is never locked out.
+      let roster = mockAdmins
+      if (supabaseReady) {
+        try {
+          const dbAdmins = await databaseService.getAdmins()
+          if (dbAdmins.length > 0) roster = [...dbAdmins, ...mockAdmins]
+        } catch { /* offline — use fallback roster */ }
+      }
+      const admin = roster.find(a =>
         a.email === usernameOrEmail && a.password === password && a.active
       )
       if (admin) {

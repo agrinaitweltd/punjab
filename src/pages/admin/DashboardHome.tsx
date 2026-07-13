@@ -12,35 +12,6 @@ const SORT_LABELS: Record<SortMode, string> = {
 }
 const STATUS_FILTERS: (OrderStatus | "All")[] = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
 
-function InfoIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#c3c9d2" }}>
-      <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  )
-}
-
-function StatCard({ label, value, delta, deltaColor, sub, onClick, icon, iconBg, iconColor }: {
-  label: string; value: string; delta?: string; deltaColor?: string; sub?: string; onClick?: () => void
-  icon?: React.ReactNode; iconBg?: string; iconColor?: string
-}) {
-  return (
-    <div className="db-stat" onClick={onClick} style={onClick ? { cursor: "pointer" } : undefined}>
-      <div className="db-stat-head">
-        <span className="db-stat-label">{label}</span>
-        {icon
-          ? <span className="db-stat-icon" style={{ background: iconBg ?? "var(--green-100)", color: iconColor ?? "var(--green-600)" }}>{icon}</span>
-          : <InfoIcon />}
-      </div>
-      <div className="db-stat-value">{value}</div>
-      <div className="db-stat-sub">
-        {sub ?? "vs last month"}
-        {delta && <span className="db-stat-delta" style={{ color: deltaColor ?? "#16a34a" }}>{delta}</span>}
-      </div>
-    </div>
-  )
-}
-
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Pending:   { bg: "#fef9c3", color: "#a16207" },
   Confirmed: { bg: "#dbeafe", color: "#1d4ed8" },
@@ -70,6 +41,7 @@ export function DashboardHome({
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
   const pendingOrders = orders.filter(o => o.status === "Pending").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
+  const avgOrder      = orders.length ? orderRevenue / orders.length : 0
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -190,46 +162,72 @@ export function DashboardHome({
         </div>
       </div>
 
-      {/* ── Stats Row ── */}
+      {/* ── Summary card (hireus style) ── */}
       {showStats && (
-        <div className="ps-stats-row">
-          <StatCard label="Total Customers" value={String(customers.length)} delta={`+${Math.max(1, Math.ceil(customers.length * 0.08))} new`} onClick={() => onNavigate?.("customers")}
-            iconBg="#e8f8ec" iconColor="#1f7a3a"
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>} />
-          <StatCard label="Products" value={String(products.length)} delta="↑ 3%" onClick={() => onNavigate?.("products")}
-            iconBg="#dbeafe" iconColor="#1d4ed8"
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>} />
-          <StatCard label="Order Revenue" value={`£${orderRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`} delta="↑ 9%" onClick={() => onNavigate?.("orders")}
-            iconBg="#ede9fe" iconColor="#7c3aed"
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
-          <StatCard label="Active Orders" value={String(activeOrders)} delta={`${pendingOrders} pending`} deltaColor="#f59e0b" onClick={() => onNavigate?.("orders")}
-            iconBg="#fef3c7" iconColor="#b45309"
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>} />
+        <div className="hr-summary">
+          <div className="hr-strip">
+            <div className="hr-stat"><div className="hr-stat-val">{activeOrders}</div><div className="hr-stat-lab">Active Orders</div></div>
+            <div className="hr-stat"><div className="hr-stat-val">{pendingOrders}</div><div className="hr-stat-lab">Pending</div></div>
+            <div className="hr-stat"><div className="hr-stat-val">£{avgOrder.toFixed(0)}</div><div className="hr-stat-lab">Avg Order</div></div>
+            <div className="hr-stat"><div className="hr-stat-val">{customers.length}</div><div className="hr-stat-lab">Customers</div></div>
+            <div className="hr-stat"><div className="hr-stat-val">{products.length}</div><div className="hr-stat-lab">Products</div></div>
+          </div>
+          <div className="hr-info-row">
+            <div><div className="hr-info-lab">Order Revenue</div><div className="hr-info-val">£{orderRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}</div></div>
+            <div><div className="hr-info-lab">Total Orders</div><div className="hr-info-val">{orders.length}</div></div>
+            <div><div className="hr-info-lab">Today</div><div className="hr-info-val">{new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div></div>
+            <div><div className="hr-info-lab">Portal</div><div className="hr-info-val" style={{ color: "#15803d" }}>● Live sync</div></div>
+            <div><div className="hr-info-lab">Currency</div><div className="hr-info-val">GBP (£)</div></div>
+          </div>
         </div>
       )}
 
       {/* ── Insights Row: Top Customers + Recent Activity ── */}
       <div className="db-insights-row">
-        {/* Top Customers */}
+        {/* Customers — hireus-style cards */}
         <div className="db-quick-section">
-          <div className="db-section-head">
-            <h3 className="db-section-title">Top Customers</h3>
+          <div className="hr-found-row">
+            <span className="hr-found">{customers.length} customer{customers.length !== 1 ? "s" : ""} found</span>
             <button className="db-section-btn" onClick={() => onNavigate?.("customers")}>View All →</button>
           </div>
-          <div className="db-customers-grid">
+          <div className="hr-cards">
             {customers.slice(0, 4).map((customer, i) => (
-              <div key={customer.id} className="db-customer-card" onClick={() => onNavigate?.("customers")} style={{ cursor: "pointer" }}>
-                <div className="db-customer-avatar" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
-                  {customer.companyName.slice(0, 2).toUpperCase()}
+              <div key={customer.id} className="hr-card">
+                <div className="hr-card-top">
+                  <div className="hr-card-av" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                    {customer.companyName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="hr-card-name">{customer.companyName}</div>
+                    <div className="hr-card-sub"><span className="star">★</span> {customer.customerNumber}</div>
+                  </div>
                 </div>
-                <div className="db-customer-info">
-                  <div className="db-customer-name">{customer.companyName}</div>
-                  <div className="db-customer-meta">{customer.customerNumber}</div>
+                <div className="hr-boxes">
+                  <div className="hr-box">
+                    <div className="hr-box-val">{customer.deliveryArea || "—"}</div>
+                    <div className="hr-box-lab">Delivery Area</div>
+                  </div>
+                  <div className="hr-box">
+                    <div className="hr-box-val">£{customer.balance.toLocaleString("en-GB")}</div>
+                    <div className="hr-box-lab">Balance</div>
+                  </div>
                 </div>
-                <div className="db-customer-balance">£{customer.balance.toLocaleString("en-GB")}</div>
+                <div className="hr-card-btns">
+                  <button className="hr-btn" onClick={() => onNavigate?.("invoices")}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Invoices
+                  </button>
+                  <button className="hr-btn" onClick={() => onNavigate?.("orders")}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Orders
+                  </button>
+                </div>
+                <div className={"hr-card-note " + (customer.status === "active" ? "ok" : "warn")}>
+                  {customer.status === "active" ? `Active — ${customer.paymentTerms}` : "Account inactive"}
+                </div>
               </div>
             ))}
-            {customers.length === 0 && <div className="db-empty">No customers yet.</div>}
+            {customers.length === 0 && <div className="db-empty" style={{ gridColumn: "1 / -1" }}>No customers yet — add your first customer from the Customer page.</div>}
           </div>
         </div>
 

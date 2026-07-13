@@ -137,6 +137,10 @@ class SupabaseDatabaseService {
     const row = { id: genId("p"), ...toProductRow(input) }
     const { data, error } = await db().from("products").insert(row).select().single()
     if (error) throw error
+    // Every product needs a stock row so it appears on the Stock page for pricing.
+    const stockRow = { id: genId("s"), product_id: row.id, available_quantity: 0, price: 0, status: "out", last_updated: new Date().toLocaleString() }
+    const { error: stockErr } = await db().from("stock_items").insert(stockRow)
+    if (stockErr) console.error("createProduct stock row", stockErr)
     return mapProduct(data)
   }
   async updateProduct(id: string, input: Partial<Product>): Promise<Product | null> {
