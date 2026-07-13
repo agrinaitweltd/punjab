@@ -24,7 +24,7 @@ export async function updateStock(id: string, input: Partial<StockItem>): Promis
   await new Promise(r => setTimeout(r, 100))
   const idx = stock.findIndex(s => s.id === id)
   if (idx === -1) return null
-  const updated = { ...stock[idx], ...input, lastUpdated: new Date().toISOString().slice(0, 10) } as StockItem
+  const updated = { ...stock[idx], ...input, lastUpdated: new Date().toISOString() } as StockItem
   stock[idx] = updated
   return updated
 }

@@ -166,7 +166,7 @@ class SupabaseDatabaseService {
       available_quantity: input.availableQuantity,
       price: input.price,
       status: input.status,
-      last_updated: new Date().toLocaleString(),
+      last_updated: new Date().toISOString(),
     }
     const { data, error } = await db().from("stock_items").update(row).eq("id", id).select().single()
     if (error) { console.error("updateStock", error); return null }

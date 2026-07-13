@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react"
-import type { Customer, Order, Product, ActivityLog, OrderStatus } from "../../types"
+import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus } from "../../types"
 import { exportToCsv } from "../../lib/exportCsv"
+import { GmtClock } from "../../components/GmtClock"
+import { CountUp } from "../../components/CountUp"
+import { isStockFresh, latestStockUpdate, nextCycleStart, formatGmtTime } from "../../lib/stockCycle"
 
 const PAGE_SIZE = 8
 
@@ -26,9 +29,9 @@ type HomeTab = "overview" | "orders" | "customers"
 type CustFilter = "all" | "active" | "inactive"
 
 export function DashboardHome({
-  customers, products, orders, activity = [], onNavigate,
+  customers, products, orders, stock = [], activity = [], onNavigate,
 }: {
-  customers: Customer[]; products: Product[]; orders: Order[]; activity?: ActivityLog[]
+  customers: Customer[]; products: Product[]; orders: Order[]; stock?: StockItem[]; activity?: ActivityLog[]
   onNavigate?: (page: string) => void
 }) {
   const [tab, setTab]               = useState<HomeTab>("overview")
@@ -47,6 +50,13 @@ export function DashboardHome({
   const pendingOrders = orders.filter(o => o.status === "Pending").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
   const avgOrder      = orders.length ? orderRevenue / orders.length : 0
+
+  const stockFresh     = isStockFresh(stock)
+  const stockUpdatedAt = latestStockUpdate(stock)
+  const inStock        = stock.filter(s => s.status === "available").length
+  const lowStockItems  = stock.filter(s => s.status === "low")
+  const outStockItems  = stock.filter(s => s.status === "out")
+  const productName    = (id: string) => products.find(p => p.id === id)?.productName ?? "Unknown product"
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -172,6 +182,7 @@ export function DashboardHome({
             Food Wholesale
           </span>
           <div className="hd-right">
+            <GmtClock />
             <span className="hd-badge"><span className="hd-dot ok" /> Active</span>
             <span className="hd-badge">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e07c24" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -198,24 +209,103 @@ export function DashboardHome({
         </div>
       </div>
 
+      {/* ── Daily stock cycle banner (refreshes 06:00 GMT) ── */}
+      <div className={"stk-banner " + (stockFresh ? "ok" : "due")}>
+        <span className="stk-banner-ico">
+          {stockFresh
+            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+        </span>
+        <div className="stk-banner-body">
+          {stockFresh ? (
+            <>
+              <strong>Today's stock is live.</strong> Updated {stockUpdatedAt ? `at ${formatGmtTime(stockUpdatedAt)}` : "today"} — valid until {nextCycleStart().toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" })} 06:00 GMT.
+            </>
+          ) : (
+            <>
+              <strong>Daily stock update due.</strong> Stock refreshes every day at 06:00 GMT — please update today's quantities and prices for customers.
+            </>
+          )}
+        </div>
+        <button className="stk-banner-btn" onClick={() => onNavigate?.("stock")}>
+          {stockFresh ? "Review Stock" : "Update Stock Now"}
+        </button>
+      </div>
+
       {/* ═══ OVERVIEW TAB ═══ */}
       {tab === "overview" && (
         <>
           <div className="hr-summary">
             <div className="hr-strip">
-              <div className="hr-stat"><div className="hr-stat-val">{activeOrders}</div><div className="hr-stat-lab">Active Orders</div></div>
-              <div className="hr-stat"><div className="hr-stat-val">{pendingOrders}</div><div className="hr-stat-lab">Pending</div></div>
-              <div className="hr-stat"><div className="hr-stat-val">£{avgOrder.toFixed(0)}</div><div className="hr-stat-lab">Avg Order</div></div>
-              <div className="hr-stat"><div className="hr-stat-val">{customers.length}</div><div className="hr-stat-lab">Customers</div></div>
-              <div className="hr-stat"><div className="hr-stat-val">{products.length}</div><div className="hr-stat-lab">Products</div></div>
+              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={activeOrders} /></div><div className="hr-stat-lab">Active Orders</div></div>
+              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={pendingOrders} /></div><div className="hr-stat-lab">Pending</div></div>
+              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={avgOrder} prefix="£" /></div><div className="hr-stat-lab">Avg Order</div></div>
+              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={customers.length} /></div><div className="hr-stat-lab">Customers</div></div>
+              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={products.length} /></div><div className="hr-stat-lab">Products</div></div>
             </div>
             <div className="hr-info-row">
-              <div><div className="hr-info-lab">Order Revenue</div><div className="hr-info-val">£{orderRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}</div></div>
-              <div><div className="hr-info-lab">Total Orders</div><div className="hr-info-val">{orders.length}</div></div>
-              <div><div className="hr-info-lab">Today</div><div className="hr-info-val">{new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div></div>
-              <div><div className="hr-info-lab">Status</div><div className="hr-info-val" style={{ color: "#15803d" }}>Online</div></div>
+              <div><div className="hr-info-lab">Order Revenue</div><div className="hr-info-val hr-money"><CountUp value={orderRevenue} prefix="£" decimals={2} /></div></div>
+              <div><div className="hr-info-lab">Total Orders</div><div className="hr-info-val"><CountUp value={orders.length} /></div></div>
+              <div><div className="hr-info-lab">Today (GMT)</div><div className="hr-info-val">{new Date().toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}</div></div>
+              <div><div className="hr-info-lab">Stock Status</div><div className="hr-info-val" style={{ color: stockFresh ? "#15803d" : "#b45309" }}>{stockFresh ? "Updated today" : "Update due"}</div></div>
               <div><div className="hr-info-lab">Currency</div><div className="hr-info-val">GBP (£)</div></div>
             </div>
+          </div>
+
+          {/* quick actions */}
+          <div className="qa-row">
+            <button className="qa-btn" onClick={() => onNavigate?.("customers")}>
+              <span className="qa-ico" style={{ background: "#e8f8ec", color: "#1f7a3a" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+              </span>
+              <span><strong>Add Customer</strong><small>Create a trade login</small></span>
+            </button>
+            <button className="qa-btn" onClick={() => onNavigate?.("products")}>
+              <span className="qa-ico" style={{ background: "#dbeafe", color: "#1d4ed8" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </span>
+              <span><strong>Add Product</strong><small>New produce line</small></span>
+            </button>
+            <button className="qa-btn" onClick={() => onNavigate?.("stock")}>
+              <span className="qa-ico" style={{ background: "#fef3c7", color: "#b45309" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              </span>
+              <span><strong>Update Stock</strong><small>Daily 06:00 GMT refresh</small></span>
+            </button>
+            <button className="qa-btn" onClick={() => onNavigate?.("invoices")}>
+              <span className="qa-ico" style={{ background: "#ede9fe", color: "#7c3aed" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </span>
+              <span><strong>Invoices</strong><small>Billing &amp; payments</small></span>
+            </button>
+          </div>
+
+          {/* stock health */}
+          <div className="db-quick-section" style={{ marginBottom: 16 }}>
+            <div className="db-section-head">
+              <h3 className="db-section-title">Stock Health</h3>
+              <button className="db-section-btn" onClick={() => onNavigate?.("stock")}>Manage Stock →</button>
+            </div>
+            <div className="stk-health">
+              <div className="stk-pill"><span className="stk-num" style={{ color: "#15803d" }}><CountUp value={inStock} /></span> In stock</div>
+              <div className="stk-pill"><span className="stk-num" style={{ color: "#b45309" }}><CountUp value={lowStockItems.length} /></span> Low stock</div>
+              <div className="stk-pill"><span className="stk-num" style={{ color: "#b91c1c" }}><CountUp value={outStockItems.length} /></span> Out of stock</div>
+            </div>
+            {(lowStockItems.length > 0 || outStockItems.length > 0) ? (
+              <div className="stk-alerts">
+                {[...outStockItems, ...lowStockItems].slice(0, 4).map(s => (
+                  <div key={s.id} className="stk-alert">
+                    <span className="stk-alert-dot" style={{ background: s.status === "out" ? "#b91c1c" : "#b45309" }} />
+                    <span className="stk-alert-name">{productName(s.productId)}</span>
+                    <span className="stk-alert-meta">{s.status === "out" ? "Out of stock" : `${s.availableQuantity} boxes left`}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="db-empty" style={{ padding: "12px 4px" }}>
+                {stock.length === 0 ? "No stock lines yet — add products to start tracking stock." : "All products are healthy — no low or out-of-stock alerts."}
+              </div>
+            )}
           </div>
 
           {/* section strip — quick links */}

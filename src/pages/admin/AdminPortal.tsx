@@ -108,6 +108,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           customers={customers}
           products={products}
           orders={orders}
+          stock={stock}
           activity={activity}
           onNavigate={setCurrent}
         />
