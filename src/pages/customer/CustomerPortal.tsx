@@ -9,6 +9,8 @@ import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { exportToCsv } from "../../lib/exportCsv"
+import { GmtClock } from "../../components/GmtClock"
+import { isStockFresh, latestStockUpdate, currentCycleStart, formatGmtTime } from "../../lib/stockCycle"
 
 const STATUS_COLORS: Record<string, string> = {
   Pending: "#f59e0b", Confirmed: "#3b82f6", Preparing: "#8b5cf6",
@@ -98,6 +100,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [qty, setQty]                   = useState("1")
   const [ticketSubject, setTicketSubject] = useState("")
   const [ticketMsg, setTicketMsg]       = useState("")
+  const [notifOpen, setNotifOpen]       = useState(false)
 
   const load = async () => {
     const [p, s, o, inv, pay, tix] = await Promise.all([
@@ -106,8 +109,18 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
     const firstInStock = p.find(prod => s.some(si => si.productId === prod.id && si.status !== "out"))
     setSelProd(firstInStock?.id ?? "")
+    // Stock-update notification — shows once per daily cycle (06:00 GMT)
+    try {
+      const key = "punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10)
+      if (!sessionStorage.getItem(key)) setNotifOpen(true)
+    } catch { /* storage unavailable */ }
   }
   useEffect(() => { load() }, [])
+
+  const dismissNotif = () => {
+    try { sessionStorage.setItem("punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10), "1") } catch { /* ignore */ }
+    setNotifOpen(false)
+  }
 
   const myOrders   = useMemo(() => orders.filter(o => o.customerId === user.id), [orders, user.id])
   const myTickets  = useMemo(() => tickets.filter(t => t.customerId === user.id), [tickets, user.id])
@@ -116,8 +129,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
   const stockMap   = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
 
-  const totalSpent  = myOrders.reduce((s, o) => s + o.amount, 0)
   const totalBoxes  = myOrders.reduce((s, o) => s + o.items.reduce((q, it) => q + it.quantity, 0), 0)
+  const stockFresh  = isStockFresh(stock)
+  const stockAt     = latestStockUpdate(stock)
 
   const filteredOrders = useMemo(() => {
     return myOrders.filter(o => {
@@ -144,15 +158,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const unitPrice     = selectedStock?.price ?? 0
   const orderTotal    = unitPrice * Math.max(1, Number(qty) || 1)
 
-  /* chart data — orders grouped by date */
+  /* chart data — boxes ordered, grouped by date (non-financial) */
+  const boxesOf = (o: Order) => o.items.reduce((q, it) => q + it.quantity, 0)
   const byDate: Record<string, number> = {}
-  for (const o of myOrders) byDate[o.date] = (byDate[o.date] ?? 0) + o.amount
+  for (const o of myOrders) byDate[o.date] = (byDate[o.date] ?? 0) + boxesOf(o)
   const barData = Object.entries(byDate).sort((a, b) => a[0].localeCompare(b[0])).slice(-8)
-    .map(([date, amt]) => ({ label: date.slice(5), value: amt }))
+    .map(([date, n]) => ({ label: date.slice(5), value: n }))
   const maxBar = Math.max(...barData.map(b => b.value), 1)
   const cumulative: number[] = []
   ;[...myOrders].sort((a, b) => a.date.localeCompare(b.date)).forEach(o => {
-    cumulative.push((cumulative[cumulative.length - 1] ?? 0) + o.amount)
+    cumulative.push((cumulative[cumulative.length - 1] ?? 0) + boxesOf(o))
   })
 
   const statusCount = (s: string) => myOrders.filter(o => o.status === s).length
@@ -189,26 +204,26 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             </div>
           </div>
 
-          {/* stat cards */}
+          {/* stat cards — non-financial */}
           <div className="sh-stats">
-            <StatCard label="Total Spent" value={`£${totalSpent.toLocaleString("en-GB", { minimumFractionDigits: 2 })}`} delta="+41%" positive
-              iconBg="#eef2ff" iconColor="#6d5ff2"
-              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
             <StatCard label="Total Orders" value={String(myOrders.length)} delta="+12%" positive
               iconBg="#ecfeff" iconColor="#0891b2"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>} />
             <StatCard label="Boxes Ordered" value={String(totalBoxes)} delta="+8%" positive
               iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
-            <StatCard label="Balance Owing" value={`£${myBalance.toFixed(2)}`} delta={myBalance > 0 ? "due" : "clear"} positive={myBalance === 0}
-              iconBg="#fef2f2" iconColor="#dc2626"
-              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>} />
+            <StatCard label="Pending Orders" value={String(myOrders.filter(o => o.status === "Pending").length)} delta="in review" positive
+              iconBg="#eef2ff" iconColor="#6d5ff2"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
+            <StatCard label="Products Available" value={String(stock.filter(s => s.status !== "out").length)} delta={stockFresh ? "updated today" : "awaiting update"} positive={stockFresh}
+              iconBg="#fef3c7" iconColor="#b45309"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/></svg>} />
           </div>
 
           {/* charts */}
           <div className="sh-charts">
             <div className="sh-chart-card">
-              <div className="sh-chart-title">Order totals</div>
+              <div className="sh-chart-title">Order Activity</div>
               <div className="sh-chart-big">{myOrders.length ? `${myOrders.length} orders` : "No orders yet"}</div>
               <div className="sh-chart-sub"><strong>{myOrders.length ? "+20.1%" : ""}</strong>{myOrders.length ? " from last month" : "Your order history will appear here"}</div>
               {barData.length > 0 ? (
@@ -216,7 +231,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                   {barData.map((b, i) => (
                     <div key={i} className="sh-bar-col">
                       <div className="sh-bar-track">
-                        <div className="sh-bar-fill" style={{ height: `${Math.max(6, (b.value / maxBar) * 100)}%` }} title={`£${b.value.toFixed(2)}`} />
+                        <div className="sh-bar-fill" style={{ height: `${Math.max(6, (b.value / maxBar) * 100)}%` }} title={`${b.value} boxes`} />
                       </div>
                       <span className="sh-bar-lab">{b.label}</span>
                     </div>
@@ -225,9 +240,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               ) : <div className="sh-empty-chart">Place your first order to see charts</div>}
             </div>
             <div className="sh-chart-card">
-              <div className="sh-chart-title">Total Spend</div>
-              <div className="sh-chart-big">£{totalSpent.toLocaleString("en-GB", { minimumFractionDigits: 2 })}</div>
-              <div className="sh-chart-sub"><strong>{cumulative.length > 1 ? "+20.1%" : ""}</strong>{cumulative.length > 1 ? " from last month" : "Cumulative spend over time"}</div>
+              <div className="sh-chart-title">Boxes Ordered</div>
+              <div className="sh-chart-big">{totalBoxes.toLocaleString("en-GB")} boxes</div>
+              <div className="sh-chart-sub"><strong>{cumulative.length > 1 ? "+20.1%" : ""}</strong>{cumulative.length > 1 ? " from last month" : "Cumulative boxes over time"}</div>
               <RevenueLine points={cumulative} />
             </div>
           </div>
@@ -457,6 +472,23 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
   return (
     <AppLayout role="customer" user={user} current={current} onNavigate={setCurrent} onLogout={onLogout}>
+      {/* Daily stock notification — once per 06:00 GMT cycle */}
+      {notifOpen && (
+        <div className={"cn-toast " + (stockFresh ? "ok" : "due")} role="status">
+          {stockFresh
+            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+          <div style={{ flex: 1 }}>
+            {stockFresh
+              ? <><strong>Today's stock has been updated{stockAt ? ` at ${formatGmtTime(stockAt)}` : ""}.</strong> Fresh produce is live — browse today's stock and place your order.</>
+              : <><strong>Today's stock update is pending.</strong> Stock refreshes daily at 06:00 GMT — quantities and prices may change shortly.</>}
+          </div>
+          <button className="cn-toast-x" onClick={dismissNotif} aria-label="Dismiss">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      )}
+
       {/* Breadcrumb bar — Shopall style */}
       <div className="cb-bar">
         <button className="cb-arrow" onClick={() => setTab("overview")} disabled={tab === "overview"} title="Back to overview">
@@ -467,6 +499,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         </button>
         <span className="cb-path">Pages / <strong>{tab.charAt(0).toUpperCase() + tab.slice(1)}</strong></span>
         <div className="cb-right">
+          <GmtClock />
           <button className="cd-import-btn" onClick={exportMyOrders} title="Download my orders as CSV">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Export

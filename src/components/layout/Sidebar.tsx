@@ -3,6 +3,7 @@ import type { UserRole } from "../../types"
 
 const adminMain = [
   { key: "dashboard",  label: "Dashboard", d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
+  { key: "session",    label: "Daily Session", d: "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zM12 6v6l4 2" },
   { key: "products",   label: "Product",   d: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" },
   { key: "orders",     label: "Order",     d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" },
   { key: "customers",  label: "Customer",  d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },

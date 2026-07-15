@@ -12,14 +12,16 @@ const initialForm = {
   companyName: '',
   contactPerson: '',
   email: '',
-  phone: '',
+  phone: '+44 ',
   customerNumber: '',
   password: '',
   address: '',
   deliveryArea: 'Birmingham',
   paymentTerms: '14 Days',
-  openingBalance: '0',
 }
+
+/** UK format: +44 followed by 9–10 digits (spaces allowed) */
+const isValidUkPhone = (phone: string) => /^\+44\d{9,10}$/.test(phone.replace(/\s+/g, ''))
 
 export function CustomersPage({
   customers,
@@ -35,6 +37,8 @@ export function CustomersPage({
   const [query, setQuery] = useState('')
   const [form, setForm] = useState(initialForm)
   const [editing, setEditing] = useState<Customer | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [phoneError, setPhoneError] = useState('')
 
   const filtered = useMemo(
     () =>
@@ -47,8 +51,14 @@ export function CustomersPage({
 
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault()
+    if (!isValidUkPhone(form.phone)) {
+      setPhoneError('Phone must be in +44 format, e.g. +44 7700 900123')
+      return
+    }
+    setPhoneError('')
     await onCreate(form)
     setForm(initialForm)
+    setShowAdd(false)
   }
 
   const submitEdit = async (event: FormEvent) => {
@@ -60,33 +70,37 @@ export function CustomersPage({
 
   return (
     <div className="stack">
-      <div>
-        <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
-        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0d2b1e' }}>Customers</h2>
-        <p style={{ fontSize: 13.5, color: '#6b7a70', marginTop: 3 }}>
-          Manage customer login accounts, delivery areas, payment types and balances.
-        </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+        <div>
+          <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0d2b1e' }}>Customers</h2>
+          <p style={{ fontSize: 13.5, color: '#6b7a70', marginTop: 3 }}>
+            Manage customer login accounts, delivery areas and payment types.
+          </p>
+        </div>
+        <Button onClick={() => { setForm(initialForm); setPhoneError(''); setShowAdd(true) }}>+ Add Customer</Button>
       </div>
 
-      <Card title="Create Customer Login" actions={<Button variant="ghost" className="btn-sm" onClick={() => setForm(initialForm)}>Reset</Button>}>
+      <Modal open={showAdd} title="Add New Customer" onClose={() => setShowAdd(false)}>
         <form className="form-grid" onSubmit={submitCreate}>
           <Input label="Company Name" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required />
           <Input label="Contact Person" value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} required />
-          <Input label="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-          <Input label="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-          <Input label="Customer Number" value={form.customerNumber} onChange={(e) => setForm({ ...form, customerNumber: e.target.value })} required />
+          <Input label="Email" type="email" placeholder="orders@company.co.uk" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+          <Input label="Phone (+44)" placeholder="+44 7700 900123" value={form.phone} onChange={(e) => { setForm({ ...form, phone: e.target.value }); setPhoneError('') }} required />
+          <Input label="Customer Number" placeholder="CUST-001" value={form.customerNumber} onChange={(e) => setForm({ ...form, customerNumber: e.target.value })} required />
           <Input label="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
           <Input label="Delivery Area" value={form.deliveryArea} onChange={(e) => setForm({ ...form, deliveryArea: e.target.value })} />
-          <Input label="Opening Balance (£)" type="number" value={form.openingBalance} onChange={(e) => setForm({ ...form, openingBalance: e.target.value })} />
           <Select label="Payment Type" options={['Payment Before Order', '14 Days', '30 Days']} value={form.paymentTerms} onChange={(value) => setForm({ ...form, paymentTerms: value })} />
           <div className="wide">
             <TextArea label="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={2} required />
           </div>
+          {phoneError && <p className="wide" style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px' }}>{phoneError}</p>}
           <div className="wide actions-row">
             <Button type="submit">Create Customer</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
           </div>
         </form>
-      </Card>
+      </Modal>
 
       <Card title="Customers" actions={<Input label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, contact, email or number" />}>
         <DataTable columns={['Company', 'Contact', 'Email', 'Number', 'Delivery Area', 'Payment Terms', 'Actions']}>

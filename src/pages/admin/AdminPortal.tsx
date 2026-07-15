@@ -42,6 +42,7 @@ import { InvoicesPage } from './InvoicesPage'
 import { OrdersPage } from './OrdersPage'
 import { PaymentsPage } from './PaymentsPage'
 import { ProductsPage } from './ProductsPage'
+import { SessionPage } from './SessionPage'
 import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
 import { StockPage } from './StockPage'
@@ -97,9 +98,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setDeliveryAreas(deliveryAreasData)
   }, [])
 
+  // Re-fetch on every page change so dashboards never show stale data
   useEffect(() => {
     load()
-  }, [load])
+  }, [load, current])
 
   const page = () => {
     if (current === 'dashboard') {
@@ -113,6 +115,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onNavigate={setCurrent}
         />
       )
+    }
+
+    if (current === 'session') {
+      return <SessionPage onFinished={async () => { await load(); setCurrent('stock') }} />
     }
 
     if (current === 'customers') {

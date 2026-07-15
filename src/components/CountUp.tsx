@@ -20,7 +20,10 @@ export function CountUp({ value, prefix = "", suffix = "", decimals = 0, duratio
       else fromRef.current = value
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    // Fallback: rAF is paused in hidden/background tabs — snap to the final
+    // value so the number is never stuck at an intermediate state.
+    const settle = setTimeout(() => { setDisplay(value); fromRef.current = value }, duration + 200)
+    return () => { cancelAnimationFrame(raf); clearTimeout(settle) }
   }, [value, duration])
 
   return (
