@@ -119,7 +119,11 @@ const FRUITS: { kind: FruitKind; top: string; left: string; size: number; delay:
 ]
 
 /* ── First-time activation: email → 6-digit code → set password ── */
-type Found = { kind: "customer" | "admin"; id: string; name: string; email: string }
+type Found = {
+  kind: "customer" | "admin"; id: string; name: string; email: string
+  pendingProfile?: boolean; companyName?: string; contactPerson?: string; phone?: string; address?: string
+}
+const isValidUkPhone = (phone: string) => /^\+44\d{9,10}$/.test(phone.replace(/\s+/g, ""))
 
 function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: string, role: UserRole) => void }) {
   const [stage, setStage]     = useState<"email" | "code" | "setup" | "done">("email")
@@ -129,6 +133,7 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
   const [digits, setDigits]   = useState<string[]>(["", "", "", "", "", ""])
   const [pw, setPw]           = useState("")
   const [pw2, setPw2]         = useState("")
+  const [profile, setProfile] = useState({ companyName: "", contactPerson: "", phone: "+44 ", address: "" })
   const [err, setErr]         = useState("")
   const [busy, setBusy]       = useState(false)
   const [devCode, setDevCode] = useState("")
@@ -142,7 +147,11 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
       const c = customers.find(x => x.email?.toLowerCase() === em)
       const a = admins.find(x => x.email?.toLowerCase() === em)
       const found: Found | null = c
-        ? { kind: "customer", id: c.id, name: c.contactPerson || c.companyName, email: c.email }
+        ? {
+            kind: "customer", id: c.id, name: c.contactPerson || c.companyName, email: c.email,
+            pendingProfile: true, companyName: c.companyName === c.email.split("@")[0] ? "" : c.companyName,
+            contactPerson: c.contactPerson ?? "", phone: c.phone ?? "", address: c.address ?? "",
+          }
         : a ? { kind: "admin", id: a.id, name: a.name, email: a.email } : null
       if (!found) { setErr("We couldn't find an account with that email. Ask your admin to add you first."); setBusy(false); return }
       const otp = String(Math.floor(100000 + Math.random() * 900000))
@@ -171,20 +180,41 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
 
   const verifyCode = (e: FormEvent) => {
     e.preventDefault(); setErr("")
-    if (digits.join("") === code) setStage("setup")
-    else setErr("That code doesn't match — check your email and try again.")
+    if (digits.join("") === code) {
+      if (account?.kind === "customer") {
+        setProfile({
+          companyName: account.companyName || "",
+          contactPerson: account.contactPerson || "",
+          phone: account.phone || "+44 ",
+          address: account.address || "",
+        })
+      }
+      setStage("setup")
+    } else setErr("That code doesn't match — check your email and try again.")
   }
 
   const finishSetup = async (e: FormEvent) => {
     e.preventDefault(); setErr("")
+    if (account!.kind === "customer") {
+      if (!profile.companyName.trim() || !profile.contactPerson.trim()) { setErr("Please fill in your company and contact name."); return }
+      if (!isValidUkPhone(profile.phone)) { setErr("Phone must be in +44 format, e.g. +44 7700 900123"); return }
+    }
     if (pw.length < 6) { setErr("Password must be at least 6 characters."); return }
     if (pw !== pw2) { setErr("Passwords don't match."); return }
     setBusy(true)
     try {
-      if (account!.kind === "customer") await updateCustomer(account!.id, { password: pw })
-      else await updateAdmin(account!.id, { password: pw })
+      if (account!.kind === "customer") {
+        await updateCustomer(account!.id, {
+          companyName: profile.companyName.trim(),
+          contactPerson: profile.contactPerson.trim(),
+          phone: profile.phone.trim(),
+          address: profile.address.trim(),
+          email: account!.email,
+          password: pw,
+        })
+      } else await updateAdmin(account!.id, { password: pw })
       setStage("done")
-    } catch { setErr("Couldn't save your password — please try again.") }
+    } catch { setErr("Couldn't save your details — please try again.") }
     setBusy(false)
   }
 
@@ -238,8 +268,32 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
 
       {stage === "setup" && (
         <form onSubmit={finishSetup}>
-          <h1 className="lx-title">Welcome, {account?.name}!</h1>
-          <p className="lx-sub">You're verified. Set a password to finish activating your {account?.kind} account.</p>
+          <h1 className="lx-title">{account?.kind === "customer" ? "Set up your account" : `Welcome, ${account?.name}!`}</h1>
+          <p className="lx-sub">
+            {account?.kind === "customer"
+              ? "You're verified — tell us about your business and choose a password."
+              : "You're verified. Set a password to finish activating your admin account."}
+          </p>
+          {account?.kind === "customer" && (
+            <>
+              <label className="lx-label">Company Name</label>
+              <div className="lx-input-wrap">
+                <input className="lx-input" placeholder="Fresh Market Ltd" value={profile.companyName} onChange={e => setProfile({ ...profile, companyName: e.target.value })} required autoFocus />
+              </div>
+              <label className="lx-label">Contact Person</label>
+              <div className="lx-input-wrap">
+                <input className="lx-input" placeholder="Your full name" value={profile.contactPerson} onChange={e => setProfile({ ...profile, contactPerson: e.target.value })} required />
+              </div>
+              <label className="lx-label">Phone (+44)</label>
+              <div className="lx-input-wrap">
+                <input className="lx-input" placeholder="+44 7700 900123" value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} required />
+              </div>
+              <label className="lx-label">Delivery Address</label>
+              <div className="lx-input-wrap">
+                <input className="lx-input" placeholder="12 Market Street, Birmingham B1 1AA" value={profile.address} onChange={e => setProfile({ ...profile, address: e.target.value })} />
+              </div>
+            </>
+          )}
           <label className="lx-label">New Password</label>
           <div className="lx-input-wrap">
             <input className="lx-input" type="password" placeholder="At least 6 characters" value={pw} onChange={e => setPw(e.target.value)} required autoFocus />

@@ -4,50 +4,54 @@ import { getStock, updateStock } from "../../api/stockApi"
 import { Button } from "../../components/ui/Button"
 import { GmtClock } from "../../components/GmtClock"
 
-/* Fresh produce catalogue for daily sessions */
-const CATALOG: { name: string; category: string; size: string }[] = [
-  { name: "Alphonso Mangoes", category: "Fruits", size: "5kg box" },
-  { name: "Kesar Mangoes", category: "Fruits", size: "5kg box" },
-  { name: "Pineapples", category: "Fruits", size: "8 per box" },
-  { name: "Papayas", category: "Fruits", size: "9 per box" },
-  { name: "Watermelons", category: "Fruits", size: "4 per box" },
-  { name: "Galia Melons", category: "Fruits", size: "8 per box" },
-  { name: "Honeydew Melons", category: "Fruits", size: "8 per box" },
-  { name: "Red Grapes", category: "Fruits", size: "4.5kg box" },
-  { name: "Lychees", category: "Fruits", size: "2kg box" },
-  { name: "Passion Fruit", category: "Fruits", size: "2kg box" },
-  { name: "Pomegranates", category: "Fruits", size: "4kg box" },
-  { name: "Guavas", category: "Fruits", size: "3kg box" },
-  { name: "Fresh Coconuts", category: "Fruits", size: "12 per sack" },
-  { name: "Limes", category: "Fruits", size: "4.5kg box" },
-  { name: "Lemons", category: "Fruits", size: "5kg box" },
-  { name: "Plantain", category: "Vegetables", size: "15kg box" },
-  { name: "Green Bananas", category: "Vegetables", size: "18kg box" },
-  { name: "Cassava", category: "Vegetables", size: "18kg box" },
-  { name: "Sweet Potatoes", category: "Vegetables", size: "15kg box" },
-  { name: "Yams", category: "Vegetables", size: "18kg sack" },
-  { name: "Okra", category: "Vegetables", size: "5kg box" },
-  { name: "Karela (Bitter Gourd)", category: "Vegetables", size: "5kg box" },
-  { name: "Dudhi (Bottle Gourd)", category: "Vegetables", size: "10kg box" },
-  { name: "Tinda", category: "Vegetables", size: "5kg box" },
-  { name: "Baby Aubergines", category: "Vegetables", size: "5kg box" },
-  { name: "Green Chillies", category: "Vegetables", size: "3kg box" },
-  { name: "Scotch Bonnets", category: "Vegetables", size: "3kg box" },
-  { name: "Fresh Ginger", category: "Vegetables", size: "13.6kg box" },
-  { name: "Garlic", category: "Vegetables", size: "10kg box" },
-  { name: "Red Onions", category: "Vegetables", size: "20kg sack" },
-  { name: "Fresh Coriander", category: "Herbs", size: "kg bunch" },
-  { name: "Fresh Mint", category: "Herbs", size: "kg bunch" },
-  { name: "Curry Leaves", category: "Herbs", size: "1kg box" },
-  { name: "Fenugreek (Methi)", category: "Herbs", size: "kg bunch" },
-  { name: "Thai Basil", category: "Herbs", size: "1kg box" },
-  { name: "Lemongrass", category: "Herbs", size: "2kg box" },
-]
+/* Full fresh-produce catalogue, organised category → group → items */
+const PRODUCE: Record<string, Record<string, string[]>> = {
+  Fruits: {
+    Apples: ["Gala", "Granny Smith", "Fuji", "Pink Lady", "Golden Delicious", "Red Delicious", "Braeburn", "Jazz", "Honeycrisp", "Empire"],
+    Bananas: ["Cavendish", "Plantain", "Baby Bananas", "Red Bananas", "Matooke (Cooking Bananas)"],
+    Citrus: ["Oranges", "Mandarins", "Clementines", "Tangerines", "Lemons", "Limes", "Grapefruit", "Pomelo", "Sweet Lime"],
+    "Tropical Fruits": ["Mango", "Pineapple", "Papaya (Pawpaw)", "Avocado", "Passion Fruit", "Guava", "Jackfruit", "Dragon Fruit", "Lychee", "Rambutan", "Mangosteen", "Durian", "Breadfruit", "Soursop", "Star Fruit", "Sapodilla", "Custard Apple", "Longan"],
+    "Stone Fruits": ["Peach", "Nectarine", "Plum", "Apricot", "Cherry"],
+    Berries: ["Strawberry", "Blueberry", "Raspberry", "Blackberry", "Cranberry", "Gooseberry"],
+    Grapes: ["Red Seedless", "Green Seedless", "Black Grapes", "Muscat"],
+    Melons: ["Watermelon", "Cantaloupe", "Honeydew", "Galia Melon"],
+    Pears: ["Conference", "Bartlett", "Packham", "Bosc"],
+    "Exotic Fruits": ["Fig", "Pomegranate", "Kiwi", "Coconut", "Dates", "Tamarind", "Persimmon", "Quince"],
+  },
+  Vegetables: {
+    "Leafy Greens": ["Lettuce", "Romaine", "Iceberg", "Spinach", "Kale", "Swiss Chard", "Pak Choi", "Bok Choy", "Cabbage", "Red Cabbage", "Chinese Cabbage", "Watercress", "Rocket (Arugula)", "Collard Greens", "Mustard Greens"],
+    "Root Vegetables": ["Carrots", "Beetroot", "Radish", "Turnip", "Parsnip", "Sweet Potato", "Cassava", "Yam", "Taro", "Ginger", "Turmeric"],
+    Potatoes: ["White Potatoes", "Red Potatoes", "Baby Potatoes", "Purple Potatoes", "Fingerling Potatoes"],
+    "Onions & Alliums": ["White Onion", "Red Onion", "Brown Onion", "Spring Onion", "Shallots", "Garlic", "Leeks", "Chives"],
+    "Fruiting Vegetables": ["Tomatoes", "Cherry Tomatoes", "Beef Tomatoes", "Roma Tomatoes", "Bell Peppers", "Chillies", "Jalapeños", "Habaneros", "Eggplant (Aubergine)", "Okra", "Cucumbers", "Gherkins", "Courgettes (Zucchini)", "Pumpkin", "Squash", "Butternut Squash"],
+    Brassicas: ["Broccoli", "Cauliflower", "Brussels Sprouts", "Kohlrabi"],
+    Legumes: ["French Beans", "Green Beans", "Runner Beans", "Snow Peas", "Sugar Snap Peas", "Garden Peas", "Broad Beans"],
+    Mushrooms: ["Button", "Portobello", "Chestnut", "Oyster", "Shiitake", "Enoki"],
+  },
+  "Peppers & Chillies": {
+    "Peppers & Chillies": ["Green Pepper", "Red Pepper", "Yellow Pepper", "Orange Pepper", "Scotch Bonnet", "Bird's Eye Chilli", "Cayenne", "Habanero", "Jalapeño", "Serrano"],
+  },
+  Herbs: {
+    Herbs: ["Basil", "Coriander (Cilantro)", "Parsley", "Mint", "Rosemary", "Thyme", "Dill", "Oregano", "Sage", "Tarragon", "Curry Leaves"],
+  },
+  "Other Produce": {
+    "Other Produce": ["Sweet Corn", "Baby Corn", "Celery", "Asparagus", "Rhubarb", "Artichoke", "Fennel", "Bamboo Shoots", "Sugar Cane"],
+  },
+}
 
-const CAT_COLORS: Record<string, string> = { Fruits: "#e05c2a", Vegetables: "#22913f", Herbs: "#0ea5e9" }
+type CatalogItem = { name: string; group: string; category: string; size: string }
+const CATALOG: CatalogItem[] = Object.entries(PRODUCE).flatMap(([category, groups]) =>
+  Object.entries(groups).flatMap(([group, names]) =>
+    names.map(name => ({ name, group, category, size: "box" }))))
+
+const CATEGORIES = Object.keys(PRODUCE)
+const CAT_COLORS: Record<string, string> = {
+  Fruits: "#e05c2a", Vegetables: "#22913f", "Peppers & Chillies": "#d93025",
+  Herbs: "#0ea5e9", "Other Produce": "#b8860b",
+}
 
 type SessionItem = {
-  name: string; category: string; size: string
+  name: string; group: string; category: string; size: string
   supplier: string; purchasePrice: string; sellingPrice: string; qty: string
 }
 
@@ -68,23 +72,36 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
   const [newSupplier, setNewSupplier] = useState("")
   const [step, setStep]           = useState(0)
   const [search, setSearch]       = useState("")
+  const [activeCat, setActiveCat] = useState<string>(CATEGORIES[0])
   const [items, setItems]         = useState<SessionItem[]>([])
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState("")
 
   const lastSession = loadJson<{ startedAt?: string } | null>(SESSION_KEY, null)
 
-  const filteredCatalog = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return CATALOG.filter(c => !q || `${c.name} ${c.category}`.toLowerCase().includes(q))
-  }, [search])
+  /* Searching looks across every category; otherwise browse the active one */
+  const q = search.trim().toLowerCase()
+  const visibleCatalog = useMemo(() => {
+    if (q) return CATALOG.filter(c => `${c.name} ${c.group} ${c.category}`.toLowerCase().includes(q))
+    return CATALOG.filter(c => c.category === activeCat)
+  }, [q, activeCat])
 
-  const isSelected = (name: string) => items.some(i => i.name === name)
-  const toggleItem = (c: typeof CATALOG[number]) => {
-    setItems(prev => isSelected(c.name)
-      ? prev.filter(i => i.name !== c.name)
+  const visibleGroups = useMemo(() => {
+    const map = new Map<string, CatalogItem[]>()
+    for (const c of visibleCatalog) {
+      if (!map.has(c.group)) map.set(c.group, [])
+      map.get(c.group)!.push(c)
+    }
+    return [...map.entries()]
+  }, [visibleCatalog])
+
+  const isSelected = (name: string, group: string) => items.some(i => i.name === name && i.group === group)
+  const toggleItem = (c: CatalogItem) => {
+    setItems(prev => isSelected(c.name, c.group)
+      ? prev.filter(i => !(i.name === c.name && i.group === c.group))
       : [...prev, { ...c, supplier: suppliers[0] ?? "", purchasePrice: "", sellingPrice: "", qty: "10" }])
   }
+  const countInCat = (cat: string) => items.filter(i => i.category === cat).length
   const setItem = (name: string, patch: Partial<SessionItem>) =>
     setItems(prev => prev.map(i => i.name === name ? { ...i, ...patch } : i))
 
@@ -107,7 +124,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
         const existing = products.find(p => p.productName.toLowerCase() === item.name.toLowerCase())
         if (!existing) {
           await createProduct({
-            productName: item.name, category: item.category, variety: "",
+            productName: item.name, category: item.category, variety: item.group,
             size: item.size, boxesPerPallet: 0, productImage: "",
             sku: item.name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24) + "-" + Date.now().toString().slice(-4),
           })
@@ -191,22 +208,44 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
               <input className="ps-search" placeholder="Search produce…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
-          <div className="ss-grid">
-            {filteredCatalog.map(c => (
-              <button key={c.name} type="button" className={"ss-item" + (isSelected(c.name) ? " sel" : "")} onClick={() => toggleItem(c)}>
-                <span className="ss-item-av" style={{ background: CAT_COLORS[c.category] ?? "#22913f" }}>{c.name.slice(0, 2).toUpperCase()}</span>
-                <span style={{ minWidth: 0 }}>
-                  <span className="ss-item-name">{c.name}</span>
-                  <span className="ss-item-meta">{c.category} · {c.size}</span>
-                </span>
-                {isSelected(c.name) && (
-                  <span className="ss-item-check">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>
-                  </span>
-                )}
-              </button>
+          {/* Step 1a: pick a category first */}
+          {!q && (
+            <div className="ss-cats">
+              {CATEGORIES.map(cat => (
+                <button key={cat} type="button" className={"ss-cat" + (activeCat === cat ? " on" : "")} onClick={() => setActiveCat(cat)}
+                  style={activeCat === cat ? { borderColor: CAT_COLORS[cat], color: CAT_COLORS[cat] } : undefined}>
+                  <span className="ss-cat-dot" style={{ background: CAT_COLORS[cat] }} />
+                  {cat}
+                  {countInCat(cat) > 0 && <span className="ss-cat-count">{countInCat(cat)}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 1b: grouped items within the category (or search results) */}
+          <div className="ss-scroll">
+            {visibleGroups.map(([group, groupItems]) => (
+              <div key={group}>
+                <p className="ss-group-title">{group} <span>({groupItems.length})</span></p>
+                <div className="ss-grid">
+                  {groupItems.map(c => (
+                    <button key={c.group + c.name} type="button" className={"ss-item" + (isSelected(c.name, c.group) ? " sel" : "")} onClick={() => toggleItem(c)}>
+                      <span className="ss-item-av" style={{ background: CAT_COLORS[c.category] ?? "#22913f" }}>{c.name.slice(0, 2).toUpperCase()}</span>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="ss-item-name">{c.name}</span>
+                        <span className="ss-item-meta">{c.group}</span>
+                      </span>
+                      {isSelected(c.name, c.group) && (
+                        <span className="ss-item-check">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
-            {filteredCatalog.length === 0 && <div className="db-empty" style={{ gridColumn: "1 / -1" }}>No produce matches “{search}”.</div>}
+            {visibleCatalog.length === 0 && <div className="db-empty">No produce matches “{search}”.</div>}
           </div>
           <div className="ss-foot">
             <Button variant="secondary" onClick={() => setStep(0)}>← Back</Button>
@@ -231,7 +270,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
           <div className="ss-rows">
             {items.map(i => (
               <div key={i.name} className="ss-row">
-                <div className="ss-row-name">{i.name}<small>{i.size}</small></div>
+                <div className="ss-row-name">{i.name}<small>{i.group} · {i.category}</small></div>
                 <select value={i.supplier} onChange={e => setItem(i.name, { supplier: e.target.value })}>
                   {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>

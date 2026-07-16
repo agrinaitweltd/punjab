@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import type { Customer } from '../../types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
-import { Input, Select, TextArea } from '../../components/ui/Input'
+import { Input, Select } from '../../components/ui/Input'
 import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
@@ -12,16 +12,13 @@ const initialForm = {
   companyName: '',
   contactPerson: '',
   email: '',
-  phone: '+44 ',
+  phone: '',
   customerNumber: '',
   password: '',
   address: '',
   deliveryArea: 'Birmingham',
   paymentTerms: '14 Days',
 }
-
-/** UK format: +44 followed by 9–10 digits (spaces allowed) */
-const isValidUkPhone = (phone: string) => /^\+44\d{9,10}$/.test(phone.replace(/\s+/g, ''))
 
 export function CustomersPage({
   customers,
@@ -35,10 +32,11 @@ export function CustomersPage({
   onDelete: (id: string) => Promise<void>
 }) {
   const [query, setQuery] = useState('')
-  const [form, setForm] = useState(initialForm)
+  const [newEmail, setNewEmail] = useState('')
   const [editing, setEditing] = useState<Customer | null>(null)
   const [showAdd, setShowAdd] = useState(false)
-  const [phoneError, setPhoneError] = useState('')
+  const [addError, setAddError] = useState('')
+  const [adding, setAdding] = useState(false)
 
   const filtered = useMemo(
     () =>
@@ -51,14 +49,31 @@ export function CustomersPage({
 
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault()
-    if (!isValidUkPhone(form.phone)) {
-      setPhoneError('Phone must be in +44 format, e.g. +44 7700 900123')
+    const email = newEmail.trim().toLowerCase()
+    if (customers.some(c => c.email?.toLowerCase() === email)) {
+      setAddError('A customer with that email already exists.')
       return
     }
-    setPhoneError('')
-    await onCreate(form)
-    setForm(initialForm)
-    setShowAdd(false)
+    setAddError(''); setAdding(true)
+    // Stub account — the customer completes their own details (name, phone,
+    // address, password) during first-time login with the emailed code.
+    const nums = customers.map(c => parseInt(c.customerNumber.replace(/\D/g, '')) || 0)
+    const nextNum = `CUST-${String(Math.max(1000, ...nums) + 1)}`
+    try {
+      await onCreate({
+        ...initialForm,
+        email,
+        companyName: email.split('@')[0],
+        contactPerson: '',
+        customerNumber: nextNum,
+        password: `pending-${Math.random().toString(36).slice(2, 10)}`,
+      })
+      setNewEmail('')
+      setShowAdd(false)
+    } catch {
+      setAddError('Could not create the customer — please try again.')
+    }
+    setAdding(false)
   }
 
   const submitEdit = async (event: FormEvent) => {
@@ -78,25 +93,24 @@ export function CustomersPage({
             Manage customer login accounts, delivery areas and payment types.
           </p>
         </div>
-        <Button onClick={() => { setForm(initialForm); setPhoneError(''); setShowAdd(true) }}>+ Add Customer</Button>
+        <Button onClick={() => { setNewEmail(''); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>
       </div>
 
-      <Modal open={showAdd} title="Add New Customer" onClose={() => setShowAdd(false)}>
-        <form className="form-grid" onSubmit={submitCreate}>
-          <Input label="Company Name" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required />
-          <Input label="Contact Person" value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} required />
-          <Input label="Email" type="email" placeholder="orders@company.co.uk" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-          <Input label="Phone (+44)" placeholder="+44 7700 900123" value={form.phone} onChange={(e) => { setForm({ ...form, phone: e.target.value }); setPhoneError('') }} required />
-          <Input label="Customer Number" placeholder="CUST-001" value={form.customerNumber} onChange={(e) => setForm({ ...form, customerNumber: e.target.value })} required />
-          <Input label="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-          <Input label="Delivery Area" value={form.deliveryArea} onChange={(e) => setForm({ ...form, deliveryArea: e.target.value })} />
-          <Select label="Payment Type" options={['Payment Before Order', '14 Days', '30 Days']} value={form.paymentTerms} onChange={(value) => setForm({ ...form, paymentTerms: value })} />
-          <div className="wide">
-            <TextArea label="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} rows={2} required />
+      <Modal open={showAdd} title="Invite New Customer" onClose={() => setShowAdd(false)}>
+        <form onSubmit={submitCreate}>
+          <div className="inv-hero">
+            <span className="inv-ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </span>
+            <p>Just enter their email — we'll send an invitation and they'll fill in their company details, phone and password themselves on first login.</p>
           </div>
-          {phoneError && <p className="wide" style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px' }}>{phoneError}</p>}
-          <div className="wide actions-row">
-            <Button type="submit">Create Customer</Button>
+          <label className="form-control">
+            <span>Customer Email</span>
+            <input type="email" placeholder="orders@company.co.uk" value={newEmail} onChange={(e) => { setNewEmail(e.target.value); setAddError('') }} required autoFocus />
+          </label>
+          {addError && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', marginTop: 10 }}>{addError}</p>}
+          <div className="actions-row" style={{ marginTop: 16 }}>
+            <Button type="submit" disabled={adding}>{adding ? 'Sending invite…' : 'Send Invitation'}</Button>
             <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
           </div>
         </form>

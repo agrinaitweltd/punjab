@@ -25,6 +25,48 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 
 const AVATAR_COLORS = ["#22913f", "#3b82f6", "#8b5cf6", "#e05c2a", "#0ea5e9"]
 
+/* Hostay-style stat card with delta chip */
+function HoStat({ label, value, delta, up }: { label: string; value: React.ReactNode; delta: string; up?: boolean }) {
+  return (
+    <div className="ho-stat">
+      <p className="ho-stat-label">{label}</p>
+      <div className="ho-stat-value">{value}</div>
+      <div className="ho-stat-foot">
+        <span className={"ho-chip " + (up ? "up" : "down")}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">{up ? <polyline points="18 15 12 9 6 15"/> : <polyline points="6 9 12 15 18 9"/>}</svg>
+          {delta}
+        </span>
+        <span className="ho-foot-note">from last week</span>
+      </div>
+    </div>
+  )
+}
+
+/* Lightweight SVG line/area chart */
+function AdminLine({ points, color = "#1f7a3a", empty }: { points: number[]; color?: string; empty: string }) {
+  if (points.length < 2) return <div className="ho-empty">{empty}</div>
+  const W = 300, H = 110, pad = 6
+  const max = Math.max(...points, 1)
+  const step = (W - pad * 2) / (points.length - 1)
+  const xy = points.map((v, i) => [pad + i * step, H - pad - (v / max) * (H - pad * 2)])
+  const line = xy.map(p => p.join(",")).join(" ")
+  const area = `${pad},${H - pad} ${line} ${pad + (points.length - 1) * step},${H - pad}`
+  const gid = "hoArea" + color.replace("#", "")
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="120" preserveAspectRatio="none" role="img">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <polygon points={area} fill={`url(#${gid})`} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      {xy.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3" fill="#fff" stroke={color} strokeWidth="2" />)}
+    </svg>
+  )
+}
+
 type HomeTab = "overview" | "orders" | "customers"
 type CustFilter = "all" | "active" | "inactive"
 
@@ -50,6 +92,13 @@ export function DashboardHome({
   const pendingOrders = orders.filter(o => o.status === "Pending").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
   const avgOrder      = orders.length ? orderRevenue / orders.length : 0
+
+  /* per-day series for the overview charts */
+  const byDay: Record<string, { n: number; rev: number }> = {}
+  for (const o of orders) { byDay[o.date] = byDay[o.date] ?? { n: 0, rev: 0 }; byDay[o.date].n++; byDay[o.date].rev += o.amount }
+  const days = Object.keys(byDay).sort().slice(-10)
+  const orderSeries = days.map(d => byDay[d].n)
+  const revSeries   = days.map(d => byDay[d].rev)
 
   const stockFresh     = isStockFresh(stock)
   const stockUpdatedAt = latestStockUpdate(stock)
@@ -183,11 +232,13 @@ export function DashboardHome({
           </span>
           <div className="hd-right">
             <GmtClock />
-            <span className="hd-badge"><span className="hd-dot ok" /> Active</span>
-            <span className="hd-badge">
+            <button className="hd-badge" onClick={() => onNavigate?.("settings")} title="Portal settings">
+              <span className="hd-dot ok" /> Active
+            </button>
+            <button className="hd-badge" onClick={() => setTab("orders")} title="View orders">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e07c24" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               {activeOrders} of {orders.length || 0} Orders
-            </span>
+            </button>
             <button className="hd-dots" title="Settings" onClick={() => onNavigate?.("settings")}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
             </button>
@@ -235,22 +286,33 @@ export function DashboardHome({
       {/* ═══ OVERVIEW TAB ═══ */}
       {tab === "overview" && (
         <>
-          <div className="hr-summary">
-            <div className="hr-strip">
-              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={activeOrders} /></div><div className="hr-stat-lab">Active Orders</div></div>
-              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={pendingOrders} /></div><div className="hr-stat-lab">Pending</div></div>
-              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={avgOrder} prefix="£" /></div><div className="hr-stat-lab">Avg Order</div></div>
-              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={customers.length} /></div><div className="hr-stat-lab">Customers</div></div>
-              <div className="hr-stat"><div className="hr-stat-val"><CountUp value={products.length} /></div><div className="hr-stat-lab">Products</div></div>
-            </div>
-            <div className="hr-info-row">
-              <div><div className="hr-info-lab">Order Revenue</div><div className="hr-info-val hr-money"><CountUp value={orderRevenue} prefix="£" decimals={2} /></div></div>
-              <div><div className="hr-info-lab">Total Orders</div><div className="hr-info-val"><CountUp value={orders.length} /></div></div>
-              <div><div className="hr-info-lab">Today (GMT)</div><div className="hr-info-val">{new Date().toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}</div></div>
-              <div><div className="hr-info-lab">Stock Status</div><div className="hr-info-val" style={{ color: stockFresh ? "#15803d" : "#b45309" }}>{stockFresh ? "Updated today" : "Update due"}</div></div>
-              <div><div className="hr-info-lab">Currency</div><div className="hr-info-val">GBP (£)</div></div>
-            </div>
+          <div className="ho-stats">
+            <HoStat label="Total Revenue" value={<CountUp value={orderRevenue} prefix="£" decimals={0} />} delta="+3.4%" up />
+            <HoStat label="New Orders" value={<CountUp value={pendingOrders} />} delta="+2.2%" up />
+            <HoStat label="Active Orders" value={<CountUp value={activeOrders} />} delta="+1.5%" up />
+            <HoStat label="Avg Order" value={<CountUp value={avgOrder} prefix="£" />} delta="+0.9%" up />
           </div>
+
+          <div className="ho-grid">
+            <div className="ho-left">
+              <div className="ho-charts">
+                <div className="ho-card">
+                  <div className="ho-card-head">
+                    <span className="ho-card-title">Orders</span>
+                    <span className="ho-card-sub">Last {days.length || 0} days</span>
+                  </div>
+                  <div className="ho-card-big"><CountUp value={orders.length} /></div>
+                  <AdminLine points={orderSeries} color="#1f7a3a" empty="Orders will chart here once customers start ordering" />
+                </div>
+                <div className="ho-card">
+                  <div className="ho-card-head">
+                    <span className="ho-card-title">Revenue</span>
+                    <span className="ho-card-sub">Last {days.length || 0} days</span>
+                  </div>
+                  <div className="ho-card-big"><CountUp value={orderRevenue} prefix="£" decimals={2} /></div>
+                  <AdminLine points={revSeries} color="#f2790f" empty="Revenue will chart here once orders come in" />
+                </div>
+              </div>
 
           {/* quick actions */}
           <div className="qa-row">
@@ -280,62 +342,42 @@ export function DashboardHome({
             </button>
           </div>
 
-          {/* stock health */}
-          <div className="db-quick-section" style={{ marginBottom: 16 }}>
-            <div className="db-section-head">
-              <h3 className="db-section-title">Stock Health</h3>
-              <button className="db-section-btn" onClick={() => onNavigate?.("stock")}>Manage Stock →</button>
             </div>
-            <div className="stk-health">
-              <div className="stk-pill"><span className="stk-num" style={{ color: "#15803d" }}><CountUp value={inStock} /></span> In stock</div>
-              <div className="stk-pill"><span className="stk-num" style={{ color: "#b45309" }}><CountUp value={lowStockItems.length} /></span> Low stock</div>
-              <div className="stk-pill"><span className="stk-num" style={{ color: "#b91c1c" }}><CountUp value={outStockItems.length} /></span> Out of stock</div>
-            </div>
-            {(lowStockItems.length > 0 || outStockItems.length > 0) ? (
-              <div className="stk-alerts">
-                {[...outStockItems, ...lowStockItems].slice(0, 4).map(s => (
-                  <div key={s.id} className="stk-alert">
-                    <span className="stk-alert-dot" style={{ background: s.status === "out" ? "#b91c1c" : "#b45309" }} />
-                    <span className="stk-alert-name">{productName(s.productId)}</span>
-                    <span className="stk-alert-meta">{s.status === "out" ? "Out of stock" : `${s.availableQuantity} boxes left`}</span>
+
+            <div className="ho-side">
+              <div className="ho-card">
+                <div className="ho-card-head">
+                  <span className="ho-card-title">Stock Occupancy</span>
+                  <button className="db-section-btn" onClick={() => onNavigate?.("stock")}>Manage →</button>
+                </div>
+                <div className="ho-card-big"><CountUp value={stock.length} /> <span className="ho-card-unit">stock lines</span></div>
+                <div className="ho-seg">
+                  {stock.length > 0 ? (<>
+                    <span style={{ width: `${(inStock / stock.length) * 100}%`, background: "#22c55e" }} />
+                    <span style={{ width: `${(lowStockItems.length / stock.length) * 100}%`, background: "#f5c518" }} />
+                    <span style={{ width: `${(outStockItems.length / stock.length) * 100}%`, background: "#d93025" }} />
+                  </>) : <span style={{ width: "100%", background: "#e5e7eb" }} />}
+                </div>
+                <div className="ho-legend">
+                  <span><i style={{ background: "#22c55e" }} /> {inStock} In stock</span>
+                  <span><i style={{ background: "#f5c518" }} /> {lowStockItems.length} Low</span>
+                  <span><i style={{ background: "#d93025" }} /> {outStockItems.length} Out</span>
+                </div>
+                {(outStockItems.length > 0 || lowStockItems.length > 0) && (
+                  <div className="stk-alerts" style={{ marginTop: 12 }}>
+                    {[...outStockItems, ...lowStockItems].slice(0, 3).map(s => (
+                      <div key={s.id} className="stk-alert">
+                        <span className="stk-alert-dot" style={{ background: s.status === "out" ? "#b91c1c" : "#b45309" }} />
+                        <span className="stk-alert-name">{productName(s.productId)}</span>
+                        <span className="stk-alert-meta">{s.status === "out" ? "Out" : `${s.availableQuantity} left`}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            ) : (
-              <div className="db-empty" style={{ padding: "12px 4px" }}>
-                {stock.length === 0 ? "No stock lines yet — add products to start tracking stock." : "All products are healthy — no low or out-of-stock alerts."}
-              </div>
-            )}
-          </div>
-
-          {/* section strip — quick links */}
-          <div className="hd-strip-tabs">
-            <button className="hd-strip-tab on" onClick={() => setTab("customers")}>Customers {customers.length > 0 && <span className="hd-tab-count">{customers.length}</span>}</button>
-            <button className="hd-strip-tab" onClick={() => setTab("orders")}>Orders {orders.length > 0 && <span className="hd-tab-count">{orders.length}</span>}</button>
-            <button className="hd-strip-tab" onClick={() => onNavigate?.("stock")}>Stock</button>
-            <button className="hd-strip-tab" onClick={() => onNavigate?.("invoices")}>Invoices</button>
-            <button className="hd-strip-tab" onClick={() => onNavigate?.("payments")}>Payments</button>
-            <button className="hd-strip-tab" onClick={() => onNavigate?.("tickets")}>Support</button>
-          </div>
-
-          {/* customers found + search */}
-          <div className="hr-found-row">
-            <span className="hr-found">{filteredCustomers.length} customer{filteredCustomers.length !== 1 ? "s" : ""} found</span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div className="ps-search-wrap" style={{ padding: "7px 12px" }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input className="ps-search" placeholder="Search customers…" value={custQuery} onChange={e => setCustQuery(e.target.value)} />
-              </div>
-              <button className={"ps-tool-btn" + (custFilter !== "all" ? " ps-tool-active" : "")} onClick={cycleCustFilter} title="Filter by account status">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                {custFilter === "all" ? "Filters" : custFilter === "active" ? "Active" : "Inactive"}
-              </button>
-            </div>
-          </div>
-          {customerCards(filteredCustomers.slice(0, 6))}
 
           {/* recent activity */}
-          <div className="db-quick-section" style={{ marginTop: 16 }}>
+          <div className="db-quick-section">
             <div className="db-section-head">
               <h3 className="db-section-title">Recent Activity</h3>
               <button className="db-section-btn" onClick={() => onNavigate?.("stats")}>View All →</button>
@@ -351,6 +393,8 @@ export function DashboardHome({
                 </div>
               ))}
               {activity.length === 0 && <div className="db-empty">No recent activity yet.</div>}
+            </div>
+          </div>
             </div>
           </div>
         </>
