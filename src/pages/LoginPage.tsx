@@ -1,6 +1,9 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { FormEvent } from "react"
 import type { UserRole } from "../types"
+import { getCustomers, updateCustomer } from "../api/customersApi"
+import { getAdmins, updateAdmin } from "../api/miscApi"
+import { sendEmail, otpEmailHtml } from "../lib/emailService"
 
 function EyeIcon({ open }: { open: boolean }) {
   return open
@@ -115,6 +118,157 @@ const FRUITS: { kind: FruitKind; top: string; left: string; size: number; delay:
   { kind: "watermelon", top: "84%", left: "16%", size: 44, delay: "0.6s" },
 ]
 
+/* ── First-time activation: email → 6-digit code → set password ── */
+type Found = { kind: "customer" | "admin"; id: string; name: string; email: string }
+
+function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: string, role: UserRole) => void }) {
+  const [stage, setStage]     = useState<"email" | "code" | "setup" | "done">("email")
+  const [email, setEmail]     = useState("")
+  const [account, setAccount] = useState<Found | null>(null)
+  const [code, setCode]       = useState("")
+  const [digits, setDigits]   = useState<string[]>(["", "", "", "", "", ""])
+  const [pw, setPw]           = useState("")
+  const [pw2, setPw2]         = useState("")
+  const [err, setErr]         = useState("")
+  const [busy, setBusy]       = useState(false)
+  const [devCode, setDevCode] = useState("")
+  const boxRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  const lookupAndSend = async (e: FormEvent) => {
+    e.preventDefault(); setErr(""); setBusy(true)
+    try {
+      const em = email.trim().toLowerCase()
+      const [customers, admins] = await Promise.all([getCustomers(), getAdmins()])
+      const c = customers.find(x => x.email?.toLowerCase() === em)
+      const a = admins.find(x => x.email?.toLowerCase() === em)
+      const found: Found | null = c
+        ? { kind: "customer", id: c.id, name: c.contactPerson || c.companyName, email: c.email }
+        : a ? { kind: "admin", id: a.id, name: a.name, email: a.email } : null
+      if (!found) { setErr("We couldn't find an account with that email. Ask your admin to add you first."); setBusy(false); return }
+      const otp = String(Math.floor(100000 + Math.random() * 900000))
+      setCode(otp); setAccount(found); setDevCode("")
+      const sent = await sendEmail(found.email, "Your Punjab Exotic Foods verification code", otpEmailHtml(otp))
+      if (!sent.ok && import.meta.env.DEV) setDevCode(otp) // local dev has no email server
+      setDigits(["", "", "", "", "", ""])
+      setStage("code")
+    } catch { setErr("Something went wrong — please try again.") }
+    setBusy(false)
+  }
+
+  const setDigit = (i: number, v: string) => {
+    const clean = v.replace(/\D/g, "")
+    const next = [...digits]
+    if (clean.length > 1) { // paste
+      clean.slice(0, 6).split("").forEach((ch, j) => { if (i + j < 6) next[i + j] = ch })
+      setDigits(next)
+      boxRefs.current[Math.min(5, i + clean.length)]?.focus()
+      return
+    }
+    next[i] = clean
+    setDigits(next)
+    if (clean && i < 5) boxRefs.current[i + 1]?.focus()
+  }
+
+  const verifyCode = (e: FormEvent) => {
+    e.preventDefault(); setErr("")
+    if (digits.join("") === code) setStage("setup")
+    else setErr("That code doesn't match — check your email and try again.")
+  }
+
+  const finishSetup = async (e: FormEvent) => {
+    e.preventDefault(); setErr("")
+    if (pw.length < 6) { setErr("Password must be at least 6 characters."); return }
+    if (pw !== pw2) { setErr("Passwords don't match."); return }
+    setBusy(true)
+    try {
+      if (account!.kind === "customer") await updateCustomer(account!.id, { password: pw })
+      else await updateAdmin(account!.id, { password: pw })
+      setStage("done")
+    } catch { setErr("Couldn't save your password — please try again.") }
+    setBusy(false)
+  }
+
+  return (
+    <div className="lx-card">
+      <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
+
+      {stage === "email" && (
+        <form onSubmit={lookupAndSend}>
+          <h1 className="lx-title">First time here?</h1>
+          <p className="lx-sub">Enter the email your admin registered for you and we'll send a 6-digit code to verify it's you.</p>
+          <label className="lx-label">Your Email</label>
+          <div className="lx-input-wrap">
+            <input className="lx-input" type="email" placeholder="you@company.co.uk" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+            <span className="lx-input-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </span>
+          </div>
+          {err && <p className="lx-error">{err}</p>}
+          <button type="submit" className="lx-login-btn" disabled={busy}>{busy ? "Checking…" : "Send my code"}</button>
+        </form>
+      )}
+
+      {stage === "code" && (
+        <form onSubmit={verifyCode}>
+          <h1 className="lx-title">Check your inbox</h1>
+          <p className="lx-sub">We sent a 6-digit code to <strong>{account?.email}</strong>. Enter it below.</p>
+          {devCode && <p className="lx-devhint">Local preview (no email server): your code is <strong>{devCode}</strong></p>}
+          <div className="lx-otp-row">
+            {digits.map((d, i) => (
+              <input
+                key={i}
+                ref={el => { boxRefs.current[i] = el }}
+                className="lx-otp"
+                inputMode="numeric"
+                maxLength={6}
+                value={d}
+                autoFocus={i === 0}
+                onChange={e => setDigit(i, e.target.value)}
+                onKeyDown={e => { if (e.key === "Backspace" && !digits[i] && i > 0) boxRefs.current[i - 1]?.focus() }}
+              />
+            ))}
+          </div>
+          {err && <p className="lx-error">{err}</p>}
+          <button type="submit" className="lx-login-btn" disabled={digits.join("").length !== 6}>Verify code</button>
+          <button type="button" className="lx-resend" onClick={e => lookupAndSend(e as unknown as FormEvent)} disabled={busy}>
+            {busy ? "Sending…" : "Resend code"}
+          </button>
+        </form>
+      )}
+
+      {stage === "setup" && (
+        <form onSubmit={finishSetup}>
+          <h1 className="lx-title">Welcome, {account?.name}!</h1>
+          <p className="lx-sub">You're verified. Set a password to finish activating your {account?.kind} account.</p>
+          <label className="lx-label">New Password</label>
+          <div className="lx-input-wrap">
+            <input className="lx-input" type="password" placeholder="At least 6 characters" value={pw} onChange={e => setPw(e.target.value)} required autoFocus />
+          </div>
+          <label className="lx-label">Confirm Password</label>
+          <div className="lx-input-wrap">
+            <input className="lx-input" type="password" placeholder="Repeat your password" value={pw2} onChange={e => setPw2(e.target.value)} required />
+          </div>
+          {err && <p className="lx-error">{err}</p>}
+          <button type="submit" className="lx-login-btn" disabled={busy}>{busy ? "Saving…" : "Activate my account"}</button>
+        </form>
+      )}
+
+      {stage === "done" && (
+        <div style={{ textAlign: "center" }}>
+          <div className="lx-done-ico">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <h1 className="lx-title" style={{ marginBottom: 8 }}>You're all set!</h1>
+          <p className="lx-sub">Your account is active. Log in with your email and new password.</p>
+          <button type="button" className="lx-login-btn" onClick={() => onDone(account!.email, account!.kind === "admin" ? "admin" : "customer")}>
+            Go to login
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function LoginPage({ onLogin, error }: {
   onLogin: (role: UserRole, username: string, password: string) => Promise<void>
   error: string
@@ -125,6 +279,7 @@ export function LoginPage({ onLogin, error }: {
   const [showPw, setShowPw]     = useState(false)
   const [remember, setRemember] = useState(false)
   const [loading, setLoading]   = useState(false)
+  const [mode, setMode]         = useState<"login" | "activate">("login")
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setLoading(true)
@@ -164,6 +319,12 @@ export function LoginPage({ onLogin, error }: {
 
       {/* ─── GLASS LOGIN CARD ─── */}
       <div className="lx-card-wrap">
+        {mode === "activate" ? (
+          <ActivateFlow
+            onBack={() => setMode("login")}
+            onDone={(em, r) => { setUsername(em); setRole(r); setMode("login") }}
+          />
+        ) : (
         <form className="lx-card" onSubmit={submit}>
           <h1 className="lx-title">Log In to Punjab™</h1>
 
@@ -215,11 +376,12 @@ export function LoginPage({ onLogin, error }: {
             {loading ? "Signing in…" : "Log In"}
           </button>
 
-          <p className="lx-signup-note">Don't have an account?</p>
-          <button type="button" className="lx-signup-btn" onClick={() => setRole("customer")}>
-            Contact us for a trade account
+          <p className="lx-signup-note">First time here?</p>
+          <button type="button" className="lx-signup-btn" onClick={() => setMode("activate")}>
+            Activate your account with email
           </button>
         </form>
+        )}
       </div>
     </div>
   )

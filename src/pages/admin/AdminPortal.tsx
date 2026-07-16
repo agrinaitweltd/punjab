@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
+import { sendEmail, welcomeEmailHtml } from '../../lib/emailService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
 import { getStock, updateStock } from '../../api/stockApi'
@@ -127,6 +128,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           customers={customers}
           onCreate={async (input) => {
             await createCustomer(input)
+            if (input.email) {
+              void sendEmail(input.email, "Welcome to the Punjab Exotic Foods Portal",
+                welcomeEmailHtml(input.contactPerson || input.companyName, "customer", window.location.origin))
+            }
             await load()
           }}
           onUpdate={async (id, input) => {
@@ -237,6 +242,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           admins={admins}
           onCreate={async (name, email, password, role, permissions) => {
             await createAdmin({ name, email, password, role, active: true, isSuperAdmin: false, permissions })
+            if (email) {
+              void sendEmail(email, "Your Punjab Exotic Foods admin account",
+                welcomeEmailHtml(name, "admin", window.location.origin))
+            }
             await load()
           }}
           onUpdate={async (id, data) => {

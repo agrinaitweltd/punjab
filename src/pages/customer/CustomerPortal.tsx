@@ -22,7 +22,7 @@ const STOCK_COLORS: Record<string, string> = {
 const STATUS_TABS = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
 
 function Avatar({ name, color }: { name: string; color?: string }) {
-  const bg = color ?? "#6d5ff2"
+  const bg = color ?? "#1f7a3a"
   return (
     <div style={{ width: 34, height: 34, borderRadius: 9, background: bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
       {name.slice(0, 2).toUpperCase()}
@@ -32,7 +32,7 @@ function Avatar({ name, color }: { name: string; color?: string }) {
 function ProgressBar({ pct, color }: { pct: number; color?: string }) {
   return (
     <div style={{ width: 80, height: 6, background: "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
-      <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color ?? "#6d5ff2", borderRadius: 99 }} />
+      <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color ?? "#1f7a3a", borderRadius: 99 }} />
     </div>
   )
 }
@@ -43,7 +43,7 @@ function StatCard({ label, value, delta, positive, icon, iconBg, iconColor }: {
   return (
     <div className="sh-stat">
       <div className="sh-stat-top">
-        {icon && <span className="sh-stat-ico" style={{ background: iconBg ?? "#eef2ff", color: iconColor ?? "#6d5ff2" }}>{icon}</span>}
+        {icon && <span className="sh-stat-ico" style={{ background: iconBg ?? "#e8f8ec", color: iconColor ?? "#1f7a3a" }}>{icon}</span>}
         <span className="sh-stat-label">{label}</span>
       </div>
       <div className="sh-stat-value">{value}</div>
@@ -66,13 +66,13 @@ function RevenueLine({ points }: { points: number[] }) {
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="140" preserveAspectRatio="none" role="img" aria-label="Revenue trend">
         <defs>
           <linearGradient id="shArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6d5ff2" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#6d5ff2" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#1f7a3a" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#1f7a3a" stopOpacity="0.02" />
           </linearGradient>
         </defs>
         <polygon points={area} fill="url(#shArea)" />
-        <polyline points={line} fill="none" stroke="#6d5ff2" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-        {xy.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3" fill="#fff" stroke="#6d5ff2" strokeWidth="2" />)}
+        <polyline points={line} fill="none" stroke="#1f7a3a" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {xy.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3" fill="#fff" stroke="#1f7a3a" strokeWidth="2" />)}
       </svg>
     </div>
   )
@@ -213,7 +213,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
             <StatCard label="Pending Orders" value={String(myOrders.filter(o => o.status === "Pending").length)} delta="in review" positive
-              iconBg="#eef2ff" iconColor="#6d5ff2"
+              iconBg="#e8f8ec" iconColor="#1f7a3a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
             <StatCard label="Products Available" value={String(stock.filter(s => s.status !== "out").length)} delta={stockFresh ? "updated today" : "awaiting update"} positive={stockFresh}
               iconBg="#fef3c7" iconColor="#b45309"
@@ -440,7 +440,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               iconBg="#fef2f2" iconColor="#dc2626"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
             <StatCard label="Invoices" value={String(myInvoices.length)}
-              iconBg="#eef2ff" iconColor="#6d5ff2"
+              iconBg="#e8f8ec" iconColor="#1f7a3a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
             <StatCard label="Payments Made" value={String(myPayments.length)} delta="+5%" positive
               iconBg="#f0fdf4" iconColor="#16a34a"

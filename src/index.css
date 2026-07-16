@@ -1,4 +1,4 @@
-﻿*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --green-950: #071a10;
@@ -1464,7 +1464,7 @@ tbody tr:hover td { background: #fafbfc; }
    LOGIN — deep violet glass (Lucy style)
 ══════════════════════════════════════════ */
 .lx-page {
-  min-height: 100vh; background: linear-gradient(135deg, #4a3d92 0%, #453789 55%, #3d2f7e 100%);
+  min-height: 100vh; background: linear-gradient(135deg, #123f24 0%, #0d2b1e 55%, #1a5c2d 100%);
   display: flex; align-items: center; justify-content: space-between;
   position: relative; overflow: hidden; padding: 40px 0;
 }
@@ -1528,16 +1528,16 @@ tbody tr:hover td { background: #fafbfc; }
 .lx-eye { background: none; border: none; cursor: pointer; padding: 2px; }
 .lx-row-between { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
 .lx-remember { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: rgba(255,255,255,0.75); cursor: pointer; }
-.lx-remember input { accent-color: #8bd8ec; }
+.lx-remember input { accent-color: #f5c518; }
 .lx-forgot { background: none; border: none; color: rgba(255,255,255,0.65); font-family: inherit; font-size: 12.5px; cursor: pointer; }
 .lx-forgot:hover { color: #fff; }
 .lx-error { margin-top: 12px; font-size: 13px; color: #ffb3b3; background: rgba(220,38,38,0.18); border-radius: 8px; padding: 8px 12px; }
 .lx-login-btn {
   margin-top: 18px; width: 100%; padding: 12px; border: none; border-radius: 10px;
-  background: #8bd8ec; color: #17264a; font-family: inherit; font-size: 14.5px; font-weight: 800;
+  background: #f5c518; color: #3b2a00; font-family: inherit; font-size: 14.5px; font-weight: 800;
   cursor: pointer; transition: background 0.15s;
 }
-.lx-login-btn:hover:not(:disabled) { background: #a5e3f2; }
+.lx-login-btn:hover:not(:disabled) { background: #ffd23e; }
 .lx-login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .lx-signup-note { text-align: center; font-size: 12.5px; color: rgba(255,255,255,0.6); margin: 16px 0 8px; }
 .lx-signup-btn {
@@ -1599,7 +1599,7 @@ tbody tr:hover td { background: #fafbfc; }
    CUSTOMER OVERVIEW — Shopall style (indigo)
 ══════════════════════════════════════════ */
 .sh-banner {
-  background: linear-gradient(95deg, #6d5ff2 0%, #7c5cf5 55%, #8f66f8 100%);
+  background: linear-gradient(95deg, #1f7a3a 0%, #e3b410 55%, #f2790f 100%);
   border-radius: 12px; color: #fff; padding: 16px 20px;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
 }
@@ -1611,10 +1611,10 @@ tbody tr:hover td { background: #fafbfc; }
 }
 .sh-banner-title { font-size: 15px; font-weight: 700; }
 .sh-banner-btn {
-  background: #fff; color: #5b4bd6; border: none; border-radius: 9px; padding: 10px 18px;
+  background: #fff; color: #1f7a3a; border: none; border-radius: 9px; padding: 10px 18px;
   font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;
 }
-.sh-banner-btn:hover { background: #f1efff; }
+.sh-banner-btn:hover { background: #fff7e0; }
 .sh-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .sh-head-title { font-size: 17px; font-weight: 800; color: var(--text-heading); }
 .sh-controls { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1642,7 +1642,7 @@ tbody tr:hover td { background: #fafbfc; }
 .sh-bars { display: flex; align-items: flex-end; gap: 10px; height: 140px; margin-top: 18px; }
 .sh-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; height: 100%; }
 .sh-bar-track { width: 100%; max-width: 34px; flex: 1; background: #f1f2f7; border-radius: 8px; position: relative; overflow: hidden; }
-.sh-bar-fill { position: absolute; bottom: 0; left: 0; width: 100%; border-radius: 8px; background: linear-gradient(180deg, #8b7cf7, #6d5ff2); }
+.sh-bar-fill { position: absolute; bottom: 0; left: 0; width: 100%; border-radius: 8px; background: linear-gradient(180deg, #f5c518, #1f7a3a); }
 .sh-bar-lab { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
 .sh-line-wrap { margin-top: 18px; }
 .sh-empty-chart { height: 140px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px; margin-top: 18px; }
@@ -1654,15 +1654,15 @@ tbody tr:hover td { background: #fafbfc; }
   font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent;
   margin-bottom: -1px; white-space: nowrap; display: flex; align-items: center; gap: 6px; flex-shrink: 0;
 }
-.sh-ttab.on { color: var(--text-heading); border-bottom-color: #6d5ff2; font-weight: 700; }
-.sh-ttab-badge { background: #6d5ff2; color: #fff; border-radius: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; }
+.sh-ttab.on { color: var(--text-heading); border-bottom-color: #1f7a3a; font-weight: 700; }
+.sh-ttab-badge { background: #1f7a3a; color: #fff; border-radius: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; }
 .sh-pager-row { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border-light); }
 .sh-pgbtn {
   width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
   font-family: inherit; font-size: 13px; color: #374151; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-.sh-pgbtn:hover:not(:disabled) { background: #f4f2ff; border-color: #c7bfff; }
+.sh-pgbtn:hover:not(:disabled) { background: #f0fdf4; border-color: #9de3ae; }
 .sh-pgbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 @media (max-width: 1100px) { .sh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px)  { .sh-charts { grid-template-columns: 1fr; } }
@@ -1942,3 +1942,97 @@ tbody tr:hover td { background: #fafbfc; }
   .ss-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ss-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* ══════════════════════════════════════════
+   BRAND PALETTE — green / yellow / orange / red
+══════════════════════════════════════════ */
+:root {
+  --yellow-500: #f5c518;
+  --orange-500: #f2790f;
+  --red-500: #d93025;
+  --brand-gradient: linear-gradient(90deg, #1f7a3a, #f5c518 45%, #f2790f 75%, #d93025);
+}
+
+/* Signature brand stripe across the app chrome */
+.topbar { position: relative; }
+.topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px;
+  background: var(--brand-gradient);
+}
+.hr-summary, .sh-table-card, .db-quick-section, .ss-card {
+  position: relative; overflow: hidden;
+}
+.hr-summary::before, .ss-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--brand-gradient);
+}
+
+/* ── Modal — premium look ── */
+.modal-backdrop {
+  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  background: rgba(13, 43, 30, 0.45) !important;
+}
+.modal {
+  border-radius: 18px !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28) !important;
+  overflow: hidden;
+  position: relative;
+}
+.modal::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: var(--brand-gradient);
+}
+.modal-header {
+  background: #fafcfa;
+  border-bottom: 1px solid var(--border-light) !important;
+}
+.modal-header h3 { letter-spacing: -0.2px; }
+
+/* ── Login: activation flow ── */
+.lx-back {
+  background: none; border: none; color: rgba(255,255,255,0.65); font-family: inherit;
+  font-size: 12.5px; cursor: pointer; padding: 0; margin-bottom: 14px; text-align: left;
+}
+.lx-back:hover { color: #fff; }
+.lx-sub { font-size: 13px; color: rgba(255,255,255,0.72); line-height: 1.6; margin-bottom: 14px; }
+.lx-otp-row { display: flex; gap: 8px; justify-content: space-between; margin: 18px 0 6px; }
+.lx-otp {
+  width: 46px; height: 54px; text-align: center; font-size: 22px; font-weight: 800;
+  border-radius: 12px; border: 1.5px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.1); color: #fff; outline: none; font-family: inherit;
+  transition: border-color 0.15s, background 0.15s; font-variant-numeric: tabular-nums;
+}
+.lx-otp:focus { border-color: var(--yellow-500); background: rgba(255,255,255,0.16); }
+.lx-resend {
+  width: 100%; margin-top: 10px; background: none; border: none;
+  color: rgba(255,255,255,0.65); font-family: inherit; font-size: 12.5px; cursor: pointer;
+}
+.lx-resend:hover:not(:disabled) { color: #fff; }
+.lx-resend:disabled { opacity: 0.5; cursor: not-allowed; }
+.lx-devhint {
+  font-size: 12.5px; background: rgba(245,197,24,0.15); border: 1px dashed rgba(245,197,24,0.5);
+  color: #ffe38a; border-radius: 8px; padding: 8px 12px; margin-bottom: 4px;
+}
+.lx-done-ico {
+  width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 16px;
+  background: rgba(245,197,24,0.18); color: var(--yellow-500);
+  display: flex; align-items: center; justify-content: center;
+}
+.lx-card .lx-error { margin-bottom: 4px; }
+@media (max-width: 420px) {
+  .lx-otp { width: 40px; height: 48px; font-size: 19px; border-radius: 10px; }
+}
+
+/* Login page: warm glow accents over the green */
+.lx-page::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 85% 15%, rgba(245,197,24,0.14), transparent 60%),
+    radial-gradient(ellipse 50% 45% at 10% 90%, rgba(242,121,15,0.12), transparent 60%);
+}
+.lx-card { border-top: 3px solid rgba(245,197,24,0.55); }
+
+/* Buttons: warm hover accents */
+.db-primary-btn, .btn-primary { box-shadow: 0 2px 8px rgba(31,122,58,0.28); }
+.sh-banner-btn { color: #14532d; }
+.hd-tab.on { border-image: linear-gradient(90deg, #1f7a3a, #f2790f) 1; border-bottom-width: 2.5px; }
