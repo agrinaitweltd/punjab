@@ -89,6 +89,28 @@ export function buildAddressCandidates(result: PostcodeResult): string[] {
   return [...lines]
 }
 
+export type FullAddress = { full: string }
+
+/** Full premises-level address lookup via Ideal Postcodes (paid, key held
+    server-side in the /api/lookup-address proxy — never exposed to the client).
+    Falls back gracefully (ok:false) if the key isn't configured, the postcode
+    has no listed addresses, or the request fails for any reason, so the UI
+    can drop back to manual address entry. */
+export async function lookupFullAddresses(rawPostcode: string): Promise<{ ok: true; addresses: FullAddress[] } | { ok: false; error: string }> {
+  const postcode = rawPostcode.trim()
+  if (!postcode) return { ok: false, error: "Enter a postcode." }
+  try {
+    const res = await fetch(`/api/lookup-address?postcode=${encodeURIComponent(postcode)}`)
+    const body = await res.json()
+    if (!res.ok || !Array.isArray(body.addresses) || body.addresses.length === 0) {
+      return { ok: false, error: "We couldn't find any addresses for that postcode." }
+    }
+    return { ok: true, addresses: body.addresses.map((a: { full: string }) => ({ full: a.full })) }
+  } catch {
+    return { ok: false, error: "Couldn't reach the address lookup service." }
+  }
+}
+
 /** Matches a postcode-lookup result against our known UK delivery areas. */
 export function matchDeliveryArea(result: PostcodeResult, areaNames: string[]): string | null {
   const haystack = `${result.adminDistrict ?? ""} ${result.region ?? ""}`.toLowerCase()

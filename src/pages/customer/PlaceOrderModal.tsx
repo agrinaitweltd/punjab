@@ -4,7 +4,7 @@ import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { createOrder } from "../../api/ordersApi"
 import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS } from "../../lib/emailService"
-import { lookupPostcode, matchDeliveryArea, buildAddressCandidates } from "../../lib/postcode"
+import { lookupPostcode, matchDeliveryArea, buildAddressCandidates, lookupFullAddresses } from "../../lib/postcode"
 import { mockDeliveryAreas } from "../../data/mockData"
 
 type Fulfilment = "Delivery" | "Collection"
@@ -46,15 +46,18 @@ export function PlaceOrderModal({
   const [houseAndStreet, setHouseAndStreet] = useState("")
   const [manualAddress, setManualAddress] = useState("")
   const [resolvedPostcode, setResolvedPostcode] = useState("")
+  const [realAddresses, setRealAddresses] = useState<string[]>([])
+  const [selectedRealAddress, setSelectedRealAddress] = useState("")
 
   const fullDeliveryAddress = postcodeStatus === "found"
-    ? [houseAndStreet, selectedLocality, resolvedPostcode].filter(Boolean).join(", ")
+    ? (realAddresses.length > 0 ? selectedRealAddress : [houseAndStreet, selectedLocality, resolvedPostcode].filter(Boolean).join(", "))
     : manualAddress
 
   const checkPostcode = async () => {
     setCheckingPostcode(true)
     setPostcodeStatus("idle")
     setPostcodeError("")
+    setRealAddresses([])
     const outcome = await lookupPostcode(postcode)
     if (!outcome.ok) {
       setPostcodeStatus("failed")
@@ -68,6 +71,13 @@ export function PlaceOrderModal({
       setSelectedLocality(candidates[0] ?? "")
       setResolvedPostcode(outcome.result.postcode)
       setPostcodeStatus("found")
+
+      const addressLookup = await lookupFullAddresses(postcode)
+      if (addressLookup.ok) {
+        const full = addressLookup.addresses.map(a => a.full)
+        setRealAddresses(full)
+        setSelectedRealAddress(full[0] ?? "")
+      }
     }
     setCheckingPostcode(false)
   }
@@ -108,6 +118,7 @@ export function PlaceOrderModal({
     setFulfilment("Delivery"); setPostcode(""); setPostcodeStatus("idle"); setPostcodeError("")
     setDeliveryArea(null); setAddressCandidates([]); setSelectedLocality("")
     setHouseAndStreet(""); setManualAddress(""); setResolvedPostcode("")
+    setRealAddresses([]); setSelectedRealAddress("")
   }
   const handleClose = () => { onClose(); if (step === "done") reset() }
 
@@ -319,25 +330,41 @@ export function PlaceOrderModal({
                         ? `${resolvedPostcode} is within our ${deliveryArea} delivery zone.`
                         : `${resolvedPostcode} is a valid UK postcode, outside our standard zones — our team will confirm delivery availability directly.`}
                     </p>
-                    {addressCandidates.length > 0 && (
+                    {realAddresses.length > 0 ? (
                       <>
-                        <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>Select your area</label>
+                        <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>Select your address</label>
                         <select
-                          value={selectedLocality}
-                          onChange={e => setSelectedLocality(e.target.value)}
-                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4, marginBottom: 8 }}
+                          value={selectedRealAddress}
+                          onChange={e => setSelectedRealAddress(e.target.value)}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4 }}
                         >
-                          {addressCandidates.map(c => <option key={c} value={c}>{c}</option>)}
+                          {realAddresses.map(a => <option key={a} value={a}>{a}</option>)}
                         </select>
                       </>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 12, color: "#9ca3af", marginBottom: 8 }}>We couldn't find a full address list for this postcode — please enter your address manually.</p>
+                        {addressCandidates.length > 0 && (
+                          <>
+                            <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>Select your area</label>
+                            <select
+                              value={selectedLocality}
+                              onChange={e => setSelectedLocality(e.target.value)}
+                              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4, marginBottom: 8 }}
+                            >
+                              {addressCandidates.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </>
+                        )}
+                        <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>House/flat number & street</label>
+                        <input
+                          placeholder="e.g. 14 Orchard Road"
+                          value={houseAndStreet}
+                          onChange={e => setHouseAndStreet(e.target.value)}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4 }}
+                        />
+                      </>
                     )}
-                    <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>House/flat number & street</label>
-                    <input
-                      placeholder="e.g. 14 Orchard Road"
-                      value={houseAndStreet}
-                      onChange={e => setHouseAndStreet(e.target.value)}
-                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4 }}
-                    />
                     {fullDeliveryAddress && (
                       <p style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>Full address to be sent: <strong style={{ color: "#374151" }}>{fullDeliveryAddress}</strong></p>
                     )}
