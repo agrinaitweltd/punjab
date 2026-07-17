@@ -5,6 +5,8 @@ export type PostcodeResult = {
   postcode: string
   region: string | null
   adminDistrict: string | null
+  adminWard: string | null
+  parish: string | null
   parliamentaryConstituency: string | null
   latitude: number
   longitude: number
@@ -61,6 +63,8 @@ export async function lookupPostcode(rawPostcode: string): Promise<{ ok: true; r
         postcode: r.postcode,
         region: r.region ?? null,
         adminDistrict: r.admin_district ?? null,
+        adminWard: r.admin_ward ?? null,
+        parish: r.parish ?? null,
         parliamentaryConstituency: r.parliamentary_constituency ?? null,
         latitude: r.latitude,
         longitude: r.longitude,
@@ -69,6 +73,20 @@ export async function lookupPostcode(rawPostcode: string): Promise<{ ok: true; r
   } catch {
     return { ok: false, error: "Couldn't reach the postcode lookup service — check your connection." }
   }
+}
+
+/** Postcodes.io only resolves a postcode to its area (district/ward/region) —
+    it has no premises-level address database, so we can't return real building
+    addresses to pick from. We build sensible candidate locality lines from the
+    real area data instead, and the customer still picks the one that matches
+    plus types their house name/number. */
+export function buildAddressCandidates(result: PostcodeResult): string[] {
+  const town = result.adminDistrict ?? result.region ?? ""
+  const lines = new Set<string>()
+  if (result.adminWard && result.adminWard !== town) lines.add(`${result.adminWard}, ${town}`)
+  if (result.parish && result.parish !== town && result.parish !== result.adminWard) lines.add(`${result.parish}, ${town}`)
+  if (town) lines.add(town)
+  return [...lines]
 }
 
 /** Matches a postcode-lookup result against our known UK delivery areas. */

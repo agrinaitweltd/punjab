@@ -43,6 +43,7 @@ function mapOrder(r: any): Order {
     customerName: r.customer_name ?? "", date: r.date ?? "",
     amount: r.amount ?? 0, status: r.status ?? "Pending", items: r.items ?? [],
     fulfilment: r.fulfilment === "Collection" ? "Collection" : "Delivery",
+    deliveryAddress: r.delivery_address ?? "",
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,14 +192,16 @@ class SupabaseDatabaseService {
       status: "Pending",
       items: input.items,
       fulfilment: input.fulfilment ?? "Delivery",
+      delivery_address: input.deliveryAddress ?? null,
     }
     let { data, error } = await db().from("orders").insert(row).select().single()
-    // The "fulfilment" column may not exist yet if the schema migration hasn't been run —
-    // retry without it so checkout still works rather than hard-failing the order.
-    if (error && (error.message?.includes("fulfilment") || error.code === "PGRST204")) {
-      const { fulfilment: _drop, ...rowWithoutFulfilment } = row
-      void _drop
-      ;({ data, error } = await db().from("orders").insert(rowWithoutFulfilment).select().single())
+    // The "fulfilment"/"delivery_address" columns may not exist yet if the schema
+    // migration hasn't been run — retry without them so checkout still works
+    // rather than hard-failing the order.
+    if (error && (error.message?.includes("fulfilment") || error.message?.includes("delivery_address") || error.code === "PGRST204")) {
+      const { fulfilment: _f, delivery_address: _d, ...rowWithoutExtras } = row
+      void _f; void _d
+      ;({ data, error } = await db().from("orders").insert(rowWithoutExtras).select().single())
     }
     if (error) throw error
     return mapOrder(data)

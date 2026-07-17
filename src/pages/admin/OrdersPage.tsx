@@ -198,6 +198,13 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
                 </div>
               )}
 
+              {o.fulfilment !== "Collection" && o.deliveryAddress && (
+                <div style={{ margin: "12px 0", border: "1.5px dashed #1d4ed8", borderRadius: 10, padding: "12px 16px", background: "#eff6ff", fontSize: 13, color: "#374151", lineHeight: 1.6 }}>
+                  <p style={{ margin: "0 0 4px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#1d4ed8", fontWeight: 700 }}>Deliver to</p>
+                  {o.deliveryAddress}
+                </div>
+              )}
+
               {o.status !== "Cancelled" && (
                 <div className="ord-track">
                   {STEPS.map((s, i) => (

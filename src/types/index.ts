@@ -85,6 +85,7 @@ export interface Order {
   status: OrderStatus
   items: OrderItem[]
   fulfilment?: 'Delivery' | 'Collection'
+  deliveryAddress?: string
 }
 
 export interface Invoice {

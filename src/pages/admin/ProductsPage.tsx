@@ -100,6 +100,28 @@ export function ProductsPage({
     setEditTarget(null)
   }
 
+  const bulkApplyCategory = async () => {
+    const category = window.prompt(`Apply a category to ${selected.size} selected product(s):`)
+    if (!category || !category.trim()) return
+    await Promise.all([...selected].map(id => onUpdate(id, { category: category.trim() })))
+    setSelected(new Set())
+  }
+
+  const bulkEditInfo = () => {
+    if (selected.size !== 1) {
+      window.alert("Select exactly one product to edit its info.")
+      return
+    }
+    const product = products.find(p => p.id === [...selected][0])
+    if (product) setEditTarget(product)
+  }
+
+  const bulkDelete = async () => {
+    if (!window.confirm(`Delete ${selected.size} selected product(s)? This cannot be undone.`)) return
+    await Promise.all([...selected].map(id => onDelete(id)))
+    setSelected(new Set())
+  }
+
   return (
     <div className="ps-wrap">
       {/* ── Page Header ── */}
@@ -263,16 +285,16 @@ export function ProductsPage({
           <div className="ps-selection-bar">
             <span className="ps-sel-count">{selected.size} Selected</span>
             <div className="ps-sel-divider" />
-            <button className="ps-sel-btn">Apply Code</button>
+            <button className="ps-sel-btn" onClick={bulkApplyCategory}>Apply Code</button>
             <div className="ps-sel-divider" />
-            <button className="ps-sel-btn">Edit Info</button>
+            <button className="ps-sel-btn" onClick={bulkEditInfo}>Edit Info</button>
             <div className="ps-sel-divider" />
-            <button className="ps-sel-btn ps-sel-danger">
+            <button className="ps-sel-btn ps-sel-danger" onClick={bulkDelete}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
               Delete
             </button>
             <div className="ps-sel-divider" />
-            <button className="ps-sel-btn">•••</button>
+            <button className="ps-sel-btn" onClick={exportProducts} title="Export selected as CSV">•••</button>
             <button className="ps-sel-close" onClick={() => setSelected(new Set())}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>

@@ -65,6 +65,7 @@ export function orderReceivedEmailHtml(
   orderNumber: string, customerName: string,
   items: { name: string; qty: number; unitPrice: number }[], total: number,
   fulfilment: "Delivery" | "Collection" = "Delivery",
+  deliveryAddress?: string,
 ) {
   const fulfilmentBlock = fulfilment === "Collection" ? `
     <div style="border:1.5px dashed #f2790f;border-radius:12px;padding:16px 20px;margin:16px 0;background:#fff8ef">
@@ -76,7 +77,8 @@ export function orderReceivedEmailHtml(
       <p style="margin:0;color:#374151">${COLLECTION_ADDRESS.city} ${COLLECTION_ADDRESS.postcode}</p>
     </div>` : `
     <div style="border-radius:12px;padding:12px 20px;margin:16px 0;background:#f0fdf4">
-      <p style="margin:0;font-size:13px;color:#14532d"><strong>Fulfilment:</strong> Delivery to your registered address</p>
+      <p style="margin:0 0 4px;font-size:13px;color:#14532d"><strong>Fulfilment:</strong> Delivery</p>
+      ${deliveryAddress ? `<p style="margin:0;font-size:13px;color:#14532d">${deliveryAddress}</p>` : ""}
     </div>`
   const rows = items.map(it => `
     <tr>

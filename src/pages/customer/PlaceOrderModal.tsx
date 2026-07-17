@@ -4,7 +4,7 @@ import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { createOrder } from "../../api/ordersApi"
 import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS } from "../../lib/emailService"
-import { lookupPostcode, matchDeliveryArea } from "../../lib/postcode"
+import { lookupPostcode, matchDeliveryArea, buildAddressCandidates } from "../../lib/postcode"
 import { mockDeliveryAreas } from "../../data/mockData"
 
 type Fulfilment = "Delivery" | "Collection"
@@ -38,22 +38,36 @@ export function PlaceOrderModal({
   const [fulfilment, setFulfilment] = useState<Fulfilment>("Delivery")
   const [postcode, setPostcode] = useState("")
   const [checkingPostcode, setCheckingPostcode] = useState(false)
-  const [postcodeResult, setPostcodeResult] = useState<{ area: string | null; label: string } | { error: string } | null>(null)
+  const [postcodeStatus, setPostcodeStatus] = useState<"idle" | "found" | "failed">("idle")
+  const [postcodeError, setPostcodeError] = useState("")
+  const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
+  const [addressCandidates, setAddressCandidates] = useState<string[]>([])
+  const [selectedLocality, setSelectedLocality] = useState("")
+  const [houseAndStreet, setHouseAndStreet] = useState("")
+  const [manualAddress, setManualAddress] = useState("")
+  const [resolvedPostcode, setResolvedPostcode] = useState("")
+
+  const fullDeliveryAddress = postcodeStatus === "found"
+    ? [houseAndStreet, selectedLocality, resolvedPostcode].filter(Boolean).join(", ")
+    : manualAddress
 
   const checkPostcode = async () => {
     setCheckingPostcode(true)
-    setPostcodeResult(null)
+    setPostcodeStatus("idle")
+    setPostcodeError("")
     const outcome = await lookupPostcode(postcode)
     if (!outcome.ok) {
-      setPostcodeResult({ error: outcome.error })
+      setPostcodeStatus("failed")
+      setPostcodeError(outcome.error)
+      setAddressCandidates([])
     } else {
       const area = matchDeliveryArea(outcome.result, mockDeliveryAreas.map(a => a.name))
-      setPostcodeResult({
-        area,
-        label: area
-          ? `${outcome.result.postcode} is within our ${area} delivery zone.`
-          : `${outcome.result.postcode} is a valid UK postcode, but it's outside our standard delivery zones — our team will confirm delivery availability directly.`,
-      })
+      const candidates = buildAddressCandidates(outcome.result)
+      setDeliveryArea(area)
+      setAddressCandidates(candidates)
+      setSelectedLocality(candidates[0] ?? "")
+      setResolvedPostcode(outcome.result.postcode)
+      setPostcodeStatus("found")
     }
     setCheckingPostcode(false)
   }
@@ -91,7 +105,9 @@ export function PlaceOrderModal({
 
   const reset = () => {
     setCart({}); setStep("browse"); setSearch(""); setCategory("All"); setError("")
-    setFulfilment("Delivery"); setPostcode(""); setPostcodeResult(null)
+    setFulfilment("Delivery"); setPostcode(""); setPostcodeStatus("idle"); setPostcodeError("")
+    setDeliveryArea(null); setAddressCandidates([]); setSelectedLocality("")
+    setHouseAndStreet(""); setManualAddress(""); setResolvedPostcode("")
   }
   const handleClose = () => { onClose(); if (step === "done") reset() }
 
@@ -105,6 +121,7 @@ export function PlaceOrderModal({
         amount: cartTotal,
         items: cartLines.map(l => ({ productId: l.product.id, quantity: l.qty, unitPrice: l.stock.price })),
         fulfilment,
+        deliveryAddress: fulfilment === "Delivery" ? fullDeliveryAddress : "",
       })
       setPlacedNumber(order.orderNumber)
       setStep("done")
@@ -112,7 +129,8 @@ export function PlaceOrderModal({
       if (customerEmail) {
         void sendEmail(customerEmail, `Order ${order.orderNumber} received — Punjab Exotic Foods`,
           orderReceivedEmailHtml(order.orderNumber, customerName,
-            cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment))
+            cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment,
+            fulfilment === "Delivery" ? fullDeliveryAddress : undefined))
       }
     } catch {
       setError("We couldn't place your order — please try again or contact support.")
@@ -273,18 +291,57 @@ export function PlaceOrderModal({
                   <input
                     placeholder="Enter your postcode, e.g. E10 5SQ"
                     value={postcode}
-                    onChange={e => { setPostcode(e.target.value); setPostcodeResult(null) }}
+                    onChange={e => { setPostcode(e.target.value); setPostcodeStatus("idle") }}
                     style={{ flex: 1, padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5 }}
                   />
                   <Button variant="secondary" disabled={!postcode.trim() || checkingPostcode} onClick={checkPostcode}>
-                    {checkingPostcode ? "Checking…" : "Check my area"}
+                    {checkingPostcode ? "Checking…" : "Find address"}
                   </Button>
                 </div>
-                {postcodeResult && "error" in postcodeResult && (
-                  <p style={{ marginTop: 8, fontSize: 12.5, color: "#b91c1c" }}>{postcodeResult.error}</p>
+
+                {postcodeStatus === "failed" && (
+                  <div style={{ marginTop: 10 }}>
+                    <p style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 6 }}>{postcodeError} Please enter your address manually.</p>
+                    <textarea
+                      placeholder="Full delivery address (house/flat number, street, city, postcode)"
+                      value={manualAddress}
+                      onChange={e => setManualAddress(e.target.value)}
+                      rows={3}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, resize: "vertical" }}
+                    />
+                  </div>
                 )}
-                {postcodeResult && "label" in postcodeResult && (
-                  <p style={{ marginTop: 8, fontSize: 12.5, color: postcodeResult.area ? "#15803d" : "#b45309" }}>{postcodeResult.label}</p>
+
+                {postcodeStatus === "found" && (
+                  <div style={{ marginTop: 10 }}>
+                    <p style={{ fontSize: 12.5, color: deliveryArea ? "#15803d" : "#b45309", marginBottom: 8 }}>
+                      {deliveryArea
+                        ? `${resolvedPostcode} is within our ${deliveryArea} delivery zone.`
+                        : `${resolvedPostcode} is a valid UK postcode, outside our standard zones — our team will confirm delivery availability directly.`}
+                    </p>
+                    {addressCandidates.length > 0 && (
+                      <>
+                        <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>Select your area</label>
+                        <select
+                          value={selectedLocality}
+                          onChange={e => setSelectedLocality(e.target.value)}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4, marginBottom: 8 }}
+                        >
+                          {addressCandidates.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </>
+                    )}
+                    <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>House/flat number & street</label>
+                    <input
+                      placeholder="e.g. 14 Orchard Road"
+                      value={houseAndStreet}
+                      onChange={e => setHouseAndStreet(e.target.value)}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5, marginTop: 4 }}
+                    />
+                    {fullDeliveryAddress && (
+                      <p style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>Full address to be sent: <strong style={{ color: "#374151" }}>{fullDeliveryAddress}</strong></p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
