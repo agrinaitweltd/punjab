@@ -4,6 +4,8 @@ import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { createOrder } from "../../api/ordersApi"
 import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS } from "../../lib/emailService"
+import { lookupPostcode, matchDeliveryArea } from "../../lib/postcode"
+import { mockDeliveryAreas } from "../../data/mockData"
 
 type Fulfilment = "Delivery" | "Collection"
 
@@ -34,6 +36,27 @@ export function PlaceOrderModal({
   const [error, setError] = useState("")
   const [placedNumber, setPlacedNumber] = useState("")
   const [fulfilment, setFulfilment] = useState<Fulfilment>("Delivery")
+  const [postcode, setPostcode] = useState("")
+  const [checkingPostcode, setCheckingPostcode] = useState(false)
+  const [postcodeResult, setPostcodeResult] = useState<{ area: string | null; label: string } | { error: string } | null>(null)
+
+  const checkPostcode = async () => {
+    setCheckingPostcode(true)
+    setPostcodeResult(null)
+    const outcome = await lookupPostcode(postcode)
+    if (!outcome.ok) {
+      setPostcodeResult({ error: outcome.error })
+    } else {
+      const area = matchDeliveryArea(outcome.result, mockDeliveryAreas.map(a => a.name))
+      setPostcodeResult({
+        area,
+        label: area
+          ? `${outcome.result.postcode} is within our ${area} delivery zone.`
+          : `${outcome.result.postcode} is a valid UK postcode, but it's outside our standard delivery zones — our team will confirm delivery availability directly.`,
+      })
+    }
+    setCheckingPostcode(false)
+  }
 
   const stockMap = useMemo(() => {
     const m: Record<string, StockItem> = {}
@@ -66,7 +89,10 @@ export function PlaceOrderModal({
   const addOne = (pid: string) => setQty(pid, (cart[pid] ?? 0) + 1)
   const removeLine = (pid: string) => setCart(c => { const n = { ...c }; delete n[pid]; return n })
 
-  const reset = () => { setCart({}); setStep("browse"); setSearch(""); setCategory("All"); setError(""); setFulfilment("Delivery") }
+  const reset = () => {
+    setCart({}); setStep("browse"); setSearch(""); setCategory("All"); setError("")
+    setFulfilment("Delivery"); setPostcode(""); setPostcodeResult(null)
+  }
   const handleClose = () => { onClose(); if (step === "done") reset() }
 
   const confirmOrder = async () => {
@@ -78,6 +104,7 @@ export function PlaceOrderModal({
         customerName,
         amount: cartTotal,
         items: cartLines.map(l => ({ productId: l.product.id, quantity: l.qty, unitPrice: l.stock.price })),
+        fulfilment,
       })
       setPlacedNumber(order.orderNumber)
       setStep("done")
@@ -238,6 +265,27 @@ export function PlaceOrderModal({
                 {COLLECTION_ADDRESS.line3}<br />
                 {COLLECTION_ADDRESS.line4}<br />
                 {COLLECTION_ADDRESS.city} {COLLECTION_ADDRESS.postcode}
+              </div>
+            )}
+            {fulfilment === "Delivery" && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    placeholder="Enter your postcode, e.g. E10 5SQ"
+                    value={postcode}
+                    onChange={e => { setPostcode(e.target.value); setPostcodeResult(null) }}
+                    style={{ flex: 1, padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13.5 }}
+                  />
+                  <Button variant="secondary" disabled={!postcode.trim() || checkingPostcode} onClick={checkPostcode}>
+                    {checkingPostcode ? "Checking…" : "Check my area"}
+                  </Button>
+                </div>
+                {postcodeResult && "error" in postcodeResult && (
+                  <p style={{ marginTop: 8, fontSize: 12.5, color: "#b91c1c" }}>{postcodeResult.error}</p>
+                )}
+                {postcodeResult && "label" in postcodeResult && (
+                  <p style={{ marginTop: 8, fontSize: 12.5, color: postcodeResult.area ? "#15803d" : "#b45309" }}>{postcodeResult.label}</p>
+                )}
               </div>
             )}
           </div>

@@ -92,8 +92,12 @@ create table if not exists orders (
   amount        numeric(10,2) default 0,
   status        text default 'Pending',
   items         jsonb default '[]'::jsonb,
+  fulfilment    text default 'Delivery' check (fulfilment in ('Delivery', 'Collection')),
   created_at    timestamptz default now()
 );
+
+-- If the orders table already existed before this column was added, run:
+-- alter table orders add column if not exists fulfilment text default 'Delivery' check (fulfilment in ('Delivery', 'Collection'));
 
 -- INVOICES
 create table if not exists invoices (

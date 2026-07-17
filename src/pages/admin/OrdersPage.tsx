@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import type { Invoice, Order, OrderStatus, Product } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
+import { COLLECTION_ADDRESS } from "../../lib/emailService"
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; color: string }> = {
   Pending:   { bg: "#fef9c3", color: "#a16207" },
@@ -106,6 +107,7 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
               <th>Date</th>
               <th>Items</th>
               <th>Amount</th>
+              <th>Fulfilment</th>
               <th>Status</th>
               <th>Action</th>
             </tr></thead>
@@ -128,6 +130,11 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
                     <td style={{ color: "#6b7280" }}>{order.date}</td>
                     <td style={{ color: "#6b7280" }}>{order.items.length} item{order.items.length !== 1 ? "s" : ""}</td>
                     <td><strong>£{order.amount.toFixed(2)}</strong></td>
+                    <td>
+                      <span className="ps-badge" style={order.fulfilment === "Collection" ? { background: "#ffedd5", color: "#c2410c" } : { background: "#dbeafe", color: "#1d4ed8" }}>
+                        {order.fulfilment ?? "Delivery"}
+                      </span>
+                    </td>
                     <td>
                       <span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{order.status}</span>
                       {isPaid(order) && <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d", marginLeft: 6 }}>Paid</span>}
@@ -171,8 +178,25 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
                     ? <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d" }}>Paid</span>
                     : <span className="ps-badge" style={{ background: "#fee2e2", color: "#b91c1c" }}>Unpaid</span>}
                 </div>
+                <div className="ord-row">
+                  <span>Fulfilment</span>
+                  <span className="ps-badge" style={o.fulfilment === "Collection" ? { background: "#ffedd5", color: "#c2410c" } : { background: "#dbeafe", color: "#1d4ed8" }}>
+                    {o.fulfilment ?? "Delivery"}
+                  </span>
+                </div>
                 <div className="ord-row ord-total"><span>Total</span><strong>£{o.amount.toFixed(2)}</strong></div>
               </div>
+
+              {o.fulfilment === "Collection" && (
+                <div style={{ margin: "12px 0", border: "1.5px dashed #f2790f", borderRadius: 10, padding: "12px 16px", background: "#fff8ef", fontSize: 13, color: "#374151", lineHeight: 1.6 }}>
+                  <p style={{ margin: "0 0 4px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#b25c0a", fontWeight: 700 }}>Customer is collecting from</p>
+                  <strong style={{ color: "#111827" }}>{COLLECTION_ADDRESS.line1}</strong><br />
+                  {COLLECTION_ADDRESS.line2}<br />
+                  {COLLECTION_ADDRESS.line3}<br />
+                  {COLLECTION_ADDRESS.line4}<br />
+                  {COLLECTION_ADDRESS.city} {COLLECTION_ADDRESS.postcode}
+                </div>
+              )}
 
               {o.status !== "Cancelled" && (
                 <div className="ord-track">
