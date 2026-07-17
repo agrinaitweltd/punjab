@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import type { Customer } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { listFiles, uploadFile, deleteFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
@@ -13,14 +14,16 @@ function fileKind(type: string, name: string) {
   return { label: "File", bg: "#fef3c7", color: "#b45309" }
 }
 
-export function FilesPage() {
+export function FilesPage({ customers }: { customers: Customer[] }) {
   const [files, setFiles] = useState<StoredFile[]>([])
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState("")
+  const [forCustomer, setForCustomer] = useState<string>("") // "" = internal only
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [preview, setPreview] = useState<StoredFile | null>(null)
   const [query, setQuery] = useState("")
+  const [filterCustomer, setFilterCustomer] = useState<string>("all")
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async () => {
@@ -42,7 +45,9 @@ export function FilesPage() {
         r.onerror = () => reject(r.error)
         r.readAsDataURL(f)
       })
-      await uploadFile(f.name, f.type || "application/octet-stream", f.size, dataUri, note.trim())
+      const customer = customers.find(c => c.id === forCustomer)
+      await uploadFile(f.name, f.type || "application/octet-stream", f.size, dataUri, note.trim(),
+        customer?.id ?? null, customer?.companyName ?? "Internal only")
       setNote("")
       if (inputRef.current) inputRef.current.value = ""
       await load()
@@ -58,9 +63,19 @@ export function FilesPage() {
     await load()
   }
 
+  const customerFileCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const f of files) m[f.customerId ?? "internal"] = (m[f.customerId ?? "internal"] ?? 0) + 1
+    return m
+  }, [files])
+
   const shown = files.filter(f => {
     const q = query.trim().toLowerCase()
-    return !q || `${f.name} ${f.note}`.toLowerCase().includes(q)
+    const matchesQuery = !q || `${f.name} ${f.note} ${f.customerName}`.toLowerCase().includes(q)
+    const matchesFilter = filterCustomer === "all"
+      || (filterCustomer === "internal" && !f.customerId)
+      || f.customerId === filterCustomer
+    return matchesQuery && matchesFilter
   })
 
   return (
@@ -69,7 +84,7 @@ export function FilesPage() {
         <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
         <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Files &amp; Documents</h2>
         <p style={{ fontSize: 13.5, color: "#6b7a70", marginTop: 3 }}>
-          Store customer invoices, delivery notes and other documents — shared with every admin, synced to the database.
+          Store invoices and documents for a specific customer, or keep them internal — synced to the database for every admin.
         </p>
       </div>
 
@@ -87,9 +102,16 @@ export function FilesPage() {
             onChange={e => onPick(e.target.files?.[0])}
           />
         </div>
+        <label className="form-control" style={{ minWidth: 200 }}>
+          <span>For customer</span>
+          <select value={forCustomer} onChange={e => setForCustomer(e.target.value)}>
+            <option value="">Internal only (staff)</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.companyName} — {c.customerNumber}</option>)}
+          </select>
+        </label>
         <label className="form-control" style={{ flex: 1, minWidth: 200 }}>
           <span>Label (optional)</span>
-          <input placeholder="e.g. Invoice — Fresh Market Ltd, March" value={note} onChange={e => setNote(e.target.value)} />
+          <input placeholder="e.g. Invoice — March deliveries" value={note} onChange={e => setNote(e.target.value)} />
         </label>
       </div>
       {error && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px" }}>{error}</p>}
@@ -104,11 +126,26 @@ export function FilesPage() {
           </div>
         </div>
 
+        {/* customer filter chips */}
+        <div className="fl-filters">
+          <button className={"fl-chip" + (filterCustomer === "all" ? " on" : "")} onClick={() => setFilterCustomer("all")}>
+            All <span className="fl-chip-count">{files.length}</span>
+          </button>
+          <button className={"fl-chip" + (filterCustomer === "internal" ? " on" : "")} onClick={() => setFilterCustomer("internal")}>
+            Internal only {customerFileCounts.internal ? <span className="fl-chip-count">{customerFileCounts.internal}</span> : null}
+          </button>
+          {customers.filter(c => customerFileCounts[c.id]).map(c => (
+            <button key={c.id} className={"fl-chip" + (filterCustomer === c.id ? " on" : "")} onClick={() => setFilterCustomer(c.id)}>
+              {c.companyName} <span className="fl-chip-count">{customerFileCounts[c.id]}</span>
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div className="db-empty">Loading files…</div>
         ) : shown.length === 0 ? (
           <div className="db-empty">
-            {files.length === 0 ? "No files yet — upload your first invoice or document above." : "No files match your search."}
+            {files.length === 0 ? "No files yet — upload your first invoice or document above." : "No files match your search or filter."}
           </div>
         ) : (
           <div className="fl-list">
@@ -121,8 +158,8 @@ export function FilesPage() {
                   <div className="fl-info">
                     <div className="fl-name">{f.name}</div>
                     <div className="fl-meta">
-                      {f.note && <span className="fl-note">{f.note} · </span>}
-                      {fmtSize(f.size)} · {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                      <span className={"fl-owner" + (f.customerId ? "" : " internal")}>{f.customerName}</span>
+                      {f.note && <> · {f.note}</>} · {fmtSize(f.size)} · {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                     </div>
                   </div>
                   <div className="fl-actions">

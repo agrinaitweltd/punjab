@@ -13,6 +13,8 @@ export type StoredFile = {
   note: string
   uploadedAt: string
   dataUri: string
+  customerId: string | null
+  customerName: string
 }
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -30,7 +32,7 @@ export async function listFiles(): Promise<StoredFile[]> {
     .order("created_at", { ascending: false })
   if (error) { console.error("listFiles", error); return [] }
   return (data ?? []).map(r => {
-    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string } = {}
+    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string } = {}
     try { meta = JSON.parse(r.timestamp ?? "{}") } catch { /* legacy row */ }
     return {
       id: r.id,
@@ -40,16 +42,26 @@ export async function listFiles(): Promise<StoredFile[]> {
       note: meta.note ?? "",
       uploadedAt: meta.uploadedAt ?? r.created_at ?? "",
       dataUri: r.action ?? "",
+      customerId: meta.customerId ?? null,
+      customerName: meta.customerName ?? "Internal only",
     }
   })
 }
 
-export async function uploadFile(name: string, type: string, size: number, dataUri: string, note: string): Promise<void> {
+export async function listFilesForCustomer(customerId: string): Promise<StoredFile[]> {
+  const all = await listFiles()
+  return all.filter(f => f.customerId === customerId)
+}
+
+export async function uploadFile(
+  name: string, type: string, size: number, dataUri: string, note: string,
+  customerId: string | null, customerName: string,
+): Promise<void> {
   const row = {
     id: `f-${Date.now()}`,
     customer_name: `FILE:${name}`,
     action: dataUri,
-    timestamp: JSON.stringify({ type, size, note, uploadedAt: new Date().toISOString() }),
+    timestamp: JSON.stringify({ type, size, note, uploadedAt: new Date().toISOString(), customerId, customerName }),
   }
   const { error } = await db().from("activity_log").insert(row)
   if (error) throw error

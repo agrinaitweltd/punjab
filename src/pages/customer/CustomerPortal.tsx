@@ -11,6 +11,7 @@ import { Modal } from "../../components/ui/Modal"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { isStockFresh, latestStockUpdate, currentCycleStart, formatGmtTime } from "../../lib/stockCycle"
+import { listFilesForCustomer, type StoredFile } from "../../lib/fileService"
 
 const STATUS_COLORS: Record<string, string> = {
   Pending: "#f59e0b", Confirmed: "#3b82f6", Preparing: "#8b5cf6",
@@ -78,16 +79,17 @@ function RevenueLine({ points }: { points: number[] }) {
   )
 }
 
-const TABS = ["overview", "stock", "orders", "tickets", "balance"] as const
+const TABS = ["overview", "stock", "orders", "tickets", "balance", "documents"] as const
 type Tab = typeof TABS[number]
 
 /* Sidebar nav keys ↔ portal tabs, so the side navigation really navigates */
 const NAV_TO_TAB: Record<string, Tab> = {
   dashboard: "overview", stock: "stock", "place-order": "stock",
   orders: "orders", payments: "balance", tickets: "tickets", complaints: "tickets",
+  documents: "documents",
 }
 const TAB_TO_NAV: Record<Tab, string> = {
-  overview: "dashboard", stock: "stock", orders: "orders", tickets: "tickets", balance: "payments",
+  overview: "dashboard", stock: "stock", orders: "orders", tickets: "tickets", balance: "payments", documents: "documents",
 }
 
 export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -114,6 +116,12 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [ticketSubject, setTicketSubject] = useState("")
   const [ticketMsg, setTicketMsg]       = useState("")
   const [notifOpen, setNotifOpen]       = useState(false)
+  const [myFiles, setMyFiles]           = useState<StoredFile[]>([])
+  const [filesLoading, setFilesLoading] = useState(true)
+  const [docPreview, setDocPreview]     = useState<StoredFile | null>(null)
+  const [orderDetail, setOrderDetail]   = useState<Order | null>(null)
+  const [ticketDetail, setTicketDetail] = useState<SupportTicket | null>(null)
+  const [invoiceDetail, setInvoiceDetail] = useState<Invoice | null>(null)
 
   const load = async () => {
     const [p, s, o, inv, pay, tix] = await Promise.all([
@@ -122,6 +130,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
     const orderable = (prod: Product) => s.some(si => si.productId === prod.id && si.status !== "out" && si.price > 0)
     setSelProd(p.find(orderable)?.id ?? "")
+    setFilesLoading(true)
+    listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
     // Stock-update notification — shows once per daily cycle (06:00 GMT)
     try {
       const key = "punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10)
@@ -299,8 +309,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                     const isSelected = selected.has(order.id)
                     const pct = order.status === "Delivered" ? 100 : order.status === "Preparing" ? 65 : order.status === "Confirmed" ? 35 : 10
                     return (
-                      <tr key={order.id} className={isSelected ? "cd-row selected" : "cd-row"}>
-                        <td><input type="checkbox" checked={isSelected} onChange={() => { const s = new Set(selected); if (isSelected) s.delete(order.id); else s.add(order.id); setSelected(s) }} /></td>
+                      <tr key={order.id} className={(isSelected ? "cd-row selected" : "cd-row") + " cd-row-clickable"} onClick={() => setOrderDetail(order)}>
+                        <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={isSelected} onChange={() => { const s = new Set(selected); if (isSelected) s.delete(order.id); else s.add(order.id); setSelected(s) }} /></td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <Avatar name={order.orderNumber} />
@@ -408,7 +418,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 {myOrders.map(o => {
                   const pct = o.status === "Delivered" ? 100 : o.status === "Preparing" ? 65 : o.status === "Confirmed" ? 35 : 10
                   return (
-                    <tr key={o.id} className="cd-row">
+                    <tr key={o.id} className="cd-row cd-row-clickable" onClick={() => setOrderDetail(o)}>
                       <td><strong>{o.orderNumber}</strong></td>
                       <td style={{ color: "#6b7280" }}>{o.date}</td>
                       <td>{o.items.length} item{o.items.length !== 1 ? "s" : ""}</td>
@@ -439,7 +449,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               <thead><tr><th>Subject</th><th>Status</th><th>Created</th></tr></thead>
               <tbody>
                 {myTickets.map(t => (
-                  <tr key={t.id} className="cd-row">
+                  <tr key={t.id} className="cd-row cd-row-clickable" onClick={() => setTicketDetail(t)}>
                     <td><strong>{t.subject}</strong><br/><span style={{ fontSize: 12, color: "#9ca3af" }}>{t.message.slice(0, 60)}…</span></td>
                     <td><span className="cd-status-badge" style={{ background: t.status === "Open" ? "#fef9c3" : "#f3f4f6", color: t.status === "Open" ? "#a16207" : "#6b7280" }}>{t.status}</span></td>
                     <td style={{ color: "#6b7280", fontSize: 13 }}>{t.createdAt}</td>
@@ -474,7 +484,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               <thead><tr><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
               <tbody>
                 {myInvoices.map(inv => (
-                  <tr key={inv.id} className="cd-row">
+                  <tr key={inv.id} className="cd-row cd-row-clickable" onClick={() => setInvoiceDetail(inv)}>
                     <td><strong>{inv.invoiceNumber}</strong></td>
                     <td>£{inv.amount.toFixed(2)}</td>
                     <td style={{ color: "#6b7280" }}>{inv.dueDate}</td>
@@ -485,6 +495,51 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             </table>
             </div>
             {myInvoices.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No invoices yet</div>}
+          </div>
+        </div>
+      )
+
+      // ── DOCUMENTS ──────────────────────────────────────────
+      case "documents": return (
+        <div className="cd-content">
+          <div className="cd-table-card">
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0" }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>My Documents</span>
+              <span style={{ marginLeft: 8, fontSize: 12.5, color: "#9ca3af" }}>Invoices and files shared with you by Punjab Exotic Foods</span>
+            </div>
+            {filesLoading ? (
+              <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>Loading your documents…</div>
+            ) : myFiles.length === 0 ? (
+              <div style={{ padding: "36px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>
+                <div>No documents shared with you yet.</div>
+              </div>
+            ) : (
+              <div className="fl-list" style={{ padding: 14 }}>
+                {myFiles.map(f => {
+                  const isImage = f.type.startsWith("image/")
+                  const canPreview = isImage || f.type === "application/pdf"
+                  return (
+                    <div key={f.id} className="fl-row">
+                      <span className="fl-kind" style={{ background: "#e8f8ec", color: "#1f7a3a" }}>
+                        {f.type === "application/pdf" ? "PDF" : isImage ? "IMG" : "DOC"}
+                      </span>
+                      <div className="fl-info">
+                        <div className="fl-name">{f.name}</div>
+                        <div className="fl-meta">
+                          {f.note && <>{f.note} · </>}
+                          {f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                        </div>
+                      </div>
+                      <div className="fl-actions">
+                        {canPreview && <Button variant="secondary" className="btn-sm" onClick={() => setDocPreview(f)}>Preview</Button>}
+                        <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )
@@ -531,9 +586,10 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
       {/* Tabs */}
       <div className="cd-tabs">
-        {(["overview", "stock", "orders", "tickets", "balance"] as Tab[]).map(t => (
+        {(["overview", "stock", "orders", "tickets", "balance", "documents"] as Tab[]).map(t => (
           <button key={t} className={"cd-tab" + (tab === t ? " active" : "")} onClick={() => switchTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "documents" && myFiles.length > 0 && <span className="cd-tab-badge">{myFiles.length}</span>}
           </button>
         ))}
       </div>
@@ -641,6 +697,107 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <Button type="button" variant="secondary" onClick={() => setShowTicket(false)}>Cancel</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Order detail popup */}
+      <Modal open={Boolean(orderDetail)} title={orderDetail ? `Order ${orderDetail.orderNumber}` : "Order"} onClose={() => setOrderDetail(null)}>
+        {orderDetail && (() => {
+          const o = orderDetail
+          const pct = o.status === "Delivered" ? 100 : o.status === "Preparing" ? 65 : o.status === "Confirmed" ? 35 : 10
+          const steps = ["Pending", "Confirmed", "Preparing", "Delivered"]
+          const stepIdx = o.status === "Cancelled" ? -1 : steps.indexOf(o.status)
+          return (
+            <div>
+              <div className="ord-review">
+                <div className="ord-row"><span>Status</span><span className="cd-status-badge" style={{ background: STATUS_COLORS[o.status] + "20", color: STATUS_COLORS[o.status] }}>{o.status}</span></div>
+                <div className="ord-row"><span>Date placed</span><strong>{o.date}</strong></div>
+                <div className="ord-row ord-total"><span>Total</span><strong>£{o.amount.toFixed(2)}</strong></div>
+              </div>
+
+              {o.status !== "Cancelled" && (
+                <div className="ord-track">
+                  {steps.map((s, i) => (
+                    <div key={s} className={"ord-track-step" + (i <= stepIdx ? " done" : "")}>
+                      <span className="ord-track-dot" />
+                      <span className="ord-track-label">{s}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <ProgressBar pct={pct} color={STATUS_COLORS[o.status]} />
+
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: "#6b7280", margin: "18px 0 8px", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Items ({o.items.length})
+              </p>
+              <div className="ord-items">
+                {o.items.map((it, i) => {
+                  const p = products.find(x => x.id === it.productId)
+                  return (
+                    <div key={i} className="ord-item-row">
+                      <Avatar name={p?.productName ?? it.productId} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "#111827" }}>{p?.productName ?? "Product"}</div>
+                        <div style={{ fontSize: 12, color: "#9ca3af" }}>{it.quantity} × £{it.unitPrice.toFixed(2)}</div>
+                      </div>
+                      <strong>£{(it.quantity * it.unitPrice).toFixed(2)}</strong>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="actions-row" style={{ marginTop: 16 }}>
+                <Button variant="secondary" onClick={() => setOrderDetail(null)}>Close</Button>
+              </div>
+            </div>
+          )
+        })()}
+      </Modal>
+
+      {/* Ticket detail popup */}
+      <Modal open={Boolean(ticketDetail)} title={ticketDetail?.subject ?? "Ticket"} onClose={() => setTicketDetail(null)}>
+        {ticketDetail && (
+          <div>
+            <div className="ord-row" style={{ border: "1px solid var(--border)", borderRadius: 12, marginBottom: 14 }}>
+              <span>Status</span>
+              <span className="cd-status-badge" style={{ background: ticketDetail.status === "Open" ? "#fef9c3" : "#f3f4f6", color: ticketDetail.status === "Open" ? "#a16207" : "#6b7280" }}>{ticketDetail.status}</span>
+            </div>
+            <p style={{ fontSize: 12, color: "#9ca3af", marginBottom: 6 }}>Submitted {ticketDetail.createdAt}</p>
+            <p style={{ fontSize: 13.5, color: "#374151", lineHeight: 1.6, background: "#fafbfc", border: "1px solid var(--border-light)", borderRadius: 10, padding: 14 }}>
+              {ticketDetail.message || "No message provided."}
+            </p>
+            <div className="actions-row" style={{ marginTop: 16 }}>
+              <Button variant="secondary" onClick={() => setTicketDetail(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Invoice detail popup */}
+      <Modal open={Boolean(invoiceDetail)} title={invoiceDetail?.invoiceNumber ?? "Invoice"} onClose={() => setInvoiceDetail(null)}>
+        {invoiceDetail && (
+          <div>
+            <div className="ord-review">
+              <div className="ord-row"><span>Status</span><span className="cd-status-badge" style={{ background: invoiceDetail.status === "Paid" ? "#dcfce7" : "#fee2e2", color: invoiceDetail.status === "Paid" ? "#15803d" : "#b91c1c" }}>{invoiceDetail.status}</span></div>
+              <div className="ord-row"><span>Due date</span><strong>{invoiceDetail.dueDate}</strong></div>
+              <div className="ord-row ord-total"><span>Amount</span><strong>£{invoiceDetail.amount.toFixed(2)}</strong></div>
+            </div>
+            <p style={{ fontSize: 12.5, color: "#9ca3af", margin: "14px 2px" }}>
+              Looking for the PDF? Check <strong>Documents</strong> in the sidebar — your admin may have uploaded it there.
+            </p>
+            <div className="actions-row">
+              <Button onClick={() => { setInvoiceDetail(null); switchTab("documents") }}>Go to Documents</Button>
+              <Button variant="secondary" onClick={() => setInvoiceDetail(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Document preview popup */}
+      <Modal open={Boolean(docPreview)} title={docPreview?.name ?? "Preview"} onClose={() => setDocPreview(null)}>
+        {docPreview && (
+          docPreview.type.startsWith("image/")
+            ? <img src={docPreview.dataUri} alt={docPreview.name} style={{ maxWidth: "100%", borderRadius: 10 }} />
+            : <iframe src={docPreview.dataUri} title={docPreview.name} style={{ width: "100%", height: "62vh", border: "none", borderRadius: 10 }} />
+        )}
       </Modal>
     </AppLayout>
   )

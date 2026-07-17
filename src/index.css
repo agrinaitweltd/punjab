@@ -2212,6 +2212,54 @@ tbody tr:hover td { background: #fafbfc; }
   .fl-actions { width: 100%; justify-content: flex-end; }
 }
 
+/* ══ Customer portal: premium touches ══ */
+.cd-row-clickable { cursor: pointer; }
+.cd-row-clickable:hover td { background: var(--green-50) !important; }
+.cd-tab-badge {
+  background: var(--green-500); color: #fff; border-radius: 6px;
+  font-size: 10px; font-weight: 800; padding: 1px 6px; margin-left: 6px;
+}
+.sh-stat, .cd-stat { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.sh-stat:hover, .cd-stat:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.cd-table-card, .sh-table-card { position: relative; overflow: hidden; }
+.cd-table-card::before, .sh-table-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--brand-gradient);
+}
+
+/* Order tracker (status timeline in the order detail popup) */
+.ord-track { display: flex; align-items: center; gap: 4px; margin: 16px 0 10px; }
+.ord-track-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; }
+.ord-track-step::before {
+  content: ""; position: absolute; top: 5px; left: -50%; width: 100%; height: 2px;
+  background: var(--border); z-index: 0;
+}
+.ord-track-step:first-child::before { display: none; }
+.ord-track-dot { width: 11px; height: 11px; border-radius: 50%; background: #d1d5db; z-index: 1; }
+.ord-track-step.done .ord-track-dot { background: var(--green-500); }
+.ord-track-step.done::before { background: var(--green-400); }
+.ord-track-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-align: center; }
+.ord-track-step.done .ord-track-label { color: var(--green-700); }
+
+/* Order items list in detail popup */
+.ord-items { display: flex; flex-direction: column; gap: 8px; }
+.ord-item-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border: 1px solid var(--border-light); border-radius: 10px; background: #fafbfc; }
+
+/* Files: owner tag + filter chips (shared admin/customer look) */
+.fl-owner { font-weight: 700; color: var(--green-700); }
+.fl-owner.internal { color: var(--text-muted); font-weight: 600; }
+.fl-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+.fl-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px;
+  border: 1.5px solid var(--border); border-radius: 99px; background: #fff;
+  font-family: inherit; font-size: 12px; font-weight: 700; color: var(--text); cursor: pointer;
+  transition: all 0.13s;
+}
+.fl-chip:hover { border-color: #c8d6cc; }
+.fl-chip.on { background: var(--green-50); border-color: var(--green-400); color: var(--green-700); }
+.fl-chip-count { background: #e5e7eb; color: #374151; border-radius: 6px; font-size: 10px; font-weight: 800; padding: 1px 6px; }
+.fl-chip.on .fl-chip-count { background: var(--green-500); color: #fff; }
+
 /* ══ Dashboard mobile polish ══ */
 @media (max-width: 768px) {
   .hd-right .gmt-clock { display: none; }
