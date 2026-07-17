@@ -13,6 +13,7 @@ export function AppLayout({
   children,
   badges,
   notifCount,
+  onBellClick,
 }: {
   role: UserRole
   user: User
@@ -22,6 +23,7 @@ export function AppLayout({
   children: ReactNode
   badges?: Record<string, number>
   notifCount?: number
+  onBellClick?: () => void
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -43,7 +45,7 @@ export function AppLayout({
         badges={badges}
       />
       <div className="main-layout">
-        <Topbar user={user} onLogout={onLogout} current={current} onNavigate={onNavigate} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} />
+        <Topbar user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} onBellClick={onBellClick} />
         <main className="content">{children}</main>
       </div>
     </div>

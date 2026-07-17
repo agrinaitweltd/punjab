@@ -151,6 +151,14 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   }
   const reorder = (productName: string) => { setQuickSearch(productName); setShowOrder(true) }
 
+  // The bell represents ALL notifications, not just one tab's — clear
+  // everything and jump to whichever section actually has something new.
+  const openNotifications = () => {
+    markOrdersSeen()
+    markTicketsSeen()
+    switchTab(newOrderUpdates > 0 ? "orders" : newTicketUpdates > 0 ? "tickets" : "orders")
+  }
+
   const dismissNotif = () => {
     try { sessionStorage.setItem("punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10), "1") } catch { /* ignore */ }
     setNotifOpen(false)
@@ -587,6 +595,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       role="customer" user={user} current={current} onNavigate={handleNav} onLogout={onLogout}
       badges={{ orders: newOrderUpdates, tickets: newTicketUpdates }}
       notifCount={newOrderUpdates + newTicketUpdates}
+      onBellClick={openNotifications}
     >
       {/* Daily stock notification — once per 06:00 UK-time cycle */}
       {notifOpen && (

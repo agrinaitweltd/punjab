@@ -8,9 +8,9 @@ const PAGE_LABELS: Record<string, string> = {
   session: "Daily Session", "place-order": "Place Order",
 }
 
-export function Topbar({ user, onLogout, current, onNavigate, onMenuOpen, notifCount }: {
-  user: User; onLogout: () => void; current?: string; onNavigate?: (key: string) => void
-  onMenuOpen?: () => void; notifCount?: number
+export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBellClick }: {
+  user: User; onLogout: () => void; current?: string
+  onMenuOpen?: () => void; notifCount?: number; onBellClick?: () => void
 }) {
   const title = current ? (PAGE_LABELS[current] ?? current.charAt(0).toUpperCase() + current.slice(1)) : "Dashboard"
   const count = notifCount ?? 0
@@ -21,8 +21,8 @@ export function Topbar({ user, onLogout, current, onNavigate, onMenuOpen, notifC
       </button>
       <h1 className="topbar-title">{title}</h1>
       <div className="topbar-actions">
-        {/* Notifications — real unread count of new orders/tickets */}
-        <button className="tb-icon-btn" onClick={() => onNavigate?.(user.role === "admin" ? "orders" : "orders")} title={count > 0 ? `${count} new notification${count !== 1 ? "s" : ""}` : "No new notifications"}>
+        {/* Notifications — real unread count of new orders/tickets; clears everything on click */}
+        <button className="tb-icon-btn" onClick={onBellClick} title={count > 0 ? `${count} new notification${count !== 1 ? "s" : ""}` : "No new notifications"}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           {count > 0 && <span className="tb-bell-count">{count > 9 ? "9+" : count}</span>}
         </button>

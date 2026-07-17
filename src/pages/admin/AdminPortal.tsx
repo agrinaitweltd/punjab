@@ -125,6 +125,14 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (key === 'tickets') markTicketsSeen()
   }
 
+  // The bell represents ALL notifications, not just one page's — clear
+  // everything and jump to whichever section actually has something new.
+  const openNotifications = () => {
+    markOrdersSeen()
+    markTicketsSeen()
+    setCurrent(newOrders > 0 ? 'orders' : newTickets > 0 ? 'tickets' : 'orders')
+  }
+
   const page = () => {
     if (current === 'dashboard') {
       return (
@@ -328,6 +336,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       role="admin" user={user} current={current} onNavigate={navigate} onLogout={onLogout}
       badges={{ orders: newOrders, tickets: newTickets }}
       notifCount={newOrders + newTickets}
+      onBellClick={openNotifications}
     >
       {page()}
       <ToastStack toasts={toasts} onDismiss={dismiss} />
