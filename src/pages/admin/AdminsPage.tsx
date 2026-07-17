@@ -16,35 +16,50 @@ const basePermissions: PermissionSet = {
   extracts: false, stats: false, admins: false, products: false,
 }
 
+/* Grouped by function so the permission picker reads like a real access
+   policy rather than a flat checkbox dump. */
+const PERM_GROUPS: { label: string; keys: (keyof PermissionSet)[] }[] = [
+  { label: "Trading",  keys: ["customers", "orders", "stock", "products", "prices"] },
+  { label: "Finance",  keys: ["payments", "extracts"] },
+  { label: "Support",  keys: ["tickets", "complaints", "enquiries"] },
+  { label: "Insights & Admin", keys: ["stats", "admins"] },
+]
+
 function PermGrid({ perms, onChange }: { perms: PermissionSet; onChange: (p: PermissionSet) => void }) {
+  const allOn = ALL_PERMISSIONS.every(k => perms[k])
   return (
     <div className="wide">
-      <div style={{ marginBottom: 6, fontSize: 12.5, fontWeight: 600, color: "#374151" }}>Permissions</div>
-      <div className="adm-perm-grid">
-        {ALL_PERMISSIONS.map(key => (
-          <label key={key} className="adm-perm-item">
-            <input
-              type="checkbox"
-              checked={perms[key]}
-              onChange={e => onChange({ ...perms, [key]: e.target.checked })}
-              className="lp-checkbox"
-            />
-            <span style={{ fontSize: 13, textTransform: "capitalize" }}>{key}</span>
-          </label>
+      <div className="adm-perm-head">
+        <span>Permissions</span>
+        <button type="button" className={"adm-perm-all" + (allOn ? " on" : "")} onClick={() => {
+          const v = !allOn
+          const all = {} as PermissionSet
+          ALL_PERMISSIONS.forEach(k => (all[k] = v))
+          onChange(all)
+        }}>
+          {allOn ? "Clear all" : "Select all"}
+        </button>
+      </div>
+      <div className="adm-perm-groups">
+        {PERM_GROUPS.map(group => (
+          <div key={group.label} className="adm-perm-group">
+            <p className="adm-perm-group-title">{group.label}</p>
+            <div className="adm-perm-chips">
+              {group.keys.map(key => (
+                <button
+                  key={key} type="button"
+                  className={"adm-perm-chip" + (perms[key] ? " on" : "")}
+                  onClick={() => onChange({ ...perms, [key]: !perms[key] })}
+                >
+                  {perms[key] && (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                  {key}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
-        <label className="adm-perm-item adm-select-all">
-          <input type="checkbox"
-            checked={ALL_PERMISSIONS.every(k => perms[k])}
-            onChange={e => {
-              const v = e.target.checked
-              const all = {} as PermissionSet
-              ALL_PERMISSIONS.forEach(k => (all[k] = v))
-              onChange(all)
-            }}
-            className="lp-checkbox"
-          />
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Select All</span>
-        </label>
       </div>
     </div>
   )

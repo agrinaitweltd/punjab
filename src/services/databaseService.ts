@@ -220,6 +220,14 @@ class SupabaseDatabaseService {
     if (error) { console.error("getTickets", error); return [] }
     return (data ?? []).map(mapTicket)
   }
+  async updateTicket(id: string, input: Partial<SupportTicket>): Promise<SupportTicket | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status) row.status = input.status
+    if (input.message !== undefined) row.message = input.message
+    const { data, error } = await db().from("support_tickets").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateTicket", error); return null }
+    return mapTicket(data)
+  }
   async createTicket(input: Omit<SupportTicket, "id" | "createdAt" | "status">): Promise<SupportTicket> {
     const row = {
       id: genId("t"),

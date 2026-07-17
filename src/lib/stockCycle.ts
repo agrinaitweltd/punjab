@@ -1,9 +1,26 @@
 import type { StockItem } from "../types"
 
-/** Stock refreshes daily at 06:00 GMT. A cycle runs 06:00 → 05:59:59 next day. */
+export const LONDON_TZ = "Europe/London"
+
+/** Renders a real instant as its London wall-clock fields, packed into a
+ *  UTC-based Date so wall-clock instants can be compared with `<`/`>=`
+ *  regardless of GMT/BST. Never treat the result as a real instant. */
+export function toLondonWallClock(date: Date): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: LONDON_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(date)
+  const get = (t: string) => Number(parts.find(p => p.type === t)?.value ?? "0")
+  return new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second")))
+}
+
+/** Stock refreshes daily at 06:00 UK local time (GMT in winter, BST in summer).
+ *  A cycle runs 06:00 → 05:59:59 the next day. Returned value is a wall-clock
+ *  marker for comparisons only — see toLondonWallClock. */
 export function currentCycleStart(now: Date = new Date()): Date {
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 6, 0, 0))
-  if (now < start) start.setUTCDate(start.getUTCDate() - 1)
+  const wall = toLondonWallClock(now)
+  const start = new Date(Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate(), 6, 0, 0))
+  if (wall < start) start.setUTCDate(start.getUTCDate() - 1)
   return start
 }
 
@@ -24,12 +41,18 @@ export function latestStockUpdate(stock: StockItem[]): Date | null {
   return latest
 }
 
-/** True when stock has been updated within the current 06:00 GMT cycle. */
+/** True when stock has been updated within the current 06:00 UK-time cycle. */
 export function isStockFresh(stock: StockItem[], now: Date = new Date()): boolean {
   const latest = latestStockUpdate(stock)
-  return !!latest && latest >= currentCycleStart(now)
+  return !!latest && toLondonWallClock(latest) >= currentCycleStart(now)
 }
 
-export function formatGmtTime(d: Date): string {
-  return d.toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }) + " GMT"
+/** Formats a real instant as UK local time, e.g. "14:32". */
+export function formatLondonTime(d: Date): string {
+  return d.toLocaleTimeString("en-GB", { timeZone: LONDON_TZ, hour: "2-digit", minute: "2-digit" }) + " UK time"
+}
+
+/** Formats a wall-clock marker's weekday (from currentCycleStart/nextCycleStart). */
+export function formatWallWeekday(wall: Date): string {
+  return wall.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" })
 }

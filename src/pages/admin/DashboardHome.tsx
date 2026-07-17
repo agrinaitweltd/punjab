@@ -3,7 +3,7 @@ import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus } fr
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { CountUp } from "../../components/CountUp"
-import { isStockFresh, latestStockUpdate, nextCycleStart, formatGmtTime } from "../../lib/stockCycle"
+import { isStockFresh, latestStockUpdate, nextCycleStart, formatLondonTime, formatWallWeekday } from "../../lib/stockCycle"
 
 const PAGE_SIZE = 8
 
@@ -260,7 +260,7 @@ export function DashboardHome({
         </div>
       </div>
 
-      {/* ── Daily stock cycle banner (refreshes 06:00 GMT) ── */}
+      {/* ── Daily stock cycle banner (refreshes 06:00 UK time) ── */}
       <div className={"stk-banner " + (stockFresh ? "ok" : "due")}>
         <span className="stk-banner-ico">
           {stockFresh
@@ -270,11 +270,11 @@ export function DashboardHome({
         <div className="stk-banner-body">
           {stockFresh ? (
             <>
-              <strong>Today's stock is live.</strong> Updated {stockUpdatedAt ? `at ${formatGmtTime(stockUpdatedAt)}` : "today"} — valid until {nextCycleStart().toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" })} 06:00 GMT.
+              <strong>Today's stock is live.</strong> Updated {stockUpdatedAt ? `at ${formatLondonTime(stockUpdatedAt)}` : "today"} — valid until {formatWallWeekday(nextCycleStart())} 06:00 UK time.
             </>
           ) : (
             <>
-              <strong>Daily stock update due.</strong> Stock refreshes every day at 06:00 GMT — please update today's quantities and prices for customers.
+              <strong>Daily stock update due.</strong> Stock refreshes every day at 06:00 UK time — please update today's quantities and prices for customers.
             </>
           )}
         </div>
@@ -332,7 +332,7 @@ export function DashboardHome({
               <span className="qa-ico" style={{ background: "#fef3c7", color: "#b45309" }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
               </span>
-              <span><strong>Update Stock</strong><small>Daily 06:00 GMT refresh</small></span>
+              <span><strong>Update Stock</strong><small>Daily 06:00 UK time refresh</small></span>
             </button>
             <button className="qa-btn" onClick={() => onNavigate?.("invoices")}>
               <span className="qa-ico" style={{ background: "#ede9fe", color: "#7c3aed" }}>

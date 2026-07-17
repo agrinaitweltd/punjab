@@ -20,6 +20,7 @@ import {
   toggleAdminActive,
   updateAdmin,
   updateDeliveryArea,
+  updateTicketStatus,
 } from '../../api/miscApi'
 import type {
   ActivityLog,
@@ -190,6 +191,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <OrdersPage
           orders={orders}
+          products={products}
           onUpdateOrder={async (id, input) => {
             await updateOrder(id, input)
             await load()
@@ -232,6 +234,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           tickets={tickets}
           onCreate={async (subject, message) => {
             await createTicket('admin', undefined, subject, message)
+            await load()
+          }}
+          onUpdateStatus={async (id, status) => {
+            await updateTicketStatus(id, status)
             await load()
           }}
         />

@@ -40,6 +40,7 @@ export async function createTicket(
 }
 
 export async function updateTicketStatus(id: string, status: SupportTicket["status"]): Promise<SupportTicket | null> {
+  if (supabaseReady) return databaseService.updateTicket(id, { status })
   await new Promise(r => setTimeout(r, 100))
   const idx = tickets.findIndex(t => t.id === id)
   if (idx === -1) return null
@@ -48,6 +49,7 @@ export async function updateTicketStatus(id: string, status: SupportTicket["stat
 }
 
 export async function replyToTicket(id: string, message: string): Promise<SupportTicket | null> {
+  if (supabaseReady) return databaseService.updateTicket(id, { message, status: "In Progress" })
   await new Promise(r => setTimeout(r, 100))
   const idx = tickets.findIndex(t => t.id === id)
   if (idx === -1) return null

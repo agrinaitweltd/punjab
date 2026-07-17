@@ -71,3 +71,8 @@ export async function deleteFile(id: string): Promise<boolean> {
   const { error } = await db().from("activity_log").delete().eq("id", id)
   return !error
 }
+
+export async function renameFile(id: string, newName: string): Promise<boolean> {
+  const { error } = await db().from("activity_log").update({ customer_name: `FILE:${newName}` }).eq("id", id)
+  return !error
+}

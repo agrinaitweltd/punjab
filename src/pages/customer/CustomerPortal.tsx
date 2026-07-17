@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
-import { createOrder, getOrders } from "../../api/ordersApi"
+import { getOrders } from "../../api/ordersApi"
 import { createTicket, getInvoices, getPayments, getTickets } from "../../api/miscApi"
 import { getStock } from "../../api/stockApi"
 import type { Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
+import { PlaceOrderModal, catColor } from "./PlaceOrderModal"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
-import { isStockFresh, latestStockUpdate, currentCycleStart, formatGmtTime } from "../../lib/stockCycle"
+import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
 import { listFilesForCustomer, type StoredFile } from "../../lib/fileService"
 
 const STATUS_COLORS: Record<string, string> = {
@@ -106,13 +107,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [search, setSearch]             = useState("")
   const [orderPage, setOrderPage]       = useState(1)
   const [showOrder, setShowOrder]       = useState(false)
-  const [orderStep, setOrderStep]       = useState<"form" | "review" | "done">("form")
-  const [placing, setPlacing]           = useState(false)
-  const [placedNumber, setPlacedNumber] = useState("")
-  const [orderError, setOrderError]     = useState("")
+  const [quickSearch, setQuickSearch]   = useState("")
   const [showTicket, setShowTicket]     = useState(false)
-  const [selProd, setSelProd]           = useState("")
-  const [qty, setQty]                   = useState("1")
   const [ticketSubject, setTicketSubject] = useState("")
   const [ticketMsg, setTicketMsg]       = useState("")
   const [notifOpen, setNotifOpen]       = useState(false)
@@ -128,8 +124,6 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets()
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
-    const orderable = (prod: Product) => s.some(si => si.productId === prod.id && si.status !== "out" && si.price > 0)
-    setSelProd(p.find(orderable)?.id ?? "")
     setFilesLoading(true)
     listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
     // Stock-update notification — shows once per daily cycle (06:00 GMT)
@@ -147,6 +141,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     if (key === "place-order") setShowOrder(true)
   }
   const switchTab = (t: Tab) => { setTab(t); setCurrent(TAB_TO_NAV[t]) }
+  const reorder = (productName: string) => { setQuickSearch(productName); setShowOrder(true) }
 
   const dismissNotif = () => {
     try { sessionStorage.setItem("punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10), "1") } catch { /* ignore */ }
@@ -185,10 +180,6 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     )
   }
 
-  const selectedStock = stockMap[selProd]
-  const unitPrice     = selectedStock?.price ?? 0
-  const orderTotal    = unitPrice * Math.max(1, Number(qty) || 1)
-
   /* chart data — boxes ordered, grouped by date (non-financial) */
   const boxesOf = (o: Order) => o.items.reduce((q, it) => q + it.quantity, 0)
   const byDate: Record<string, number> = {}
@@ -202,6 +193,14 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   })
 
   const statusCount = (s: string) => myOrders.filter(o => o.status === s).length
+
+  /* Quick reorder — your 3 most-ordered products, one tap away */
+  const boxesByProduct: Record<string, number> = {}
+  for (const o of myOrders) for (const it of o.items) boxesByProduct[it.productId] = (boxesByProduct[it.productId] ?? 0) + it.quantity
+  const topProducts = Object.entries(boxesByProduct)
+    .sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([pid, qty]) => ({ product: products.find(p => p.id === pid), qty }))
+    .filter((x): x is { product: Product; qty: number } => Boolean(x.product) && stockMap[x.product!.id]?.status !== "out")
 
   const page = () => {
     switch (tab) {
@@ -250,6 +249,25 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               iconBg="#fef3c7" iconColor="#b45309"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/></svg>} />
           </div>
+
+          {/* quick reorder — your most-ordered produce, one tap away */}
+          {topProducts.length > 0 && (
+            <div className="qr-row">
+              <span className="qr-label">Quick Reorder</span>
+              {topProducts.map(({ product, qty }) => (
+                <button key={product.id} className="qr-chip" onClick={() => reorder(product.productName)}>
+                  <span className="qr-chip-av" style={{ background: catColor(product.category) + "1f", color: catColor(product.category) }}>
+                    {product.productName.slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="qr-chip-info">
+                    <strong>{product.productName}</strong>
+                    <small>Ordered {qty} boxes before</small>
+                  </span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* charts */}
           <div className="sh-charts">
@@ -548,7 +566,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
   return (
     <AppLayout role="customer" user={user} current={current} onNavigate={handleNav} onLogout={onLogout}>
-      {/* Daily stock notification — once per 06:00 GMT cycle */}
+      {/* Daily stock notification — once per 06:00 UK-time cycle */}
       {notifOpen && (
         <div className={"cn-toast " + (stockFresh ? "ok" : "due")} role="status">
           {stockFresh
@@ -556,8 +574,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
           <div style={{ flex: 1 }}>
             {stockFresh
-              ? <><strong>Today's stock has been updated{stockAt ? ` at ${formatGmtTime(stockAt)}` : ""}.</strong> Fresh produce is live — browse today's stock and place your order.</>
-              : <><strong>Today's stock update is pending.</strong> Stock refreshes daily at 06:00 GMT — quantities and prices may change shortly.</>}
+              ? <><strong>Today's stock has been updated{stockAt ? ` at ${formatLondonTime(stockAt)}` : ""}.</strong> Fresh produce is live — browse today's stock and place your order.</>
+              : <><strong>Today's stock update is pending.</strong> Stock refreshes daily at 06:00 UK time — quantities and prices may change shortly.</>}
           </div>
           <button className="cn-toast-x" onClick={dismissNotif} aria-label="Dismiss">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -596,92 +614,18 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
       {page()}
 
-      {/* Place order modal — form → review → confirmation */}
-      <Modal
+      {/* Place order — premium multi-item shop experience */}
+      <PlaceOrderModal
+        key={quickSearch}
         open={showOrder}
-        title={orderStep === "done" ? "Order Placed" : orderStep === "review" ? "Confirm Your Order" : "Place New Order"}
-        onClose={() => { setShowOrder(false); setOrderStep("form") }}
-      >
-        {orderStep === "form" && (
-          <form className="form-grid" onSubmit={e => {
-            e.preventDefault()
-            if (!selProd || unitPrice <= 0) return
-            setOrderStep("review")
-          }}>
-            <label className="form-control wide">
-              <span>Product</span>
-              <select value={selProd} onChange={e => setSelProd(e.target.value)}>
-                {products.filter(p => stockMap[p.id] && stockMap[p.id].status !== "out" && stockMap[p.id].price > 0).map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.productName} — {p.size} (£{(stockMap[p.id]?.price ?? 0).toFixed(2)}/box)
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Input label="Quantity (boxes)" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} />
-            <div className="wide cd-order-total">
-              <span>Order total</span>
-              <strong>£{orderTotal.toFixed(2)}</strong>
-              {selectedStock && <span className="cd-order-total-note">{selectedStock.availableQuantity} boxes available</span>}
-            </div>
-            <div className="wide actions-row">
-              <Button type="submit" disabled={!selProd || unitPrice <= 0}>Review Order →</Button>
-              <Button type="button" variant="secondary" onClick={() => setShowOrder(false)}>Cancel</Button>
-            </div>
-          </form>
-        )}
-
-        {orderStep === "review" && (() => {
-          const p = products.find(x => x.id === selProd)
-          const quantity = Math.max(1, Number(qty) || 1)
-          return (
-            <div>
-              <div className="ord-review">
-                <div className="ord-row"><span>Product</span><strong>{p?.productName} — {p?.size}</strong></div>
-                <div className="ord-row"><span>Unit price</span><strong>£{unitPrice.toFixed(2)} / box</strong></div>
-                <div className="ord-row"><span>Quantity</span><strong>{quantity} box{quantity !== 1 ? "es" : ""}</strong></div>
-                <div className="ord-row"><span>Ordered by</span><strong>{user.displayName}</strong></div>
-                <div className="ord-row ord-total"><span>Total</span><strong>£{orderTotal.toFixed(2)}</strong></div>
-              </div>
-              <p className="ord-note">Please double-check the details — once confirmed, your order is sent to Punjab Exotic Foods for processing.</p>
-              {orderError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>{orderError}</p>}
-              <div className="actions-row">
-                <Button disabled={placing} onClick={async () => {
-                  setPlacing(true); setOrderError("")
-                  try {
-                    const order = await createOrder({
-                      customerId: user.id,
-                      customerName: user.displayName,
-                      amount: quantity * unitPrice,
-                      items: [{ productId: selProd, quantity, unitPrice }],
-                    })
-                    setPlacedNumber(order.orderNumber)
-                    setOrderStep("done")
-                    setQty("1")
-                    load()
-                  } catch { setOrderError("We couldn't place your order — please try again or contact support.") }
-                  setPlacing(false)
-                }}>{placing ? "Placing order…" : "Confirm Order"}</Button>
-                <Button variant="secondary" onClick={() => setOrderStep("form")}>← Back</Button>
-              </div>
-            </div>
-          )
-        })()}
-
-        {orderStep === "done" && (
-          <div className="ord-done">
-            <div className="ord-done-ico">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            </div>
-            <h3>Thank you — order {placedNumber} received!</h3>
-            <p>We'll confirm it shortly. You can track its progress in <strong>My Orders</strong>.</p>
-            <div className="actions-row" style={{ justifyContent: "center" }}>
-              <Button onClick={() => { setShowOrder(false); setOrderStep("form"); switchTab("orders") }}>View My Orders</Button>
-              <Button variant="secondary" onClick={() => { setShowOrder(false); setOrderStep("form") }}>Close</Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+        onClose={() => { setShowOrder(false); setQuickSearch("") }}
+        products={products}
+        stock={stock}
+        customerId={user.id}
+        customerName={user.displayName}
+        onPlaced={load}
+        initialSearch={quickSearch}
+      />
 
       {/* New ticket modal */}
       <Modal open={showTicket} title="Submit Support Ticket" onClose={() => setShowTicket(false)}>

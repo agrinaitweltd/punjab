@@ -3,6 +3,7 @@ import { createProduct, getProducts } from "../../api/productsApi"
 import { getStock, updateStock } from "../../api/stockApi"
 import { Button } from "../../components/ui/Button"
 import { GmtClock } from "../../components/GmtClock"
+import { LONDON_TZ } from "../../lib/stockCycle"
 
 /* Full fresh-produce catalogue, organised category → group → items */
 const PRODUCE: Record<string, Record<string, string[]>> = {
@@ -161,6 +162,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
       <span className="ss-step-n">{step > n ? "✓" : n}</span>{label}
     </span>
   )
+  const progressPct = step === 0 ? 0 : step >= 4 ? 100 : (step / 3) * 100
 
   return (
     <div className="ss-wrap">
@@ -168,12 +170,13 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
         <div>
           <p className="control-centre-label">Daily Selling Session</p>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>
-            {step === 0 ? "Start Today's Session" : step === 4 ? "Session Live" : "Session Setup"}
+            {step === 0 ? "Let's set up today's fresh stock" : step === 4 ? "Today's session is live" : "Building Today's Session"}
           </h2>
         </div>
         <GmtClock />
       </div>
 
+      <div className="ss-progress-track"><div className="ss-progress-fill" style={{ width: `${progressPct}%` }} /></div>
       <div className="ss-steps">
         {stepChip(1, "Select Products")}
         {stepChip(2, "Suppliers & Purchase Price")}
@@ -182,11 +185,11 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
 
       {/* ── Step 0: session window config ── */}
       {step === 0 && (
-        <div className="ss-card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Session window</h3>
+        <div className="ss-card ss-anim" key="step0">
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>When does your selling day run?</h3>
           <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
-            One session covers a full selling day (default 23:00 → 09:00 GMT). Adjust the times if needed, then start today's session.
-            {lastSession?.startedAt && <> Last session started {new Date(lastSession.startedAt).toLocaleString("en-GB", { timeZone: "UTC" })} GMT.</>}
+            One session covers a full selling day (default 23:00 → 09:00 UK time). Set your hours below, then walk through three quick steps to publish today's produce, prices and quantities to every customer.
+            {lastSession?.startedAt && <> Last session started {new Date(lastSession.startedAt).toLocaleString("en-GB", { timeZone: LONDON_TZ })} UK time.</>}
           </p>
           <div className="ss-config">
             <label className="form-control">
@@ -204,7 +207,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
 
       {/* ── Step 1: select products ── */}
       {step === 1 && (
-        <div className="ss-card">
+        <div className="ss-card ss-anim" key="step1">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
             <h3 style={{ fontSize: 15, fontWeight: 700 }}>Select today's produce <span style={{ color: "#6b7280", fontWeight: 500 }}>({items.length} selected)</span></h3>
             <div className="ps-search-wrap" style={{ maxWidth: 260 }}>
@@ -232,8 +235,8 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
               <div key={group}>
                 <p className="ss-group-title">{group} <span>({groupItems.length})</span></p>
                 <div className="ss-grid">
-                  {groupItems.map(c => (
-                    <button key={c.group + c.name} type="button" className={"ss-item" + (isSelected(c.name, c.group) ? " sel" : "")} onClick={() => toggleItem(c)}>
+                  {groupItems.map((c, ci) => (
+                    <button key={c.group + c.name} type="button" className={"ss-item" + (isSelected(c.name, c.group) ? " sel" : "")} style={{ animationDelay: `${Math.min(ci, 14) * 0.02}s` }} onClick={() => toggleItem(c)}>
                       <span className="ss-item-av" style={{ background: CAT_COLORS[c.category] ?? "#22913f" }}>{c.name.slice(0, 2).toUpperCase()}</span>
                       <span style={{ minWidth: 0 }}>
                         <span className="ss-item-name">{c.name}</span>
@@ -260,8 +263,9 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
 
       {/* ── Step 2: supplier + purchase price ── */}
       {step === 2 && (
-        <div className="ss-card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Packaging, supplier &amp; purchase price for each item</h3>
+        <div className="ss-card ss-anim" key="step2">
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>How is each item packaged, and where's it from?</h3>
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Tell us the packaging, the supplier, and what you paid — we'll suggest a selling price next.</p>
           <div style={{ display: "flex", gap: 8, margin: "12px 0 16px", flexWrap: "wrap" }}>
             <input
               style={{ padding: "8px 12px", border: "1.5px solid var(--border)", borderRadius: 8, fontFamily: "inherit", fontSize: 13, outline: "none", flex: 1, minWidth: 180 }}
@@ -301,8 +305,9 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
 
       {/* ── Step 3: selling prices ── */}
       {step === 3 && (
-        <div className="ss-card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Set today's selling prices <span style={{ color: "#6b7280", fontWeight: 500 }}>(suggested at +30% margin)</span></h3>
+        <div className="ss-card ss-anim" key="step3">
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Almost there — what's today's selling price?</h3>
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 14 }}>We've suggested a +30% margin on your purchase price for each item — adjust anything before going live.</p>
           <div className="ss-rows">
             {items.map(i => {
               const buy = Number(i.purchasePrice) || 0
@@ -331,14 +336,14 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
 
       {/* ── Step 4: done ── */}
       {step === 4 && (
-        <div className="ss-card ss-done">
-          <div className="ss-done-ico">
+        <div className="ss-card ss-done ss-anim" key="step4">
+          <div className="ss-done-ico po-done-pop">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           </div>
-          <h3 style={{ fontSize: 18, fontWeight: 800, color: "#0d2b1e" }}>Session is live</h3>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: "#0d2b1e" }}>Today's produce is live!</h3>
           <p style={{ fontSize: 13.5, color: "#6b7280", margin: "8px 0 20px" }}>
             {items.length} product{items.length !== 1 ? "s" : ""} published with today's stock and prices.
-            Customers can now see and order today's produce until {config.end} GMT.
+            Customers can now browse and order this produce until {config.end} UK time.
           </p>
           <Button onClick={onFinished}>View Stock Page</Button>
         </div>

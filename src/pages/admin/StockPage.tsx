@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { GmtClock } from '../../components/GmtClock'
-import { currentCycleStart, isStockFresh, latestStockUpdate, formatGmtTime, nextCycleStart } from '../../lib/stockCycle'
+import { currentCycleStart, isStockFresh, latestStockUpdate, formatLondonTime, formatWallWeekday, nextCycleStart, toLondonWallClock } from '../../lib/stockCycle'
 
 const STATUS_META: Record<StockItem['status'], { label: string; bg: string; color: string }> = {
   available: { label: 'In Stock', bg: '#dcfce7', color: '#15803d' },
@@ -28,7 +28,7 @@ export function StockPage({
   const fresh = isStockFresh(stock)
   const updatedAt = latestStockUpdate(stock)
   const cycleStart = currentCycleStart()
-  const inCycle = (s: StockItem) => { const t = new Date(s.lastUpdated); return !isNaN(t.getTime()) && t >= cycleStart }
+  const inCycle = (s: StockItem) => { const t = new Date(s.lastUpdated); return !isNaN(t.getTime()) && toLondonWallClock(t) >= cycleStart }
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -90,7 +90,7 @@ export function StockPage({
         </span>
         <div className="stk-banner-body">
           {fresh
-            ? <><strong>Synced with today's session.</strong> {counts.today} line{counts.today !== 1 ? 's' : ''} updated {updatedAt ? `at ${formatGmtTime(updatedAt)}` : 'today'} — live until {nextCycleStart().toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short' })} 06:00 GMT.</>
+            ? <><strong>Synced with today's session.</strong> {counts.today} line{counts.today !== 1 ? 's' : ''} updated {updatedAt ? `at ${formatLondonTime(updatedAt)}` : 'today'} — live until {formatWallWeekday(nextCycleStart())} 06:00 UK time.</>
             : <><strong>No session published today.</strong> Start the daily session to set today's produce, quantities and prices.</>}
         </div>
         <button className="stk-banner-btn" onClick={() => onNavigate?.('session')}>
@@ -151,8 +151,8 @@ export function StockPage({
                     <td><strong>£{item.price.toFixed(2)}</strong></td>
                     <td>
                       {inCycle(item)
-                        ? <span className="stk-today">Today {isNaN(t.getTime()) ? '' : formatGmtTime(t)}</span>
-                        : <span style={{ color: '#9ca3af', fontSize: 12.5 }}>{isNaN(t.getTime()) ? item.lastUpdated || '—' : t.toLocaleDateString('en-GB')}</span>}
+                        ? <span className="stk-today">Today {isNaN(t.getTime()) ? '' : formatLondonTime(t)}</span>
+                        : <span style={{ color: '#9ca3af', fontSize: 12.5 }}>{isNaN(t.getTime()) ? item.lastUpdated || '—' : t.toLocaleDateString('en-GB', { timeZone: 'Europe/London' })}</span>}
                     </td>
                     <td><span className="ps-badge" style={{ background: meta.bg, color: meta.color }}>{meta.label}</span></td>
                     <td>
