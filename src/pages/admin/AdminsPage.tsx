@@ -221,7 +221,7 @@ export function AdminsPage({
       <Modal open={showCreate} title="Create Admin Account" onClose={() => setShowCreate(false)}>
         <form className="form-grid" onSubmit={submitCreate}>
           <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Warehouse Manager" required />
-          <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabfoods.co.uk" required />
+          <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabexoticfoods.com" required />
           <Input label="Username / Login" value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. warehouse1" />
           <Input label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimum 8 characters" required />
           <Select label="Role" options={["Staff", "Manager", "Supervisor", "Owner"]} value={role} onChange={setRole} />

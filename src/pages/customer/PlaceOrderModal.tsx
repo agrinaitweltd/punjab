@@ -3,7 +3,9 @@ import type { Product, StockItem } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { createOrder } from "../../api/ordersApi"
-import { sendEmail, orderReceivedEmailHtml } from "../../lib/emailService"
+import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS } from "../../lib/emailService"
+
+type Fulfilment = "Delivery" | "Collection"
 
 const CAT_COLORS: Record<string, string> = {
   Fruits: "#e05c2a", Vegetables: "#22913f", "Peppers & Chillies": "#d93025",
@@ -31,6 +33,7 @@ export function PlaceOrderModal({
   const [placing, setPlacing] = useState(false)
   const [error, setError] = useState("")
   const [placedNumber, setPlacedNumber] = useState("")
+  const [fulfilment, setFulfilment] = useState<Fulfilment>("Delivery")
 
   const stockMap = useMemo(() => {
     const m: Record<string, StockItem> = {}
@@ -63,7 +66,7 @@ export function PlaceOrderModal({
   const addOne = (pid: string) => setQty(pid, (cart[pid] ?? 0) + 1)
   const removeLine = (pid: string) => setCart(c => { const n = { ...c }; delete n[pid]; return n })
 
-  const reset = () => { setCart({}); setStep("browse"); setSearch(""); setCategory("All"); setError("") }
+  const reset = () => { setCart({}); setStep("browse"); setSearch(""); setCategory("All"); setError(""); setFulfilment("Delivery") }
   const handleClose = () => { onClose(); if (step === "done") reset() }
 
   const confirmOrder = async () => {
@@ -82,7 +85,7 @@ export function PlaceOrderModal({
       if (customerEmail) {
         void sendEmail(customerEmail, `Order ${order.orderNumber} received — Punjab Exotic Foods`,
           orderReceivedEmailHtml(order.orderNumber, customerName,
-            cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal))
+            cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment))
       }
     } catch {
       setError("We couldn't place your order — please try again or contact support.")
@@ -205,7 +208,42 @@ export function PlaceOrderModal({
             <div className="ord-row"><span>Ordered by</span><strong>{customerName}</strong></div>
             <div className="ord-row ord-total"><span>Total</span><strong>£{cartTotal.toFixed(2)}</strong></div>
           </div>
+
+          <div style={{ margin: "16px 0" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#374151", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Delivery or Collection?
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              {(["Delivery", "Collection"] as Fulfilment[]).map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFulfilment(f)}
+                  style={{
+                    flex: 1, padding: "10px 14px", borderRadius: 10, cursor: "pointer",
+                    border: fulfilment === f ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb",
+                    background: fulfilment === f ? "#f0fdf4" : "#fff",
+                    color: fulfilment === f ? "#14532d" : "#374151",
+                    fontWeight: fulfilment === f ? 700 : 500, fontSize: 13.5,
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            {fulfilment === "Collection" && (
+              <div style={{ marginTop: 10, border: "1.5px dashed #f2790f", borderRadius: 10, padding: "12px 16px", background: "#fff8ef", fontSize: 13, color: "#374151", lineHeight: 1.6 }}>
+                <strong style={{ color: "#111827" }}>{COLLECTION_ADDRESS.line1}</strong><br />
+                {COLLECTION_ADDRESS.line2}<br />
+                {COLLECTION_ADDRESS.line3}<br />
+                {COLLECTION_ADDRESS.line4}<br />
+                {COLLECTION_ADDRESS.city} {COLLECTION_ADDRESS.postcode}
+              </div>
+            )}
+          </div>
+
           <p className="ord-note">Please double-check your order — once confirmed, it's sent to Punjab Exotic Foods for processing.</p>
+          <p style={{ fontSize: 12, color: "#9ca3af", marginTop: -6, marginBottom: 12 }}>Urgent Support: <strong style={{ color: "#4d7c5f" }}>{URGENT_SUPPORT_PHONE}</strong></p>
           {error && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>{error}</p>}
           <div className="actions-row">
             <Button disabled={placing} onClick={confirmOrder}>{placing ? "Placing order…" : `Confirm Order — £${cartTotal.toFixed(2)}`}</Button>
@@ -221,6 +259,16 @@ export function PlaceOrderModal({
           </div>
           <h3>Thank you — order {placedNumber} received!</h3>
           <p>We'll confirm it shortly. You can track its progress any time in <strong>My Orders</strong>.</p>
+          {fulfilment === "Collection" ? (
+            <div style={{ margin: "0 auto 14px", maxWidth: 280, border: "1.5px dashed #f2790f", borderRadius: 10, padding: "12px 16px", background: "#fff8ef", fontSize: 13, color: "#374151", lineHeight: 1.6, textAlign: "left" }}>
+              <strong style={{ color: "#111827" }}>{COLLECTION_ADDRESS.line1}</strong><br />
+              {COLLECTION_ADDRESS.line2}<br />
+              {COLLECTION_ADDRESS.line3}<br />
+              {COLLECTION_ADDRESS.line4}<br />
+              {COLLECTION_ADDRESS.city} {COLLECTION_ADDRESS.postcode}
+            </div>
+          ) : null}
+          <p style={{ fontSize: 12, color: "#9ca3af" }}>Urgent Support: <strong style={{ color: "#4d7c5f" }}>{URGENT_SUPPORT_PHONE}</strong></p>
           <div className="actions-row" style={{ justifyContent: "center" }}>
             <Button onClick={() => { reset(); onClose() }}>Done</Button>
             <Button variant="secondary" onClick={reset}>Place Another Order</Button>

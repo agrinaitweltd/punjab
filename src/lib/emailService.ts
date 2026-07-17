@@ -16,17 +16,35 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
 }
 
+export const URGENT_SUPPORT_PHONE = "07364 219332"
+export const COLLECTION_ADDRESS = {
+  line1: "Punjab Exotic Foods",
+  line2: "Gate 9, Stand 1B–1D",
+  line3: "New Spitalfields Market",
+  line4: "Sherrin Road",
+  city: "London",
+  postcode: "E10 5SQ",
+}
+
+const logoUrl = () => {
+  try { return `${window.location.origin}/logo.png` } catch { return "/logo.png" }
+}
+
 const wrap = (inner: string) => `
 <div style="background:#f4f6f4;padding:32px 16px;font-family:Segoe UI,Arial,sans-serif">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
     <div style="height:6px;background:linear-gradient(90deg,#1f7a3a,#f5c518,#f2790f,#d93025)"></div>
-    <div style="padding:28px 32px 8px">
-      <p style="margin:0;font-size:18px;font-weight:800;color:#0d2b1e">PUNJAB <span style="font-weight:500">EXOTIC FOODS</span></p>
-      <p style="margin:2px 0 0;font-size:11px;letter-spacing:2px;color:#8a9a8f;text-transform:uppercase">Freshness Starts Here</p>
+    <div style="padding:28px 32px 8px;display:flex;align-items:center;gap:12px">
+      <img src="${logoUrl()}" alt="Punjab Exotic Foods" width="40" height="40" style="display:block;border-radius:8px" />
+      <div>
+        <p style="margin:0;font-size:18px;font-weight:800;color:#0d2b1e">PUNJAB <span style="font-weight:500">EXOTIC FOODS</span></p>
+        <p style="margin:2px 0 0;font-size:11px;letter-spacing:2px;color:#8a9a8f;text-transform:uppercase">Freshness Starts Here</p>
+      </div>
     </div>
     <div style="padding:16px 32px 28px;color:#374151;font-size:14px;line-height:1.65">${inner}</div>
     <div style="padding:16px 32px;background:#fafbfa;border-top:1px solid #eef1ee;font-size:11.5px;color:#9aa79e">
-      Punjab Exotic Foods Ltd · Wholesale exotic fruit &amp; veg · This is an automated message.
+      Punjab Exotic Foods Ltd · Wholesale exotic fruit &amp; veg · Urgent Support: <strong style="color:#4d7c5f">${URGENT_SUPPORT_PHONE}</strong><br/>
+      This is an automated message.
     </div>
   </div>
 </div>`
@@ -46,7 +64,20 @@ export function welcomeEmailHtml(name: string, role: "customer" | "admin", porta
 export function orderReceivedEmailHtml(
   orderNumber: string, customerName: string,
   items: { name: string; qty: number; unitPrice: number }[], total: number,
+  fulfilment: "Delivery" | "Collection" = "Delivery",
 ) {
+  const fulfilmentBlock = fulfilment === "Collection" ? `
+    <div style="border:1.5px dashed #f2790f;border-radius:12px;padding:16px 20px;margin:16px 0;background:#fff8ef">
+      <p style="margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#b25c0a;font-weight:700">Collection Details</p>
+      <p style="margin:0;font-weight:700;color:#111827">${COLLECTION_ADDRESS.line1}</p>
+      <p style="margin:0;color:#374151">${COLLECTION_ADDRESS.line2}</p>
+      <p style="margin:0;color:#374151">${COLLECTION_ADDRESS.line3}</p>
+      <p style="margin:0;color:#374151">${COLLECTION_ADDRESS.line4}</p>
+      <p style="margin:0;color:#374151">${COLLECTION_ADDRESS.city} ${COLLECTION_ADDRESS.postcode}</p>
+    </div>` : `
+    <div style="border-radius:12px;padding:12px 20px;margin:16px 0;background:#f0fdf4">
+      <p style="margin:0;font-size:13px;color:#14532d"><strong>Fulfilment:</strong> Delivery to your registered address</p>
+    </div>`
   const rows = items.map(it => `
     <tr>
       <td style="padding:8px 0;border-bottom:1px solid #eef1ee;color:#374151">${it.name}</td>
@@ -56,6 +87,7 @@ export function orderReceivedEmailHtml(
   return wrap(`
     <h2 style="margin:0 0 6px;font-size:19px;color:#111827">Thanks, ${customerName} — your order has been received!</h2>
     <p style="margin:0 0 16px">Order <strong>${orderNumber}</strong> is now with our team. We'll confirm it shortly and be in touch soon.</p>
+    ${fulfilmentBlock}
     <table style="width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:10px">
       <thead><tr>
         <th style="text-align:left;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Item</th>

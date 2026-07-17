@@ -6,7 +6,7 @@ import { Input } from '../../components/ui/Input'
 
 export function SettingsPage() {
   const [companyName, setCompanyName] = useState('Punjab Exotic Foods Ltd')
-  const [supportEmail, setSupportEmail] = useState('support@punjabfoods.co.uk')
+  const [supportEmail, setSupportEmail] = useState('info@punjabexoticfoods.com')
   const [orderCutoff, setOrderCutoff] = useState('17:00')
   const [saved, setSaved] = useState(false)
 

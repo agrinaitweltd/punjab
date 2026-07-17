@@ -50,8 +50,19 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: string |
   }
 }
 
+const SESSION_KEY = 'punjab-session-user'
+
+function loadStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    return raw ? (JSON.parse(raw) as User) : null
+  } catch {
+    return null
+  }
+}
+
 function App() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<User | null>(() => loadStoredUser())
   const [error, setError] = useState('')
   const [showSwitcher, setShowSwitcher] = useState(false)
   const [rememberPrompt, setRememberPrompt] = useState<{
@@ -72,6 +83,7 @@ function App() {
       return
     }
     setUser(loggedInUser)
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(loggedInUser)) } catch { /* ignore */ }
     setShowSwitcher(false)
     if (!hasBeenPromptedToRemember() && !getDeviceAccount()) {
       setRememberPrompt({ role, displayName: loggedInUser.displayName, usernameOrEmail: usernameOrEmail.trim(), password })
@@ -84,6 +96,7 @@ function App() {
 
   const handleLogout = async () => {
     await logoutUser()
+    try { localStorage.removeItem(SESSION_KEY) } catch { /* ignore */ }
     setUser(null)
   }
 

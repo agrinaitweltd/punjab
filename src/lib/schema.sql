@@ -25,13 +25,13 @@ create table if not exists admin_staff (
   created_at     timestamptz default now()
 );
 
--- Seed owner login (username: admin  password: admin123)
+-- Seed owner login (email: info@punjabexoticfoods.com  password: admin123)
 insert into admin_staff (id, name, username, email, password, role, active, is_super_admin, permissions)
 values (
   'adm-owner',
-  'Owner Admin',
+  'Punjab Exotic Foods',
   'admin',
-  'admin@punjabfoods.co.uk',
+  'info@punjabexoticfoods.com',
   'admin123',
   'Owner',
   true,
@@ -137,11 +137,38 @@ create table if not exists delivery_areas (
 );
 
 insert into delivery_areas (id, name, charge_per_pallet) values
-  ('d-1', 'Birmingham', 65),
-  ('d-2', 'London',     85),
-  ('d-3', 'Manchester', 75),
-  ('d-4', 'Leeds',      70),
-  ('d-5', 'Leicester',  65)
+  ('d-1',  'Greater London',    85),
+  ('d-2',  'Essex',             80),
+  ('d-3',  'Kent',              80),
+  ('d-4',  'Surrey',            80),
+  ('d-5',  'Hertfordshire',     78),
+  ('d-6',  'Buckinghamshire',   78),
+  ('d-7',  'Berkshire',         78),
+  ('d-8',  'Oxfordshire',       78),
+  ('d-9',  'Cambridgeshire',    78),
+  ('d-10', 'Bedfordshire',      75),
+  ('d-11', 'Northamptonshire',  75),
+  ('d-12', 'Birmingham',        65),
+  ('d-13', 'Manchester',        75),
+  ('d-14', 'Liverpool',         75),
+  ('d-15', 'Leeds',             70),
+  ('d-16', 'Sheffield',         70),
+  ('d-17', 'Nottingham',        68),
+  ('d-18', 'Leicester',         65),
+  ('d-19', 'Bristol',           75),
+  ('d-20', 'Cardiff',           82),
+  ('d-21', 'Edinburgh',         95),
+  ('d-22', 'Glasgow',           95),
+  ('d-23', 'Newcastle',         85),
+  ('d-24', 'Southampton',       78),
+  ('d-25', 'Portsmouth',        78),
+  ('d-26', 'Brighton',          80),
+  ('d-27', 'Milton Keynes',     75),
+  ('d-28', 'Coventry',          68),
+  ('d-29', 'Wolverhampton',     68),
+  ('d-30', 'Reading',           78),
+  ('d-31', 'Slough',            78),
+  ('d-32', 'Luton',             75)
 on conflict (name) do nothing;
 
 -- ACTIVITY LOG

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { User, UserRole } from '../../types'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { URGENT_SUPPORT_PHONE } from '../../lib/emailService'
 
 export function AppLayout({
   role,
@@ -47,6 +48,9 @@ export function AppLayout({
       <div className="main-layout">
         <Topbar user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} onBellClick={onBellClick} />
         <main className="content">{children}</main>
+        <div style={{ padding: '8px 24px', fontSize: 11.5, color: '#9ca3af', textAlign: 'right', borderTop: '1px solid #eef1ee' }}>
+          Urgent Support: <strong style={{ color: '#4d7c5f' }}>{URGENT_SUPPORT_PHONE}</strong>
+        </div>
       </div>
     </div>
   )

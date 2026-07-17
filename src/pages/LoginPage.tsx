@@ -552,7 +552,7 @@ export function LoginPage({ onLogin, error }: {
           <div className="lx-input-wrap">
             <input
               className="lx-input"
-              placeholder={role === "admin" ? "you@punjabfoods.co.uk" : "CUST-001"}
+              placeholder={role === "admin" ? "you@punjabexoticfoods.com" : "CUST-001"}
               value={username}
               onChange={e => setUsername(e.target.value)}
               required
