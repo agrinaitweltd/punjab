@@ -81,6 +81,15 @@ function RevenueLine({ points }: { points: number[] }) {
 const TABS = ["overview", "stock", "orders", "tickets", "balance"] as const
 type Tab = typeof TABS[number]
 
+/* Sidebar nav keys ↔ portal tabs, so the side navigation really navigates */
+const NAV_TO_TAB: Record<string, Tab> = {
+  dashboard: "overview", stock: "stock", "place-order": "stock",
+  orders: "orders", payments: "balance", tickets: "tickets", complaints: "tickets",
+}
+const TAB_TO_NAV: Record<Tab, string> = {
+  overview: "dashboard", stock: "stock", orders: "orders", tickets: "tickets", balance: "payments",
+}
+
 export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [tab, setTab]                   = useState<Tab>("overview")
   const [current, setCurrent]           = useState("dashboard")
@@ -95,6 +104,10 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [search, setSearch]             = useState("")
   const [orderPage, setOrderPage]       = useState(1)
   const [showOrder, setShowOrder]       = useState(false)
+  const [orderStep, setOrderStep]       = useState<"form" | "review" | "done">("form")
+  const [placing, setPlacing]           = useState(false)
+  const [placedNumber, setPlacedNumber] = useState("")
+  const [orderError, setOrderError]     = useState("")
   const [showTicket, setShowTicket]     = useState(false)
   const [selProd, setSelProd]           = useState("")
   const [qty, setQty]                   = useState("1")
@@ -107,8 +120,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets()
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
-    const firstInStock = p.find(prod => s.some(si => si.productId === prod.id && si.status !== "out"))
-    setSelProd(firstInStock?.id ?? "")
+    const orderable = (prod: Product) => s.some(si => si.productId === prod.id && si.status !== "out" && si.price > 0)
+    setSelProd(p.find(orderable)?.id ?? "")
     // Stock-update notification — shows once per daily cycle (06:00 GMT)
     try {
       const key = "punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10)
@@ -116,6 +129,14 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     } catch { /* storage unavailable */ }
   }
   useEffect(() => { load() }, [])
+
+  const handleNav = (key: string) => {
+    setCurrent(key)
+    const t = NAV_TO_TAB[key]
+    if (t) setTab(t)
+    if (key === "place-order") setShowOrder(true)
+  }
+  const switchTab = (t: Tab) => { setTab(t); setCurrent(TAB_TO_NAV[t]) }
 
   const dismissNotif = () => {
     try { sessionStorage.setItem("punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10), "1") } catch { /* ignore */ }
@@ -186,7 +207,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               </span>
               <span className="sh-banner-title">Today's exotic produce is live — browse stock &amp; place your order.</span>
             </div>
-            <button className="sh-banner-btn" onClick={() => setTab("stock")}>View Stock</button>
+            <button className="sh-banner-btn" onClick={() => switchTab("stock")}>View Stock</button>
           </div>
 
           {/* overview head */}
@@ -471,7 +492,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   }
 
   return (
-    <AppLayout role="customer" user={user} current={current} onNavigate={setCurrent} onLogout={onLogout}>
+    <AppLayout role="customer" user={user} current={current} onNavigate={handleNav} onLogout={onLogout}>
       {/* Daily stock notification — once per 06:00 GMT cycle */}
       {notifOpen && (
         <div className={"cn-toast " + (stockFresh ? "ok" : "due")} role="status">
@@ -491,10 +512,10 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
       {/* Breadcrumb bar — Shopall style */}
       <div className="cb-bar">
-        <button className="cb-arrow" onClick={() => setTab("overview")} disabled={tab === "overview"} title="Back to overview">
+        <button className="cb-arrow" onClick={() => switchTab("overview")} disabled={tab === "overview"} title="Back to overview">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <button className="cb-arrow" onClick={() => setTab("stock")} disabled={tab !== "overview"} title="Go to stock">
+        <button className="cb-arrow" onClick={() => switchTab("stock")} disabled={tab !== "overview"} title="Go to stock">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
         <span className="cb-path">Pages / <strong>{tab.charAt(0).toUpperCase() + tab.slice(1)}</strong></span>
@@ -511,7 +532,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       {/* Tabs */}
       <div className="cd-tabs">
         {(["overview", "stock", "orders", "tickets", "balance"] as Tab[]).map(t => (
-          <button key={t} className={"cd-tab" + (tab === t ? " active" : "")} onClick={() => setTab(t)}>
+          <button key={t} className={"cd-tab" + (tab === t ? " active" : "")} onClick={() => switchTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
@@ -519,42 +540,91 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
       {page()}
 
-      {/* Place order modal */}
-      <Modal open={showOrder} title="Place New Order" onClose={() => setShowOrder(false)}>
-        <form className="form-grid" onSubmit={async e => {
-          e.preventDefault()
+      {/* Place order modal — form → review → confirmation */}
+      <Modal
+        open={showOrder}
+        title={orderStep === "done" ? "Order Placed" : orderStep === "review" ? "Confirm Your Order" : "Place New Order"}
+        onClose={() => { setShowOrder(false); setOrderStep("form") }}
+      >
+        {orderStep === "form" && (
+          <form className="form-grid" onSubmit={e => {
+            e.preventDefault()
+            if (!selProd || unitPrice <= 0) return
+            setOrderStep("review")
+          }}>
+            <label className="form-control wide">
+              <span>Product</span>
+              <select value={selProd} onChange={e => setSelProd(e.target.value)}>
+                {products.filter(p => stockMap[p.id] && stockMap[p.id].status !== "out" && stockMap[p.id].price > 0).map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.productName} — {p.size} (£{(stockMap[p.id]?.price ?? 0).toFixed(2)}/box)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Input label="Quantity (boxes)" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} />
+            <div className="wide cd-order-total">
+              <span>Order total</span>
+              <strong>£{orderTotal.toFixed(2)}</strong>
+              {selectedStock && <span className="cd-order-total-note">{selectedStock.availableQuantity} boxes available</span>}
+            </div>
+            <div className="wide actions-row">
+              <Button type="submit" disabled={!selProd || unitPrice <= 0}>Review Order →</Button>
+              <Button type="button" variant="secondary" onClick={() => setShowOrder(false)}>Cancel</Button>
+            </div>
+          </form>
+        )}
+
+        {orderStep === "review" && (() => {
           const p = products.find(x => x.id === selProd)
-          if (!p || unitPrice <= 0) return
           const quantity = Math.max(1, Number(qty) || 1)
-          await createOrder({
-            customerId: user.id,
-            customerName: user.displayName,
-            amount: quantity * unitPrice,
-            items: [{ productId: selProd, quantity, unitPrice }],
-          })
-          setQty("1"); setShowOrder(false); load()
-        }}>
-          <label className="form-control wide">
-            <span>Product</span>
-            <select value={selProd} onChange={e => setSelProd(e.target.value)}>
-              {products.filter(p => stockMap[p.id] && stockMap[p.id].status !== "out").map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.productName} — {p.size} (£{(stockMap[p.id]?.price ?? 0).toFixed(2)}/box)
-                </option>
-              ))}
-            </select>
-          </label>
-          <Input label="Quantity (boxes)" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} />
-          <div className="wide cd-order-total">
-            <span>Order total</span>
-            <strong>£{orderTotal.toFixed(2)}</strong>
-            {selectedStock && <span className="cd-order-total-note">{selectedStock.availableQuantity} boxes available</span>}
+          return (
+            <div>
+              <div className="ord-review">
+                <div className="ord-row"><span>Product</span><strong>{p?.productName} — {p?.size}</strong></div>
+                <div className="ord-row"><span>Unit price</span><strong>£{unitPrice.toFixed(2)} / box</strong></div>
+                <div className="ord-row"><span>Quantity</span><strong>{quantity} box{quantity !== 1 ? "es" : ""}</strong></div>
+                <div className="ord-row"><span>Ordered by</span><strong>{user.displayName}</strong></div>
+                <div className="ord-row ord-total"><span>Total</span><strong>£{orderTotal.toFixed(2)}</strong></div>
+              </div>
+              <p className="ord-note">Please double-check the details — once confirmed, your order is sent to Punjab Exotic Foods for processing.</p>
+              {orderError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>{orderError}</p>}
+              <div className="actions-row">
+                <Button disabled={placing} onClick={async () => {
+                  setPlacing(true); setOrderError("")
+                  try {
+                    const order = await createOrder({
+                      customerId: user.id,
+                      customerName: user.displayName,
+                      amount: quantity * unitPrice,
+                      items: [{ productId: selProd, quantity, unitPrice }],
+                    })
+                    setPlacedNumber(order.orderNumber)
+                    setOrderStep("done")
+                    setQty("1")
+                    load()
+                  } catch { setOrderError("We couldn't place your order — please try again or contact support.") }
+                  setPlacing(false)
+                }}>{placing ? "Placing order…" : "Confirm Order"}</Button>
+                <Button variant="secondary" onClick={() => setOrderStep("form")}>← Back</Button>
+              </div>
+            </div>
+          )
+        })()}
+
+        {orderStep === "done" && (
+          <div className="ord-done">
+            <div className="ord-done-ico">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <h3>Thank you — order {placedNumber} received!</h3>
+            <p>We'll confirm it shortly. You can track its progress in <strong>My Orders</strong>.</p>
+            <div className="actions-row" style={{ justifyContent: "center" }}>
+              <Button onClick={() => { setShowOrder(false); setOrderStep("form"); switchTab("orders") }}>View My Orders</Button>
+              <Button variant="secondary" onClick={() => { setShowOrder(false); setOrderStep("form") }}>Close</Button>
+            </div>
           </div>
-          <div className="wide actions-row">
-            <Button type="submit" disabled={!selProd || unitPrice <= 0}>Confirm Order — £{orderTotal.toFixed(2)}</Button>
-            <Button type="button" variant="secondary" onClick={() => setShowOrder(false)}>Cancel</Button>
-          </div>
-        </form>
+        )}
       </Modal>
 
       {/* New ticket modal */}

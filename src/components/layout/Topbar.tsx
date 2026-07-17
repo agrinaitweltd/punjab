@@ -5,7 +5,8 @@ const PAGE_LABELS: Record<string, string> = {
   dashboard: "Overview", products: "Product", orders: "Order", customers: "Customer",
   tickets: "Message", stock: "Stock", payments: "Payments", stats: "Analytics",
   "delivery-areas": "Deliveries", enquiries: "Enquiries", complaints: "Complaints",
-  admins: "Admin Users", "data-extract": "Data Extract",
+  admins: "Admin Users", "data-extract": "Data Extract", files: "Files",
+  session: "Daily Session", "place-order": "Place Order",
 }
 
 export function Topbar({ user, onLogout, current, onNavigate, onMenuOpen }: { user: User; onLogout: () => void; current?: string; onNavigate?: (key: string) => void; onMenuOpen?: () => void }) {

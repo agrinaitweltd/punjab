@@ -50,8 +50,11 @@ const CAT_COLORS: Record<string, string> = {
   Herbs: "#0ea5e9", "Other Produce": "#b8860b",
 }
 
+const PACKAGING = ["Box", "Crate", "Sack", "Tray", "Bag", "Bunch", "Punnet", "Loose (per kg)"]
+
 type SessionItem = {
   name: string; group: string; category: string; size: string
+  packaging: string; unitSize: string
   supplier: string; purchasePrice: string; sellingPrice: string; qty: string
 }
 
@@ -99,7 +102,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
   const toggleItem = (c: CatalogItem) => {
     setItems(prev => isSelected(c.name, c.group)
       ? prev.filter(i => !(i.name === c.name && i.group === c.group))
-      : [...prev, { ...c, supplier: suppliers[0] ?? "", purchasePrice: "", sellingPrice: "", qty: "10" }])
+      : [...prev, { ...c, packaging: "Box", unitSize: "", supplier: suppliers[0] ?? "", purchasePrice: "", sellingPrice: "", qty: "10" }])
   }
   const countInCat = (cat: string) => items.filter(i => i.category === cat).length
   const setItem = (name: string, patch: Partial<SessionItem>) =>
@@ -123,9 +126,10 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
       for (const item of items) {
         const existing = products.find(p => p.productName.toLowerCase() === item.name.toLowerCase())
         if (!existing) {
+          const size = [item.unitSize.trim(), item.packaging.toLowerCase()].filter(Boolean).join(" ") || "box"
           await createProduct({
             productName: item.name, category: item.category, variety: item.group,
-            size: item.size, boxesPerPallet: 0, productImage: "",
+            size, boxesPerPallet: 0, productImage: "",
             sku: item.name.toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 24) + "-" + Date.now().toString().slice(-4),
           })
         }
@@ -257,7 +261,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
       {/* ── Step 2: supplier + purchase price ── */}
       {step === 2 && (
         <div className="ss-card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Pick a supplier and purchase price for each item</h3>
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Packaging, supplier &amp; purchase price for each item</h3>
           <div style={{ display: "flex", gap: 8, margin: "12px 0 16px", flexWrap: "wrap" }}>
             <input
               style={{ padding: "8px 12px", border: "1.5px solid var(--border)", borderRadius: 8, fontFamily: "inherit", fontSize: 13, outline: "none", flex: 1, minWidth: 180 }}
@@ -269,14 +273,19 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
           </div>
           <div className="ss-rows">
             {items.map(i => (
-              <div key={i.name} className="ss-row">
+              <div key={i.name} className="ss-row ss-row-6">
                 <div className="ss-row-name">{i.name}<small>{i.group} · {i.category}</small></div>
-                <select value={i.supplier} onChange={e => setItem(i.name, { supplier: e.target.value })}>
+                <select value={i.packaging} title="How is it packaged?" onChange={e => setItem(i.name, { packaging: e.target.value })}>
+                  {PACKAGING.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <input placeholder="Unit size e.g. 5kg" value={i.unitSize} title="Weight or count per unit"
+                  onChange={e => setItem(i.name, { unitSize: e.target.value })} />
+                <select value={i.supplier} title="Supplier" onChange={e => setItem(i.name, { supplier: e.target.value })}>
                   {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <input type="number" min="0.01" step="0.01" placeholder="Buy £/box" value={i.purchasePrice}
+                <input type="number" min="0.01" step="0.01" placeholder="Buy £/unit" value={i.purchasePrice}
                   onChange={e => setItem(i.name, { purchasePrice: e.target.value })} />
-                <input type="number" min="1" placeholder="Qty (boxes)" value={i.qty}
+                <input type="number" min="1" placeholder="Qty" value={i.qty}
                   onChange={e => setItem(i.name, { qty: e.target.value })} />
               </div>
             ))}

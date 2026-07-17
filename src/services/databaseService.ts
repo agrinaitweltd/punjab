@@ -236,7 +236,10 @@ class SupabaseDatabaseService {
 
   // ── ACTIVITY ──────────────────────────────────────────────────────
   async getActivity(): Promise<ActivityLog[]> {
-    const { data, error } = await db().from("activity_log").select("*").order("timestamp", { ascending: false }).limit(50)
+    // FILE:-prefixed rows are stored documents (see lib/fileService) — not activity.
+    const { data, error } = await db().from("activity_log").select("*")
+      .not("customer_name", "like", "FILE:%")
+      .order("created_at", { ascending: false }).limit(50)
     if (error) { console.error("getActivity", error); return [] }
     return (data ?? []).map(mapActivity)
   }

@@ -43,6 +43,7 @@ import { InvoicesPage } from './InvoicesPage'
 import { OrdersPage } from './OrdersPage'
 import { PaymentsPage } from './PaymentsPage'
 import { ProductsPage } from './ProductsPage'
+import { FilesPage } from './FilesPage'
 import { SessionPage } from './SessionPage'
 import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
@@ -122,6 +123,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return <SessionPage onFinished={async () => { await load(); setCurrent('stock') }} />
     }
 
+    if (current === 'files') {
+      return <FilesPage />
+    }
+
     if (current === 'customers') {
       return (
         <CustomersPage
@@ -172,6 +177,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <StockPage
           products={products}
           stock={stock}
+          onNavigate={setCurrent}
           onUpdateStock={async (id, input) => {
             await updateStock(id, input)
             await load()
