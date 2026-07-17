@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
-import { sendEmail, welcomeEmailHtml } from '../../lib/emailService'
+import { ToastStack } from '../../components/ToastStack'
+import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
+import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml } from '../../lib/emailService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
 import { getStock, updateStock } from '../../api/stockApi'
@@ -21,6 +23,8 @@ import {
   updateAdmin,
   updateDeliveryArea,
   updateTicketStatus,
+  createInvoice,
+  createPayment,
 } from '../../api/miscApi'
 import type {
   ActivityLog,
@@ -106,6 +110,21 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     load()
   }, [load, current])
 
+  // Keep polling in the background so notifications fire even while the
+  // admin stays on one page (e.g. a new order arrives while browsing Stock).
+  usePoll(load, 20000)
+
+  const { unseenCount: newOrders, markAllSeen: markOrdersSeen } = useUnseenCount(orders, `punjab-seen-orders-${user.id}`)
+  const { unseenCount: newTickets, markAllSeen: markTicketsSeen } = useUnseenCount(tickets, `punjab-seen-tickets-${user.id}`)
+  const { toasts, dismiss } = useLiveToasts(orders, (prevById, o) =>
+    prevById.has(o.id) ? null : { id: `order-${o.id}`, title: "New order received", body: `${o.orderNumber} — ${o.customerName} — £${o.amount.toFixed(2)}` })
+
+  const navigate = (key: string) => {
+    setCurrent(key)
+    if (key === 'orders') markOrdersSeen()
+    if (key === 'tickets') markTicketsSeen()
+  }
+
   const page = () => {
     if (current === 'dashboard') {
       return (
@@ -115,7 +134,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           orders={orders}
           stock={stock}
           activity={activity}
-          onNavigate={setCurrent}
+          onNavigate={navigate}
         />
       )
     }
@@ -178,7 +197,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <StockPage
           products={products}
           stock={stock}
-          onNavigate={setCurrent}
+          onNavigate={navigate}
           onUpdateStock={async (id, input) => {
             await updateStock(id, input)
             await load()
@@ -192,8 +211,21 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <OrdersPage
           orders={orders}
           products={products}
+          invoices={invoices}
           onUpdateOrder={async (id, input) => {
             await updateOrder(id, input)
+            await load()
+          }}
+          onMarkPaid={async (order) => {
+            const invoiceNumber = `INV-${order.orderNumber}`
+            const today = new Date().toISOString().slice(0, 10)
+            await createInvoice({ customerId: order.customerId, invoiceNumber, amount: order.amount, dueDate: today, status: 'Paid' })
+            const payment = await createPayment({ customerId: order.customerId, amount: order.amount, date: today, method: 'Bank Transfer' })
+            const customer = customers.find(c => c.id === order.customerId)
+            if (customer?.email) {
+              void sendEmail(customer.email, `Payment received for order ${order.orderNumber}`,
+                paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today))
+            }
             await load()
           }}
         />
@@ -292,8 +324,13 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   }
 
   return (
-    <AppLayout role="admin" user={user} current={current} onNavigate={setCurrent} onLogout={onLogout}>
+    <AppLayout
+      role="admin" user={user} current={current} onNavigate={navigate} onLogout={onLogout}
+      badges={{ orders: newOrders, tickets: newTickets }}
+      notifCount={newOrders + newTickets}
+    >
       {page()}
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </AppLayout>
   )
 }

@@ -3,10 +3,13 @@ import type { ReactNode } from 'react'
 import './App.css'
 import { loginUser, logoutUser } from './api/authApi'
 import { LoginPage } from './pages/LoginPage'
+import { QuickUnlock } from './pages/QuickUnlock'
 import { AdminPortal } from './pages/admin/AdminPortal'
 import { CustomerPortal } from './pages/customer/CustomerPortal'
 import { SyncStatus } from './components/SyncStatus'
 import { CookieConsent } from './components/CookieConsent'
+import { RememberDeviceModal } from './components/RememberDeviceModal'
+import { getDeviceAccount, hasBeenPromptedToRemember, markPromptedToRemember } from './lib/deviceAuth'
 import type { User } from './types'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
@@ -20,7 +23,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: string |
       return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f7f2', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: '36px 40px', maxWidth: 480, boxShadow: '0 4px 24px rgba(0,0,0,0.10)', textAlign: 'center' }}>
-            <div style={{ 
+            <div style={{
               width: 64, height: 64, borderRadius: 16, background: '#fef3c7',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               marginBottom: 16, color: '#d97706', margin: '0 auto 16px'
@@ -50,6 +53,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: string |
 function App() {
   const [user, setUser] = useState<User | null>(null)
   const [error, setError] = useState('')
+  const [showSwitcher, setShowSwitcher] = useState(false)
+  const [rememberPrompt, setRememberPrompt] = useState<{
+    role: 'admin' | 'customer'; displayName: string; usernameOrEmail: string; password: string
+  } | null>(null)
+
+  const deviceAccount = !showSwitcher ? getDeviceAccount() : null
 
   const handleLogin = async (
     role: 'admin' | 'customer',
@@ -63,11 +72,32 @@ function App() {
       return
     }
     setUser(loggedInUser)
+    setShowSwitcher(false)
+    if (!hasBeenPromptedToRemember() && !getDeviceAccount()) {
+      setRememberPrompt({ role, displayName: loggedInUser.displayName, usernameOrEmail: usernameOrEmail.trim(), password })
+    }
+  }
+
+  const handleQuickUnlock = async (usernameOrEmail: string, password: string, role: 'admin' | 'customer') => {
+    await handleLogin(role, usernameOrEmail, password)
   }
 
   const handleLogout = async () => {
     await logoutUser()
     setUser(null)
+  }
+
+  const dismissRememberPrompt = () => {
+    markPromptedToRemember()
+    setRememberPrompt(null)
+  }
+
+  if (!user && deviceAccount) {
+    return (
+      <ErrorBoundary>
+        <QuickUnlock account={deviceAccount} onUnlocked={handleQuickUnlock} onSwitchAccount={() => setShowSwitcher(true)} />
+      </ErrorBoundary>
+    )
   }
 
   return (
@@ -77,6 +107,7 @@ function App() {
       {user?.role === 'customer' ? <CustomerPortal user={user} onLogout={handleLogout} /> : null}
       <SyncStatus />
       <CookieConsent />
+      <RememberDeviceModal open={Boolean(rememberPrompt)} account={rememberPrompt} onDone={dismissRememberPrompt} />
     </ErrorBoundary>
   )
 }

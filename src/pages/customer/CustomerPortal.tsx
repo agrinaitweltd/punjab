@@ -13,6 +13,8 @@ import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
 import { listFilesForCustomer, type StoredFile } from "../../lib/fileService"
+import { useUnseenCount, useLiveToasts, usePoll } from "../../lib/notifications"
+import { ToastStack } from "../../components/ToastStack"
 
 const STATUS_COLORS: Record<string, string> = {
   Pending: "#f59e0b", Confirmed: "#3b82f6", Preparing: "#8b5cf6",
@@ -139,8 +141,14 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     const t = NAV_TO_TAB[key]
     if (t) setTab(t)
     if (key === "place-order") setShowOrder(true)
+    if (key === "orders") markOrdersSeen()
+    if (key === "tickets") markTicketsSeen()
   }
-  const switchTab = (t: Tab) => { setTab(t); setCurrent(TAB_TO_NAV[t]) }
+  const switchTab = (t: Tab) => {
+    setTab(t); setCurrent(TAB_TO_NAV[t])
+    if (t === "orders") markOrdersSeen()
+    if (t === "tickets") markTicketsSeen()
+  }
   const reorder = (productName: string) => { setQuickSearch(productName); setShowOrder(true) }
 
   const dismissNotif = () => {
@@ -154,6 +162,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const myPayments = useMemo(() => payments.filter(p => p.customerId === user.id), [payments, user.id])
   const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
   const stockMap   = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
+
+  // Keep checking for order/ticket updates while the customer stays on one page
+  usePoll(load, 25000)
+  const { unseenCount: newOrderUpdates, markAllSeen: markOrdersSeen } = useUnseenCount(myOrders, `punjab-seen-orders-cust-${user.id}`)
+  const { unseenCount: newTicketUpdates, markAllSeen: markTicketsSeen } = useUnseenCount(myTickets, `punjab-seen-tickets-cust-${user.id}`)
+  const { toasts, dismiss } = useLiveToasts(myOrders, (prevById, o) => {
+    const prev = prevById.get(o.id)
+    if (prev && prev.status !== o.status) return { id: `order-${o.id}-${o.status}`, title: "Order update", body: `${o.orderNumber} is now ${o.status}` }
+    return null
+  })
 
   const totalBoxes  = myOrders.reduce((s, o) => s + o.items.reduce((q, it) => q + it.quantity, 0), 0)
   const stockFresh  = isStockFresh(stock)
@@ -565,7 +583,11 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   }
 
   return (
-    <AppLayout role="customer" user={user} current={current} onNavigate={handleNav} onLogout={onLogout}>
+    <AppLayout
+      role="customer" user={user} current={current} onNavigate={handleNav} onLogout={onLogout}
+      badges={{ orders: newOrderUpdates, tickets: newTicketUpdates }}
+      notifCount={newOrderUpdates + newTicketUpdates}
+    >
       {/* Daily stock notification — once per 06:00 UK-time cycle */}
       {notifOpen && (
         <div className={"cn-toast " + (stockFresh ? "ok" : "due")} role="status">
@@ -623,6 +645,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         stock={stock}
         customerId={user.id}
         customerName={user.displayName}
+        customerEmail={user.email}
         onPlaced={load}
         initialSearch={quickSearch}
       />
@@ -743,6 +766,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             : <iframe src={docPreview.dataUri} title={docPreview.name} style={{ width: "100%", height: "62vh", border: "none", borderRadius: 10 }} />
         )}
       </Modal>
+
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
     </AppLayout>
   )
 }

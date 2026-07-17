@@ -3,6 +3,7 @@ import type { Product, StockItem } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { createOrder } from "../../api/ordersApi"
+import { sendEmail, orderReceivedEmailHtml } from "../../lib/emailService"
 
 const CAT_COLORS: Record<string, string> = {
   Fruits: "#e05c2a", Vegetables: "#22913f", "Peppers & Chillies": "#d93025",
@@ -11,7 +12,7 @@ const CAT_COLORS: Record<string, string> = {
 export const catColor = (c: string) => CAT_COLORS[c] ?? "#1f7a3a"
 
 export function PlaceOrderModal({
-  open, onClose, products, stock, customerId, customerName, onPlaced, initialSearch,
+  open, onClose, products, stock, customerId, customerName, customerEmail, onPlaced, initialSearch,
 }: {
   open: boolean
   onClose: () => void
@@ -19,6 +20,7 @@ export function PlaceOrderModal({
   stock: StockItem[]
   customerId: string
   customerName: string
+  customerEmail?: string
   onPlaced: () => void
   initialSearch?: string
 }) {
@@ -77,6 +79,11 @@ export function PlaceOrderModal({
       setPlacedNumber(order.orderNumber)
       setStep("done")
       onPlaced()
+      if (customerEmail) {
+        void sendEmail(customerEmail, `Order ${order.orderNumber} received — Punjab Exotic Foods`,
+          orderReceivedEmailHtml(order.orderNumber, customerName,
+            cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal))
+      }
     } catch {
       setError("We couldn't place your order — please try again or contact support.")
     }

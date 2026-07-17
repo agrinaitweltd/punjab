@@ -43,6 +43,57 @@ export function welcomeEmailHtml(name: string, role: "customer" | "admin", porta
     <p style="color:#6b7280;font-size:12.5px">If you weren't expecting this email you can safely ignore it.</p>`)
 }
 
+export function orderReceivedEmailHtml(
+  orderNumber: string, customerName: string,
+  items: { name: string; qty: number; unitPrice: number }[], total: number,
+) {
+  const rows = items.map(it => `
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;color:#374151">${it.name}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:center;color:#6b7280">${it.qty}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:right;color:#111827;font-weight:600">£${(it.qty * it.unitPrice).toFixed(2)}</td>
+    </tr>`).join("")
+  return wrap(`
+    <h2 style="margin:0 0 6px;font-size:19px;color:#111827">Thanks, ${customerName} — your order has been received!</h2>
+    <p style="margin:0 0 16px">Order <strong>${orderNumber}</strong> is now with our team. We'll confirm it shortly and be in touch soon.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:10px">
+      <thead><tr>
+        <th style="text-align:left;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Item</th>
+        <th style="text-align:center;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Qty</th>
+        <th style="text-align:right;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Amount</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;padding:12px 0;font-size:16px;font-weight:800;color:#14532d">
+      <span>Total</span><span>£${total.toFixed(2)}</span>
+    </div>
+    <p style="color:#6b7280;font-size:12.5px;margin-top:12px">This is your order confirmation and invoice reference. We'll email you again once payment is confirmed.</p>`)
+}
+
+export function paymentReceivedEmailHtml(
+  orderNumber: string, customerName: string, amount: number, paymentReference: string, date: string,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Thanks, ${customerName} — payment received!</h2>
+    <p>We've confirmed payment for order <strong>${orderNumber}</strong>. Please find your receipt below.</p>
+    <div style="border:1.5px dashed #86c99a;border-radius:12px;padding:20px;margin:20px 0;background:#f0fdf4">
+      <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#4d7c5f;font-weight:700">Receipt</p>
+      <div style="display:flex;justify-content:space-between;font-size:13.5px;color:#374151;margin-top:10px">
+        <span>Reference</span><strong>${paymentReference}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13.5px;color:#374151;margin-top:6px">
+        <span>Order</span><strong>${orderNumber}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13.5px;color:#374151;margin-top:6px">
+        <span>Date</span><strong>${date}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:19px;font-weight:800;color:#14532d;margin-top:14px;padding-top:14px;border-top:1px dashed #86c99a">
+        <span>Amount Paid</span><span>£${amount.toFixed(2)}</span>
+      </div>
+    </div>
+    <p style="color:#6b7280;font-size:12.5px">Keep this email as your receipt. Thank you for your business!</p>`)
+}
+
 export function otpEmailHtml(code: string) {
   return wrap(`
     <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Your verification code</h2>

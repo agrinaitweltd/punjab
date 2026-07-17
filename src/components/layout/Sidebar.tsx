@@ -7,7 +7,7 @@ const adminMain = [
   { key: "products",   label: "Product",   d: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" },
   { key: "orders",     label: "Order",     d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" },
   { key: "customers",  label: "Customer",  d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },
-  { key: "tickets",    label: "Message",   d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: "2" },
+  { key: "tickets",    label: "Message",   d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
 ]
 const adminTools = [
   { key: "payments",      label: "Payments",    d: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", badge: undefined },
@@ -17,12 +17,11 @@ const adminTools = [
   { key: "data-extract",  label: "Integration", d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3", badge: undefined },
 ]
 const adminWorkspace = [
-  { key: "delivery-areas", label: "Deliveries", dot: "#22913f", badge: "5" },
-  { key: "enquiries",      label: "Enquiries",  dot: "#e05c2a", badge: "4" },
+  { key: "delivery-areas", label: "Deliveries", dot: "#22913f" },
+  { key: "enquiries",      label: "Enquiries",  dot: "#e05c2a" },
 ]
 const adminBottom = [
   { key: "complaints", label: "Help centre",  d: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01" },
-  { key: "admins",     label: "Feedback",     d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
   { key: "settings",   label: "Settings",     d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" },
 ]
 const customerMain = [
@@ -59,8 +58,9 @@ function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
   )
 }
 
-export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }: {
+export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen, badges }: {
   role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean; mobileOpen?: boolean
+  badges?: Record<string, number>
 }) {
   const [query, setQuery] = useState("")
   const [collapsed, setCollapsed] = useState(false)
@@ -73,6 +73,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }:
   const toolItems      = matches(adminTools)
   const workspaceItems = matches(adminWorkspace)
   const bottomItems    = matches(adminBottom)
+  const badgeFor = (key: string) => { const n = badges?.[key] ?? 0; return n > 0 ? String(n > 99 ? "99+" : n) : undefined }
 
   useEffect(() => {
     const main = document.querySelector('.main-layout') as HTMLElement
@@ -120,7 +121,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }:
           <p className="sb-section-label">Main Menu</p>
           <nav>
             {mainItems.map(item => (
-              <NavItem key={item.key} label={item.label} d={item.d} badge={item.badge}
+              <NavItem key={item.key} label={item.label} d={item.d} badge={badgeFor(item.key)}
                 active={current === item.key} onClick={() => onNavigate(item.key)} />
             ))}
           </nav>
@@ -144,7 +145,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen }:
             <p className="sb-section-label">Workspace</p>
             <nav>
               {workspaceItems.map(item => (
-                <NavItem key={item.key} label={item.label} dot={item.dot} badge={item.badge}
+                <NavItem key={item.key} label={item.label} dot={item.dot} badge={badgeFor(item.key)}
                   active={current === item.key} onClick={() => onNavigate(item.key)} />
               ))}
               {/* Only super-admins see the Admins management link */}

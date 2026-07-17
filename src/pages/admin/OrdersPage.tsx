@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import type { Order, OrderStatus, Product } from "../../types"
+import type { Invoice, Order, OrderStatus, Product } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 
@@ -23,16 +23,20 @@ const STEPS: OrderStatus[] = ["Pending", "Confirmed", "Preparing", "Delivered"]
 
 const STATUS_FILTERS: (OrderStatus | "All")[] = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
 
-export function OrdersPage({ orders, products, onUpdateOrder }: {
+export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onMarkPaid }: {
   orders: Order[]
   products?: Product[]
+  invoices?: Invoice[]
   onUpdateOrder: (id: string, input: Partial<Order>) => Promise<void>
+  onMarkPaid?: (order: Order) => Promise<void>
 }) {
   const productName = (id: string) => products?.find(p => p.id === id)?.productName ?? id
+  const isPaid = (order: Order) => invoices.some(inv => inv.invoiceNumber === `INV-${order.orderNumber}` && inv.status === "Paid")
   const [query, setQuery] = useState("")
   const [statusIdx, setStatusIdx] = useState(0)
   const [detail, setDetail] = useState<Order | null>(null)
   const [busy, setBusy] = useState(false)
+  const [marking, setMarking] = useState(false)
 
   const statusFilter = STATUS_FILTERS[statusIdx]
   const cycleStatus = () => setStatusIdx(i => (i + 1) % STATUS_FILTERS.length)
@@ -60,6 +64,13 @@ export function OrdersPage({ orders, products, onUpdateOrder }: {
     await onUpdateOrder(order.id, { status: "Cancelled" })
     setDetail(d => d && d.id === order.id ? { ...d, status: "Cancelled" } : d)
     setBusy(false)
+  }
+
+  const markPaid = async (order: Order) => {
+    if (!onMarkPaid || isPaid(order)) return
+    setMarking(true)
+    await onMarkPaid(order)
+    setMarking(false)
   }
 
   return (
@@ -117,7 +128,10 @@ export function OrdersPage({ orders, products, onUpdateOrder }: {
                     <td style={{ color: "#6b7280" }}>{order.date}</td>
                     <td style={{ color: "#6b7280" }}>{order.items.length} item{order.items.length !== 1 ? "s" : ""}</td>
                     <td><strong>£{order.amount.toFixed(2)}</strong></td>
-                    <td><span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{order.status}</span></td>
+                    <td>
+                      <span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{order.status}</span>
+                      {isPaid(order) && <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d", marginLeft: 6 }}>Paid</span>}
+                    </td>
                     <td onClick={e => e.stopPropagation()}>
                       {isFinal
                         ? <span className="ord-final-tag">Final</span>
@@ -151,6 +165,12 @@ export function OrdersPage({ orders, products, onUpdateOrder }: {
                 <div className="ord-row"><span>Customer</span><strong>{o.customerName}</strong></div>
                 <div className="ord-row"><span>Date placed</span><strong>{o.date}</strong></div>
                 <div className="ord-row"><span>Status</span><span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{o.status}</span></div>
+                <div className="ord-row">
+                  <span>Payment</span>
+                  {isPaid(o)
+                    ? <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d" }}>Paid</span>
+                    : <span className="ps-badge" style={{ background: "#fee2e2", color: "#b91c1c" }}>Unpaid</span>}
+                </div>
                 <div className="ord-row ord-total"><span>Total</span><strong>£{o.amount.toFixed(2)}</strong></div>
               </div>
 
@@ -188,6 +208,9 @@ export function OrdersPage({ orders, products, onUpdateOrder }: {
 
               <div className="actions-row" style={{ marginTop: 18 }}>
                 {step && <Button onClick={() => advance(o)} disabled={busy}>{step.label}</Button>}
+                {onMarkPaid && !isPaid(o) && o.status !== "Cancelled" && (
+                  <Button onClick={() => markPaid(o)} disabled={marking}>{marking ? "Marking paid…" : "Mark as Paid"}</Button>
+                )}
                 {CAN_CANCEL.includes(o.status) && (
                   <Button variant="danger" onClick={() => cancel(o)} disabled={busy}>Cancel Order</Button>
                 )}

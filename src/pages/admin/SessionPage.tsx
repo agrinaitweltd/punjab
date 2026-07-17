@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createProduct, getProducts } from "../../api/productsApi"
 import { getStock, updateStock } from "../../api/stockApi"
+import type { Product } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { GmtClock } from "../../components/GmtClock"
 import { LONDON_TZ } from "../../lib/stockCycle"
@@ -8,35 +9,35 @@ import { LONDON_TZ } from "../../lib/stockCycle"
 /* Full fresh-produce catalogue, organised category → group → items */
 const PRODUCE: Record<string, Record<string, string[]>> = {
   Fruits: {
-    Apples: ["Gala", "Granny Smith", "Fuji", "Pink Lady", "Golden Delicious", "Red Delicious", "Braeburn", "Jazz", "Honeycrisp", "Empire"],
+    Apples: ["Gala", "Granny Smith", "Fuji", "Pink Lady", "Golden Delicious", "Red Delicious", "Braeburn", "Jazz", "Honeycrisp", "Empire", "Cox", "Bramley"],
     Bananas: ["Cavendish", "Plantain", "Baby Bananas", "Red Bananas", "Matooke (Cooking Bananas)"],
-    Citrus: ["Oranges", "Mandarins", "Clementines", "Tangerines", "Lemons", "Limes", "Grapefruit", "Pomelo", "Sweet Lime"],
+    Citrus: ["Oranges", "Blood Oranges", "Mandarins", "Clementines", "Tangerines", "Satsumas", "Lemons", "Limes", "Grapefruit", "Pomelo", "Sweet Lime", "Kumquat"],
     "Tropical Fruits": ["Mango", "Pineapple", "Papaya (Pawpaw)", "Avocado", "Passion Fruit", "Guava", "Jackfruit", "Dragon Fruit", "Lychee", "Rambutan", "Mangosteen", "Durian", "Breadfruit", "Soursop", "Star Fruit", "Sapodilla", "Custard Apple", "Longan"],
-    "Stone Fruits": ["Peach", "Nectarine", "Plum", "Apricot", "Cherry"],
-    Berries: ["Strawberry", "Blueberry", "Raspberry", "Blackberry", "Cranberry", "Gooseberry"],
-    Grapes: ["Red Seedless", "Green Seedless", "Black Grapes", "Muscat"],
-    Melons: ["Watermelon", "Cantaloupe", "Honeydew", "Galia Melon"],
-    Pears: ["Conference", "Bartlett", "Packham", "Bosc"],
-    "Exotic Fruits": ["Fig", "Pomegranate", "Kiwi", "Coconut", "Dates", "Tamarind", "Persimmon", "Quince"],
+    "Stone Fruits": ["Peach", "Nectarine", "Plum", "Apricot", "Cherry", "Greengage", "Damson"],
+    Berries: ["Strawberry", "Blueberry", "Raspberry", "Blackberry", "Cranberry", "Gooseberry", "Redcurrant", "Blackcurrant"],
+    Grapes: ["Red Seedless", "Green Seedless", "Black Grapes", "Muscat", "Cotton Candy Grapes"],
+    Melons: ["Watermelon", "Cantaloupe", "Honeydew", "Galia Melon", "Charentais Melon"],
+    Pears: ["Conference", "Bartlett", "Packham", "Bosc", "Comice"],
+    "Exotic Fruits": ["Fig", "Pomegranate", "Kiwi", "Golden Kiwi", "Coconut", "Dates", "Medjool Dates", "Tamarind", "Persimmon", "Quince", "Prickly Pear", "Cherimoya"],
   },
   Vegetables: {
-    "Leafy Greens": ["Lettuce", "Romaine", "Iceberg", "Spinach", "Kale", "Swiss Chard", "Pak Choi", "Bok Choy", "Cabbage", "Red Cabbage", "Chinese Cabbage", "Watercress", "Rocket (Arugula)", "Collard Greens", "Mustard Greens"],
-    "Root Vegetables": ["Carrots", "Beetroot", "Radish", "Turnip", "Parsnip", "Sweet Potato", "Cassava", "Yam", "Taro", "Ginger", "Turmeric"],
-    Potatoes: ["White Potatoes", "Red Potatoes", "Baby Potatoes", "Purple Potatoes", "Fingerling Potatoes"],
-    "Onions & Alliums": ["White Onion", "Red Onion", "Brown Onion", "Spring Onion", "Shallots", "Garlic", "Leeks", "Chives"],
-    "Fruiting Vegetables": ["Tomatoes", "Cherry Tomatoes", "Beef Tomatoes", "Roma Tomatoes", "Bell Peppers", "Chillies", "Jalapeños", "Habaneros", "Eggplant (Aubergine)", "Okra", "Cucumbers", "Gherkins", "Courgettes (Zucchini)", "Pumpkin", "Squash", "Butternut Squash"],
-    Brassicas: ["Broccoli", "Cauliflower", "Brussels Sprouts", "Kohlrabi"],
-    Legumes: ["French Beans", "Green Beans", "Runner Beans", "Snow Peas", "Sugar Snap Peas", "Garden Peas", "Broad Beans"],
-    Mushrooms: ["Button", "Portobello", "Chestnut", "Oyster", "Shiitake", "Enoki"],
+    "Leafy Greens": ["Lettuce", "Romaine", "Iceberg", "Little Gem", "Spinach", "Kale", "Swiss Chard", "Pak Choi", "Bok Choy", "Cabbage", "Red Cabbage", "Chinese Cabbage", "Watercress", "Rocket (Arugula)", "Collard Greens", "Mustard Greens", "Sorrel"],
+    "Root Vegetables": ["Carrots", "Baby Carrots", "Beetroot", "Radish", "Turnip", "Parsnip", "Sweet Potato", "Cassava", "Yam", "Taro", "Ginger", "Turmeric", "Celeriac", "Jerusalem Artichoke"],
+    Potatoes: ["White Potatoes", "Red Potatoes", "Baby Potatoes", "Purple Potatoes", "Fingerling Potatoes", "Maris Piper", "King Edward"],
+    "Onions & Alliums": ["White Onion", "Red Onion", "Brown Onion", "Spring Onion", "Shallots", "Garlic", "Leeks", "Chives", "Pearl Onions"],
+    "Fruiting Vegetables": ["Tomatoes", "Cherry Tomatoes", "Beef Tomatoes", "Roma Tomatoes", "Vine Tomatoes", "Bell Peppers", "Chillies", "Jalapeños", "Habaneros", "Eggplant (Aubergine)", "Baby Aubergine", "Okra", "Cucumbers", "Gherkins", "Courgettes (Zucchini)", "Pumpkin", "Squash", "Butternut Squash", "Acorn Squash"],
+    Brassicas: ["Broccoli", "Tenderstem Broccoli", "Cauliflower", "Brussels Sprouts", "Kohlrabi", "Romanesco"],
+    Legumes: ["French Beans", "Green Beans", "Runner Beans", "Snow Peas", "Sugar Snap Peas", "Garden Peas", "Broad Beans", "Edamame"],
+    Mushrooms: ["Button", "Portobello", "Chestnut", "Oyster", "Shiitake", "Enoki", "King Oyster"],
   },
   "Peppers & Chillies": {
-    "Peppers & Chillies": ["Green Pepper", "Red Pepper", "Yellow Pepper", "Orange Pepper", "Scotch Bonnet", "Bird's Eye Chilli", "Cayenne", "Habanero", "Jalapeño", "Serrano"],
+    "Peppers & Chillies": ["Green Pepper", "Red Pepper", "Yellow Pepper", "Orange Pepper", "Scotch Bonnet", "Bird's Eye Chilli", "Cayenne", "Habanero", "Jalapeño", "Serrano", "Poblano", "Ghost Pepper"],
   },
   Herbs: {
-    Herbs: ["Basil", "Coriander (Cilantro)", "Parsley", "Mint", "Rosemary", "Thyme", "Dill", "Oregano", "Sage", "Tarragon", "Curry Leaves"],
+    Herbs: ["Basil", "Thai Basil", "Coriander (Cilantro)", "Parsley", "Mint", "Rosemary", "Thyme", "Dill", "Oregano", "Sage", "Tarragon", "Curry Leaves", "Lemongrass", "Chervil", "Bay Leaves"],
   },
   "Other Produce": {
-    "Other Produce": ["Sweet Corn", "Baby Corn", "Celery", "Asparagus", "Rhubarb", "Artichoke", "Fennel", "Bamboo Shoots", "Sugar Cane"],
+    "Other Produce": ["Sweet Corn", "Baby Corn", "Celery", "Asparagus", "Rhubarb", "Artichoke", "Fennel", "Bamboo Shoots", "Sugar Cane", "Water Chestnuts", "Bean Sprouts", "Samphire"],
   },
 }
 
@@ -80,15 +81,55 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
   const [items, setItems]         = useState<SessionItem[]>([])
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState("")
+  const [extraCatalog, setExtraCatalog] = useState<CatalogItem[]>([])
+  const [carriedForward, setCarriedForward] = useState(0)
 
   const lastSession = loadJson<{ startedAt?: string } | null>(SESSION_KEY, null)
+
+  /* On open, pull in whatever is currently live so nothing already stocked
+     gets silently dropped just because today's session starts from scratch —
+     and so custom products created in past sessions stay pickable here too. */
+  useEffect(() => {
+    (async () => {
+      const [products, stock] = await Promise.all([getProducts(), getStock()])
+      const inCatalog = (p: Product) => CATALOG.some(c => c.name.toLowerCase() === p.productName.toLowerCase())
+      const extras: CatalogItem[] = products.filter(p => !inCatalog(p)).map(p => ({
+        name: p.productName,
+        group: p.variety || "Previously Stocked",
+        category: (CATEGORIES as string[]).includes(p.category) ? p.category : "Other Produce",
+        size: p.size || "box",
+      }))
+      setExtraCatalog(extras)
+
+      const live = stock.filter(s => s.status !== "out" && s.availableQuantity > 0)
+      const carried: SessionItem[] = live.map(s => {
+        const product = products.find(p => p.id === s.productId)
+        const catalogMatch = CATALOG.find(c => c.name.toLowerCase() === product?.productName.toLowerCase())
+        return {
+          name: product?.productName ?? "Unknown",
+          group: catalogMatch?.group ?? product?.variety ?? "Previously Stocked",
+          category: catalogMatch?.category ?? ((CATEGORIES as string[]).includes(product?.category ?? "") ? product!.category : "Other Produce"),
+          size: product?.size ?? "box",
+          packaging: "Box", unitSize: "",
+          supplier: suppliers[0] ?? "",
+          purchasePrice: "",
+          sellingPrice: s.price > 0 ? s.price.toFixed(2) : "",
+          qty: String(s.availableQuantity),
+        }
+      }).filter(i => i.name !== "Unknown")
+      if (carried.length) { setItems(carried); setCarriedForward(carried.length) }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const fullCatalog = useMemo(() => [...CATALOG, ...extraCatalog], [extraCatalog])
 
   /* Searching looks across every category; otherwise browse the active one */
   const q = search.trim().toLowerCase()
   const visibleCatalog = useMemo(() => {
-    if (q) return CATALOG.filter(c => `${c.name} ${c.group} ${c.category}`.toLowerCase().includes(q))
-    return CATALOG.filter(c => c.category === activeCat)
-  }, [q, activeCat])
+    if (q) return fullCatalog.filter(c => `${c.name} ${c.group} ${c.category}`.toLowerCase().includes(q))
+    return fullCatalog.filter(c => c.category === activeCat)
+  }, [q, activeCat, fullCatalog])
 
   const visibleGroups = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
@@ -137,16 +178,26 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
       }
       products = await getProducts()
       const stock = await getStock()
+      const todaysProductIds = new Set<string>()
       for (const item of items) {
         const product = products.find(p => p.productName.toLowerCase() === item.name.toLowerCase())
         const stockRow = product && stock.find(s => s.productId === product.id)
         if (stockRow) {
+          if (product) todaysProductIds.add(product.id)
           const qty = Math.max(0, Number(item.qty) || 0)
           await updateStock(stockRow.id, {
             availableQuantity: qty,
             price: Number(item.sellingPrice) || 0,
             status: qty === 0 ? "out" : qty <= 10 ? "low" : "available",
           })
+        }
+      }
+      // Anything that was live before but isn't part of today's session is
+      // explicitly retired (not deleted) so Stock Management never shows
+      // stale numbers for produce that's no longer actually available.
+      for (const s of stock) {
+        if (s.status !== "out" && !todaysProductIds.has(s.productId)) {
+          await updateStock(s.id, { status: "out", availableQuantity: 0 })
         }
       }
       saveJson(SESSION_KEY, { startedAt: new Date().toISOString(), ...config, items })
@@ -190,6 +241,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
           <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
             One session covers a full selling day (default 23:00 → 09:00 UK time). Set your hours below, then walk through three quick steps to publish today's produce, prices and quantities to every customer.
             {lastSession?.startedAt && <> Last session started {new Date(lastSession.startedAt).toLocaleString("en-GB", { timeZone: LONDON_TZ })} UK time.</>}
+            {carriedForward > 0 && <> We've carried forward <strong>{carriedForward}</strong> item{carriedForward !== 1 ? "s" : ""} still in stock — just confirm or adjust them in the next steps. Anything you don't reselect will be marked out of stock.</>}
           </p>
           <div className="ss-config">
             <label className="form-control">

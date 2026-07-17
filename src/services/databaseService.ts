@@ -206,12 +206,33 @@ class SupabaseDatabaseService {
     if (error) { console.error("getInvoices", error); return [] }
     return (data ?? []).map(mapInvoice)
   }
+  async createInvoice(input: Omit<Invoice, "id">): Promise<Invoice> {
+    const row = {
+      // An empty string customerId (orphaned order whose customer was deleted)
+      // must become a real null — the FK constraint checks any non-null value
+      // against customers, so "" would fail as "customer not found".
+      id: genId("inv"), customer_id: input.customerId || null, invoice_number: input.invoiceNumber,
+      amount: input.amount, due_date: input.dueDate, status: input.status,
+    }
+    const { data, error } = await db().from("invoices").insert(row).select().single()
+    if (error) throw error
+    return mapInvoice(data)
+  }
 
   // ── PAYMENTS ──────────────────────────────────────────────────────
   async getPayments(): Promise<Payment[]> {
     const { data, error } = await db().from("payments").select("*").order("date", { ascending: false })
     if (error) { console.error("getPayments", error); return [] }
     return (data ?? []).map(mapPayment)
+  }
+  async createPayment(input: Omit<Payment, "id">): Promise<Payment> {
+    const row = {
+      id: genId("pay"), customer_id: input.customerId || null, payment_reference: input.paymentReference,
+      amount: input.amount, date: input.date, method: input.method,
+    }
+    const { data, error } = await db().from("payments").insert(row).select().single()
+    if (error) throw error
+    return mapPayment(data)
   }
 
   // ── TICKETS ───────────────────────────────────────────────────────

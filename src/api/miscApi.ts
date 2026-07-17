@@ -2,9 +2,9 @@ import { createAdmin, deleteAdmin, getAdmins, toggleAdminActive, updateAdmin } f
 import { createDeliveryArea, deleteDeliveryArea, getDeliveryAreas, updateDeliveryArea } from '../services/deliveryService'
 import { createTicket, getTickets, updateTicketStatus } from '../services/ticketService'
 import { getActivity } from '../services/activityService'
-import { getInvoices, getPayments } from '../services/invoiceService'
+import { getInvoices, getPayments, createInvoice, createPayment } from '../services/invoiceService'
 
-export { getActivity, getInvoices, getPayments }
+export { getActivity, getInvoices, getPayments, createInvoice, createPayment }
 export { getTickets, createTicket, updateTicketStatus }
 export { getDeliveryAreas, createDeliveryArea, updateDeliveryArea, deleteDeliveryArea }
 export { getAdmins, createAdmin, updateAdmin, deleteAdmin, toggleAdminActive }

@@ -11,6 +11,8 @@ export function AppLayout({
   onNavigate,
   onLogout,
   children,
+  badges,
+  notifCount,
 }: {
   role: UserRole
   user: User
@@ -18,6 +20,8 @@ export function AppLayout({
   onNavigate: (key: string) => void
   onLogout: () => void
   children: ReactNode
+  badges?: Record<string, number>
+  notifCount?: number
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -36,9 +40,10 @@ export function AppLayout({
         userName={user.displayName}
         isSuperAdmin={user.isSuperAdmin}
         mobileOpen={mobileOpen}
+        badges={badges}
       />
       <div className="main-layout">
-        <Topbar user={user} onLogout={onLogout} current={current} onNavigate={onNavigate} onMenuOpen={() => setMobileOpen(true)} />
+        <Topbar user={user} onLogout={onLogout} current={current} onNavigate={onNavigate} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} />
         <main className="content">{children}</main>
       </div>
     </div>
