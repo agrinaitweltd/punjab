@@ -121,7 +121,11 @@ export function FilesPage({ customers }: { customers: Customer[] }) {
                 {fileCounts[c.id] ? <span className="fl-chip-count">{fileCounts[c.id]}</span> : null}
               </button>
             ))}
-            {folders.length === 0 && <div className="db-empty" style={{ padding: "20px 8px" }}>No customers match your search.</div>}
+            {folders.length === 0 && (
+              <div className="db-empty" style={{ padding: "20px 8px" }}>
+                {folderQuery ? "No customers match your search." : "No customers yet — add one from the Customers page."}
+              </div>
+            )}
           </div>
         </div>
 

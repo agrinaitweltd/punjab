@@ -136,7 +136,7 @@ export function CustomersPage({
             </tr>
           ))}
         </DataTable>
-        {filtered.length === 0 && <EmptyState title="No customers yet" description="Create your first customer login above, or connect Supabase to import existing customers." />}
+        {filtered.length === 0 && <EmptyState title="No customers yet" description="Create your first customer login above." />}
       </Card>
 
       <Modal open={Boolean(editing)} title="Edit Customer" onClose={() => setEditing(null)}>

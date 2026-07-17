@@ -276,7 +276,7 @@ export function ProductsPage({
             </tbody>
           </table>
           {paginated.length === 0 && (
-            <EmptyState title="No products yet" description='Click "Add New Product" to create your first product. Connect Supabase to load your catalogue.' />
+            <EmptyState title="No products yet" description='Click "Add New Product" to create your first product.' />
           )}
         </div>
 
