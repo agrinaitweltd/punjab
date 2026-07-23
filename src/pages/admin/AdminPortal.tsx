@@ -160,6 +160,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <CustomersPage
           customers={customers}
+          deliveryAreas={deliveryAreas}
           onCreate={async (input) => {
             await createCustomer(input)
             if (input.email) {

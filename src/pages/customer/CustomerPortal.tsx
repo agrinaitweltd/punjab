@@ -12,6 +12,7 @@ import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { PlaceOrderModal, catColor } from "./PlaceOrderModal"
+import { PayInvoicesModal } from "../../components/PayInvoicesModal"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
@@ -125,8 +126,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [invoiceDetail, setInvoiceDetail] = useState<Invoice | null>(null)
   const [me, setMe]                     = useState<Customer | null>(null)
   const [paySel, setPaySel]             = useState<Set<string>>(new Set())
-  const [payBusy, setPayBusy]           = useState(false)
   const [payMsg, setPayMsg]             = useState<{ ok: boolean; text: string } | null>(null)
+  const [showPayModal, setShowPayModal] = useState(false)
 
   const load = async () => {
     const [p, s, o, inv, pay, tix, custs] = await Promise.all([
@@ -144,61 +145,17 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   }
   useEffect(() => { load() }, [])
 
-  // Handle the return from Stripe Checkout: verify the session server-side,
-  // then mark the paid invoices and record the payment.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const outcome = params.get("checkout")
-    if (!outcome) return
-    window.history.replaceState({}, "", window.location.pathname)
-    if (outcome === "cancelled") {
-      setTab("balance"); setCurrent("payments")
-      setPayMsg({ ok: false, text: "Payment cancelled — nothing has been charged." })
-      return
-    }
-    const sessionId = params.get("session_id")
-    if (outcome !== "success" || !sessionId) return
-    ;(async () => {
-      setTab("balance"); setCurrent("payments")
-      try {
-        const r = await fetch(`/api/verify-checkout?session_id=${encodeURIComponent(sessionId)}`)
-        const data = await r.json()
-        if (data.paid && Array.isArray(data.invoiceIds) && data.invoiceIds.length > 0) {
-          for (const id of data.invoiceIds) await updateInvoice(id, { status: "Paid" })
-          await createPayment({ customerId: user.id, amount: data.amount ?? 0, date: new Date().toISOString().slice(0, 10), method: "Card (Stripe)" })
-          setPayMsg({ ok: true, text: `Payment of £${(data.amount ?? 0).toFixed(2)} received — thank you! Your invoices have been marked as paid.` })
-          setPaySel(new Set())
-          await load()
-        } else {
-          setPayMsg({ ok: false, text: "We couldn't confirm that payment — if you were charged, contact us and we'll put it right." })
-        }
-      } catch {
-        setPayMsg({ ok: false, text: "We couldn't confirm that payment — if you were charged, contact us and we'll put it right." })
-      }
-    })()
-  }, [])
-
-  const startPayment = async () => {
-    const invs = myInvoices.filter(i => i.status !== "Paid" && paySel.has(i.id))
-    if (invs.length === 0) return
-    setPayBusy(true); setPayMsg(null)
-    try {
-      const r = await fetch("/api/create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          invoices: invs.map(i => ({ id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount })),
-          customerEmail: user.email,
-          origin: window.location.origin,
-        }),
-      })
-      const data = await r.json()
-      if (r.ok && data.url) { window.location.href = data.url; return }
-      setPayMsg({ ok: false, text: data.error || "Card payments aren't available right now — please pay by bank transfer or contact us." })
-    } catch {
-      setPayMsg({ ok: false, text: "Couldn't start the payment — please check your connection and try again." })
-    }
-    setPayBusy(false)
+  // Card is collected in-page with Stripe Elements — no redirect to Stripe's
+  // site. Once confirmPayment succeeds client-side, we verify it server-side
+  // (authoritative) before marking invoices paid.
+  const handlePaid = async (_paymentIntentId: string, invoiceIds: string[], amount: number) => {
+    void _paymentIntentId
+    for (const id of invoiceIds) await updateInvoice(id, { status: "Paid" })
+    await createPayment({ customerId: user.id, amount, date: new Date().toISOString().slice(0, 10), method: "Card (Stripe)" })
+    setPayMsg({ ok: true, text: `Payment of £${amount.toFixed(2)} received — thank you! Your invoices have been marked as paid.` })
+    setPaySel(new Set())
+    setShowPayModal(false)
+    await load()
   }
 
   const handleNav = (key: string) => {
@@ -611,8 +568,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               {unpaid.length > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   {paySel.size > 0 && <span style={{ fontSize: 13.5 }}>Selected: <strong>£{selTotal.toFixed(2)}</strong></span>}
-                  <Button className="btn-sm" disabled={paySel.size === 0 || payBusy} onClick={startPayment}>
-                    {payBusy ? "Opening secure checkout…" : paySel.size > 0 ? `Pay ${paySel.size} Invoice${paySel.size !== 1 ? "s" : ""} by Card` : "Select invoices to pay"}
+                  <Button className="btn-sm" disabled={paySel.size === 0} onClick={() => setShowPayModal(true)}>
+                    {paySel.size > 0 ? `Pay ${paySel.size} Invoice${paySel.size !== 1 ? "s" : ""} by Card` : "Select invoices to pay"}
                   </Button>
                 </div>
               )}
@@ -783,6 +740,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         customerEmail={user.email}
         onPlaced={load}
         initialSearch={quickSearch}
+      />
+
+      {/* Pay invoices — embedded Stripe Elements, no redirect off-site */}
+      <PayInvoicesModal
+        open={showPayModal}
+        invoices={myInvoices.filter(i => i.status !== "Paid" && paySel.has(i.id)).map(i => ({ id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount }))}
+        customerEmail={user.email}
+        onClose={() => setShowPayModal(false)}
+        onPaid={handlePaid}
       />
 
       {/* New ticket modal */}

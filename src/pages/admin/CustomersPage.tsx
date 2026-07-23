@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Customer } from '../../types'
+import type { Customer, DeliveryArea } from '../../types'
 import { parseStatementPdf, type StatementRow } from '../../lib/statementImport'
 import { importStatementInvoices } from '../../api/miscApi'
 import { Button } from '../../components/ui/Button'
@@ -24,11 +24,13 @@ const initialForm = {
 
 export function CustomersPage({
   customers,
+  deliveryAreas,
   onCreate,
   onUpdate,
   onDelete,
 }: {
   customers: Customer[]
+  deliveryAreas: DeliveryArea[]
   onCreate: (input: typeof initialForm) => Promise<void>
   onUpdate: (id: string, input: Partial<Customer>) => Promise<void>
   onDelete: (id: string) => Promise<void>
@@ -36,9 +38,12 @@ export function CustomersPage({
   const [query, setQuery] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [editing, setEditing] = useState<Customer | null>(null)
+  const [editError, setEditError] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   // One-time statement import
   const [importTarget, setImportTarget] = useState<Customer | null>(null)
   const [importRows, setImportRows] = useState<StatementRow[]>([])
@@ -88,8 +93,25 @@ export function CustomersPage({
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault()
     if (!editing) return
-    await onUpdate(editing.id, editing)
-    setEditing(null)
+    setEditError('')
+    if (!editing.companyName.trim()) { setEditError('Company name is required.'); return }
+    if (!editing.email.trim() || !editing.email.includes('@')) { setEditError('Enter a valid email address.'); return }
+    if ((editing.creditLimit ?? 0) < 0) { setEditError('Credit limit cannot be negative.'); return }
+    if ((editing.creditDays ?? 0) < 1) { setEditError('Credit days must be at least 1.'); return }
+    setSavingEdit(true)
+    try {
+      await onUpdate(editing.id, editing)
+      setEditing(null)
+    } catch {
+      setEditError('Could not save changes — please try again.')
+    }
+    setSavingEdit(false)
+  }
+
+  const confirmDelete = async (customer: Customer) => {
+    if (!window.confirm(`Delete ${customer.companyName}? This removes their login and cannot be undone.`)) return
+    setDeletingId(customer.id)
+    try { await onDelete(customer.id) } finally { setDeletingId(null) }
   }
 
   const openImport = (customer: Customer) => {
@@ -164,20 +186,31 @@ export function CustomersPage({
       </Modal>
 
       <Card title="Customers" actions={<Input label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, contact, email or number" />}>
-        <DataTable columns={['Company', 'Contact', 'Email', 'Number', 'Delivery Area', 'Payment Terms', 'Actions']}>
+        <DataTable columns={['Company', 'Contact', 'Email', 'Number', 'Delivery Area', 'Terms', 'Status', 'Actions']}>
           {filtered.map((customer) => (
             <tr key={customer.id}>
               <td>{customer.companyName}</td>
               <td>{customer.contactPerson}</td>
               <td>{customer.email}</td>
               <td>{customer.customerNumber}</td>
-              <td>{customer.deliveryArea}</td>
+              <td>{customer.deliveryArea || '—'}</td>
               <td>{customer.paymentTerms}</td>
               <td>
+                {customer.blocked ? (
+                  <span className="ps-badge" style={{ background: '#111827', color: '#fff' }}>Blocked</span>
+                ) : customer.status === 'inactive' ? (
+                  <span className="ps-badge ps-badge-gray">Inactive</span>
+                ) : (
+                  <span className="ps-badge ps-badge-green">Active</span>
+                )}
+              </td>
+              <td>
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
-                  <Button variant="secondary" className="btn-sm" onClick={() => setEditing(customer)}>Edit</Button>
+                  <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
                   <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
-                  <Button variant="danger" className="btn-sm" onClick={() => onDelete(customer.id)}>Delete</Button>
+                  <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => confirmDelete(customer)}>
+                    {deletingId === customer.id ? 'Deleting…' : 'Delete'}
+                  </Button>
                 </div>
               </td>
             </tr>
@@ -186,24 +219,43 @@ export function CustomersPage({
         {filtered.length === 0 && <EmptyState title="No customers yet" description="Create your first customer login above." />}
       </Card>
 
-      <Modal open={Boolean(editing)} title="Edit Customer" onClose={() => setEditing(null)}>
+      <Modal open={Boolean(editing)} title={editing ? `Edit ${editing.companyName || 'Customer'}` : 'Edit Customer'} onClose={() => setEditing(null)}>
         {editing ? (
           <form className="form-grid" onSubmit={submitEdit}>
-            <Input label="Company Name" value={editing.companyName} onChange={(e) => setEditing({ ...editing, companyName: e.target.value })} />
+            <p className="wide" style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7a70', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 -6px' }}>
+              Company Details
+            </p>
+            <Input label="Company Name" value={editing.companyName} onChange={(e) => setEditing({ ...editing, companyName: e.target.value })} required />
             <Input label="Contact Person" value={editing.contactPerson} onChange={(e) => setEditing({ ...editing, contactPerson: e.target.value })} />
-            <Input label="Email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
+            <Input label="Email" type="email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} required />
             <Input label="Phone" value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
-            <Input label="Delivery Area" value={editing.deliveryArea} onChange={(e) => setEditing({ ...editing, deliveryArea: e.target.value })} />
+            <div className="wide"><Input label="Delivery Address" value={editing.address} onChange={(e) => setEditing({ ...editing, address: e.target.value })} placeholder="Street, city, postcode" /></div>
+
+            <p className="wide" style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7a70', textTransform: 'uppercase', letterSpacing: 0.5, margin: '10px 0 -6px' }}>
+              Delivery &amp; Account
+            </p>
+            <Select label="Delivery Area" options={deliveryAreas.length ? deliveryAreas.map(a => a.name) : [editing.deliveryArea || 'Unassigned']}
+              value={editing.deliveryArea} onChange={(value) => setEditing({ ...editing, deliveryArea: value })} />
+            <Select label="Account Status" options={['active', 'inactive']} value={editing.status}
+              onChange={(value) => setEditing({ ...editing, status: value as Customer['status'] })} />
+
+            <p className="wide" style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7a70', textTransform: 'uppercase', letterSpacing: 0.5, margin: '10px 0 -6px' }}>
+              Credit Control
+            </p>
             <Select label="Payment Terms" options={['Payment Before Order', '14 Days', '30 Days']} value={editing.paymentTerms} onChange={(value) => setEditing({ ...editing, paymentTerms: value })} />
-            <Input label="Credit Limit (£)" type="number" value={String(editing.creditLimit ?? 0)}
+            <Input label="Current Balance (£)" value={`£${(editing.balance ?? 0).toFixed(2)}`} disabled title="Balance updates automatically from orders, statement imports and payments" />
+            <Input label="Credit Limit (£)" type="number" min="0" step="0.01" value={String(editing.creditLimit ?? 0)}
               onChange={(e) => setEditing({ ...editing, creditLimit: parseFloat(e.target.value) || 0 })} />
-            <Input label="Credit Days" type="number" value={String(editing.creditDays ?? 14)}
+            <Input label="Credit Days" type="number" min="1" step="1" value={String(editing.creditDays ?? 14)}
               onChange={(e) => setEditing({ ...editing, creditDays: parseInt(e.target.value) || 0 })} />
             <p className="wide" style={{ fontSize: 12.5, color: '#6b7a70', margin: 0 }}>
               Credit limit is the maximum outstanding balance allowed (0 = no limit). Credit days is how long each invoice can stay unpaid before it's overdue.
             </p>
+
+            {editError && <p className="wide" style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', margin: 0 }}>{editError}</p>}
             <div className="wide actions-row">
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit" disabled={savingEdit}>{savingEdit ? 'Saving…' : 'Save Changes'}</Button>
+              <Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button>
             </div>
           </form>
         ) : null}
