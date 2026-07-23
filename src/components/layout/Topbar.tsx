@@ -4,7 +4,7 @@ const PAGE_LABELS: Record<string, string> = {
   dashboard: "Overview", products: "Product", orders: "Order", customers: "Customer",
   tickets: "Message", stock: "Stock", payments: "Payments", stats: "Analytics",
   "delivery-areas": "Deliveries", enquiries: "Enquiries", complaints: "Complaints",
-  "credit-control": "Credit Control",
+  "credit-control": "Credit Control", "payment-proofs": "Payment Proofs",
   admins: "Admin Users", "data-extract": "Data Extract", files: "Files",
   session: "Daily Session", "place-order": "Place Order",
 }

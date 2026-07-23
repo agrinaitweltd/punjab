@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
 import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
-import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml } from '../../lib/emailService'
+import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml } from '../../lib/emailService'
+import { getCreditStatus } from '../../lib/creditControl'
+import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
 import { getStock, updateStock } from '../../api/stockApi'
@@ -25,6 +27,7 @@ import {
   updateTicketStatus,
   createInvoice,
   createPayment,
+  updateInvoice,
 } from '../../api/miscApi'
 import type {
   ActivityLog,
@@ -42,6 +45,7 @@ import type {
 import { AdminsPage } from './AdminsPage'
 import { ComplaintsPage } from './ComplaintsPage'
 import { CreditControlPage } from './CreditControlPage'
+import { PaymentProofsPage } from './PaymentProofsPage'
 import { CustomersPage } from './CustomersPage'
 import { DashboardHome } from './DashboardHome'
 import { DeliveryAreasPage } from './DeliveryAreasPage'
@@ -68,6 +72,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [payments, setPayments] = useState<Payment[]>([])
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [deliveryAreas, setDeliveryAreas] = useState<DeliveryArea[]>([])
+  const [paymentProofs, setPaymentProofs] = useState<PaymentProof[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -81,6 +86,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       paymentsData,
       ticketsData,
       deliveryAreasData,
+      paymentProofsData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -92,6 +98,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getPayments(),
       getTickets(),
       getDeliveryAreas(),
+      listPaymentProofs(),
     ])
 
     setCustomers(customersData)
@@ -104,6 +111,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setPayments(paymentsData)
     setTickets(ticketsData)
     setDeliveryAreas(deliveryAreasData)
+    setPaymentProofs(paymentProofsData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -117,6 +125,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
   const { unseenCount: newOrders, markAllSeen: markOrdersSeen } = useUnseenCount(orders, `punjab-seen-orders-${user.id}`)
   const { unseenCount: newTickets, markAllSeen: markTicketsSeen } = useUnseenCount(tickets, `punjab-seen-tickets-${user.id}`)
+  const pendingProofsCount = paymentProofs.filter(p => p.status === 'pending').length
   const { toasts, dismiss } = useLiveToasts(orders, (prevById, o) =>
     prevById.has(o.id) ? null : { id: `order-${o.id}`, title: "New order received", body: `${o.orderNumber} — ${o.customerName} — £${o.amount.toFixed(2)}` })
 
@@ -131,7 +140,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const openNotifications = () => {
     markOrdersSeen()
     markTicketsSeen()
-    setCurrent(newOrders > 0 ? 'orders' : newTickets > 0 ? 'tickets' : 'orders')
+    setCurrent(newOrders > 0 ? 'orders' : newTickets > 0 ? 'tickets' : pendingProofsCount > 0 ? 'payment-proofs' : 'orders')
   }
 
   const page = () => {
@@ -223,18 +232,60 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           products={products}
           invoices={invoices}
           onUpdateOrder={async (id, input) => {
+            const order = orders.find(o => o.id === id)
+            // Approving an order (Pending -> Confirmed) is the credit-control checkpoint:
+            // if the customer requires payment before order, or this order would push
+            // them over their credit limit, invoice it immediately, freeze their
+            // account from placing further orders, and email them to pay. Otherwise
+            // it's within their agreed credit terms — proceed normally ("pay later").
+            if (order && order.status === 'Pending' && input.status === 'Confirmed') {
+              const customer = customers.find(c => c.id === order.customerId)
+              if (customer) {
+                const status = getCreditStatus(customer, invoices)
+                const creditLimit = customer.creditLimit ?? 0
+                const projectedOutstanding = status.outstanding + order.amount
+                const requiresPaymentNow = customer.paymentTerms === 'Payment Before Order' ||
+                  (creditLimit > 0 && projectedOutstanding > creditLimit)
+                if (requiresPaymentNow) {
+                  const today = new Date().toISOString().slice(0, 10)
+                  await createInvoice({
+                    customerId: customer.id, invoiceNumber: `INV-${order.orderNumber}`,
+                    amount: order.amount, date: today, dueDate: today, status: 'Unpaid',
+                  })
+                  await updateCustomer(customer.id, { blocked: true })
+                  if (customer.email) {
+                    void sendEmail(customer.email, `Payment needed — order ${order.orderNumber}`,
+                      orderPaymentRequiredEmailHtml(customer.contactPerson || customer.companyName, order.orderNumber, order.amount, today))
+                  }
+                }
+              }
+            }
             await updateOrder(id, input)
             await load()
           }}
           onMarkPaid={async (order) => {
             const invoiceNumber = `INV-${order.orderNumber}`
             const today = new Date().toISOString().slice(0, 10)
-            await createInvoice({ customerId: order.customerId, invoiceNumber, amount: order.amount, dueDate: today, status: 'Paid' })
+            // An invoice may already exist (created when the order was confirmed and
+            // payment was required upfront) — update it instead of creating a
+            // duplicate, which would collide on the unique invoice_number.
+            const existing = invoices.find(i => i.invoiceNumber === invoiceNumber)
+            const invoice = existing
+              ? await updateInvoice(existing.id, { status: 'Paid' })
+              : await createInvoice({ customerId: order.customerId, invoiceNumber, amount: order.amount, dueDate: today, status: 'Paid' })
             const payment = await createPayment({ customerId: order.customerId, amount: order.amount, date: today, method: 'Bank Transfer' })
             const customer = customers.find(c => c.id === order.customerId)
             if (customer?.email) {
               void sendEmail(customer.email, `Payment received for order ${order.orderNumber}`,
                 paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today))
+            }
+            // Once this invoice is paid, check whether the customer is still over
+            // their limit or has other overdue invoices — if not, lift the freeze.
+            if (customer?.blocked && invoice) {
+              const updatedInvoices = invoices.map(i => i.id === invoice.id ? { ...i, status: 'Paid' as const } : i)
+              if (!getCreditStatus(customer, updatedInvoices).isOverdue) {
+                await updateCustomer(customer.id, { blocked: false })
+              }
             }
             await load()
           }}
@@ -244,6 +295,41 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
     if (current === 'invoices') {
       return <InvoicesPage invoices={invoices} />
+    }
+
+    if (current === 'payment-proofs') {
+      return (
+        <PaymentProofsPage
+          proofs={paymentProofs}
+          onApprove={async (proof) => {
+            for (const id of proof.invoiceIds) await updateInvoice(id, { status: 'Paid' })
+            await createPayment({ customerId: proof.customerId, amount: proof.amount, date: new Date().toISOString().slice(0, 10), method: 'Bank Transfer (Verified)' })
+            await approvePaymentProof(proof.id)
+            const customer = customers.find(c => c.id === proof.customerId)
+            if (customer?.email) {
+              void sendEmail(customer.email, 'Payment confirmed — thank you',
+                paymentApprovedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount))
+            }
+            // Lift a payment-required freeze once the account is back within terms.
+            if (customer?.blocked) {
+              const updatedInvoices = invoices.map(i => proof.invoiceIds.includes(i.id) ? { ...i, status: 'Paid' as const } : i)
+              if (!getCreditStatus(customer, updatedInvoices).isOverdue) {
+                await updateCustomer(customer.id, { blocked: false })
+              }
+            }
+            await load()
+          }}
+          onReject={async (proof, reason) => {
+            await rejectPaymentProof(proof.id, reason)
+            const customer = customers.find(c => c.id === proof.customerId)
+            if (customer?.email) {
+              void sendEmail(customer.email, "We couldn't confirm your payment",
+                paymentRejectedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount, reason))
+            }
+            await load()
+          }}
+        />
+      )
     }
 
     if (current === 'credit-control') {
@@ -367,8 +453,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   return (
     <AppLayout
       role="admin" user={user} current={current} onNavigate={navigate} onLogout={onLogout}
-      badges={{ orders: newOrders, tickets: newTickets }}
-      notifCount={newOrders + newTickets}
+      badges={{ orders: newOrders, tickets: newTickets, 'payment-proofs': pendingProofsCount }}
+      notifCount={newOrders + newTickets + pendingProofsCount}
       onBellClick={openNotifications}
     >
       {page()}

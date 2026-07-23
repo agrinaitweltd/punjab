@@ -144,7 +144,14 @@ class SupabaseDatabaseService {
     let { data, error } = await db().from("customers").update(row).eq("id", id).select().single()
     // Retry without credit-control columns if the migration hasn't been run yet.
     if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
-      ;({ data, error } = await db().from("customers").update(withoutCreditColumns(row)).eq("id", id).select().single())
+      const fallbackRow = withoutCreditColumns(row)
+      if (Object.keys(fallbackRow).length === 0) {
+        // Nothing left to persist (e.g. only `blocked` was set) — this is an
+        // expected no-op until the migration runs, not a real failure.
+        console.warn("updateCustomer: credit-control columns not migrated yet — skipped, run schema.sql's alter table statements")
+        return null
+      }
+      ;({ data, error } = await db().from("customers").update(fallbackRow).eq("id", id).select().single())
     }
     if (error) { console.error("updateCustomer", error); return null }
     return mapCustomer(data)
@@ -318,9 +325,11 @@ class SupabaseDatabaseService {
 
   // ── ACTIVITY ──────────────────────────────────────────────────────
   async getActivity(): Promise<ActivityLog[]> {
-    // FILE:-prefixed rows are stored documents (see lib/fileService) — not activity.
+    // FILE:/PAYPROOF:-prefixed rows are stored documents and payment proofs
+    // (see lib/fileService, lib/paymentProofService) — not real activity.
     const { data, error } = await db().from("activity_log").select("*")
       .not("customer_name", "like", "FILE:%")
+      .not("customer_name", "like", "PAYPROOF:%")
       .order("created_at", { ascending: false }).limit(50)
     if (error) { console.error("getActivity", error); return [] }
     return (data ?? []).map(mapActivity)

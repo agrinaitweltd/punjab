@@ -17,6 +17,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
 }
 
 export const URGENT_SUPPORT_PHONE = "07364 219332"
+export const ADMIN_NOTIFY_EMAIL = "info@punjabexoticfoods.com"
 export const COLLECTION_ADDRESS = {
   line1: "Punjab Exotic Foods",
   line2: "Gate 9, Stand 1B–1D",
@@ -102,6 +103,66 @@ export function orderReceivedEmailHtml(
       <span>Total</span><span>£${total.toFixed(2)}</span>
     </div>
     <p style="color:#6b7280;font-size:12.5px;margin-top:12px">This is your order confirmation and invoice reference. We'll email you again once payment is confirmed.</p>`)
+}
+
+export function orderPaymentRequiredEmailHtml(
+  customerName: string, orderNumber: string, amount: number, dueDate: string,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Payment needed to continue — ${customerName}</h2>
+    <p>Your order <strong>${orderNumber}</strong> has been confirmed, but it needs to be paid before we can keep processing it
+    or take any further orders from your account.</p>
+    <div style="border:1.5px dashed #fca5a5;border-radius:12px;padding:20px;margin:20px 0;background:#fef2f2">
+      <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#b91c1c;font-weight:700">Amount Due</p>
+      <p style="margin:0;font-size:26px;font-weight:800;color:#7f1d1d">£${amount.toFixed(2)}</p>
+      <p style="margin:8px 0 0;font-size:13px;color:#374151">Due: ${dueDate}</p>
+    </div>
+    <p style="text-align:center;margin:24px 0">
+      <span style="display:inline-block;background:#1f7a3a;color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:10px">Pay in your Punjab Exotic Foods account — Balance tab</span>
+    </p>
+    <p style="color:#6b7280;font-size:12.5px">Sign in to the portal and go to <strong>Balance</strong> to pay securely by card. Your account won't be able to place new orders until this is settled.</p>`)
+}
+
+export function paymentProofSubmittedEmailHtml(
+  customerName: string, invoiceNumbers: string[], amount: number,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Payment proof received — thanks, ${customerName}</h2>
+    <p>We've received your bank transfer screenshot for invoice${invoiceNumbers.length !== 1 ? "s" : ""}
+    <strong>${invoiceNumbers.join(", ")}</strong> (£${amount.toFixed(2)}). Our team will check it against our bank
+    statement and confirm shortly — you'll get an email as soon as it's approved.</p>
+    <p style="color:#6b7280;font-size:12.5px">No action needed from you right now.</p>`)
+}
+
+export function paymentProofAdminAlertEmailHtml(
+  customerName: string, invoiceNumbers: string[], amount: number,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">New payment proof to review</h2>
+    <p><strong>${customerName}</strong> has uploaded a bank transfer screenshot for invoice${invoiceNumbers.length !== 1 ? "s" : ""}
+    <strong>${invoiceNumbers.join(", ")}</strong>, totalling <strong>£${amount.toFixed(2)}</strong>.</p>
+    <p>Check it against the bank statement, then approve or reject it from <strong>Payment Proofs</strong> in the admin portal.</p>`)
+}
+
+export function paymentApprovedEmailHtml(
+  customerName: string, invoiceNumbers: string[], amount: number,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Payment confirmed — thanks, ${customerName}!</h2>
+    <p>We've checked your bank transfer and confirmed payment of <strong>£${amount.toFixed(2)}</strong> for invoice${invoiceNumbers.length !== 1 ? "s" : ""}
+    <strong>${invoiceNumbers.join(", ")}</strong>. Your account has been updated.</p>
+    <p style="color:#6b7280;font-size:12.5px">Thank you for your business!</p>`)
+}
+
+export function paymentRejectedEmailHtml(
+  customerName: string, invoiceNumbers: string[], amount: number, reason: string,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">We couldn't confirm your payment — ${customerName}</h2>
+    <p>We checked the screenshot you sent for invoice${invoiceNumbers.length !== 1 ? "s" : ""} <strong>${invoiceNumbers.join(", ")}</strong>
+    (£${amount.toFixed(2)}), but ${reason ? `we found an issue: <strong>${reason}</strong>` : "couldn't match it to a payment on our bank statement"}.</p>
+    <p>Please double-check the transfer and upload a new screenshot in your <strong>Balance</strong> tab, or call us on
+    <strong>${URGENT_SUPPORT_PHONE}</strong> if you think this is a mistake.</p>`)
 }
 
 export function paymentReceivedEmailHtml(

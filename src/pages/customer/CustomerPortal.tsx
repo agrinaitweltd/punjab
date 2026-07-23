@@ -2,17 +2,17 @@ import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
 import { getOrders } from "../../api/ordersApi"
-import { createTicket, getInvoices, getPayments, getTickets, updateInvoice, createPayment } from "../../api/miscApi"
+import { createTicket, getInvoices, getPayments, getTickets } from "../../api/miscApi"
 import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
 import { getCreditStatus } from "../../lib/creditControl"
-import { URGENT_SUPPORT_PHONE } from "../../lib/emailService"
+import { sendEmail, URGENT_SUPPORT_PHONE, ADMIN_NOTIFY_EMAIL, paymentProofSubmittedEmailHtml, paymentProofAdminAlertEmailHtml } from "../../lib/emailService"
+import { uploadPaymentProof, listPaymentProofsForCustomer, MAX_PROOF_BYTES, type PaymentProof } from "../../lib/paymentProofService"
 import type { Customer, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { PlaceOrderModal, catColor } from "./PlaceOrderModal"
-import { PaymentPage } from "../../components/PaymentPage"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
@@ -127,7 +127,12 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [me, setMe]                     = useState<Customer | null>(null)
   const [paySel, setPaySel]             = useState<Set<string>>(new Set())
   const [payMsg, setPayMsg]             = useState<{ ok: boolean; text: string } | null>(null)
-  const [showPayModal, setShowPayModal] = useState(false)
+  const [showProofModal, setShowProofModal] = useState(false)
+  const [myProofs, setMyProofs]         = useState<PaymentProof[]>([])
+  const [proofFile, setProofFile]       = useState<File | null>(null)
+  const [proofNote, setProofNote]       = useState("")
+  const [proofBusy, setProofBusy]       = useState(false)
+  const [proofError, setProofError]     = useState("")
 
   const load = async () => {
     const [p, s, o, inv, pay, tix, custs] = await Promise.all([
@@ -137,6 +142,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     setMe(custs.find(c => c.id === user.id) ?? null)
     setFilesLoading(true)
     listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
+    listPaymentProofsForCustomer(user.id).then(setMyProofs).catch(() => setMyProofs([]))
     // Stock-update notification — shows once per daily cycle (06:00 GMT)
     try {
       const key = "punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10)
@@ -145,17 +151,44 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   }
   useEffect(() => { load() }, [])
 
-  // Card is collected in-page with Stripe Elements — no redirect to Stripe's
-  // site. Once confirmPayment succeeds client-side, we verify it server-side
-  // (authoritative) before marking invoices paid.
-  const handlePaid = async (_paymentIntentId: string, invoiceIds: string[], amount: number) => {
-    void _paymentIntentId
-    for (const id of invoiceIds) await updateInvoice(id, { status: "Paid" })
-    await createPayment({ customerId: user.id, amount, date: new Date().toISOString().slice(0, 10), method: "Card (Stripe)" })
-    setPayMsg({ ok: true, text: `Payment of £${amount.toFixed(2)} received — thank you! Your invoices have been marked as paid.` })
-    setPaySel(new Set())
-    setShowPayModal(false)
-    await load()
+  const openProofUpload = () => {
+    setProofFile(null); setProofNote(""); setProofError(""); setShowProofModal(true)
+  }
+
+  // Customer pays by bank transfer themselves, then uploads a screenshot of
+  // the transfer here as proof. An admin reviews it and presses "Payment
+  // Received" before the invoices are actually marked paid.
+  const submitProof = async () => {
+    if (!proofFile) { setProofError("Please choose a screenshot to upload."); return }
+    if (proofFile.size > MAX_PROOF_BYTES) { setProofError("That file is too large — please upload a screenshot under 4 MB."); return }
+    const invs = myInvoices.filter(i => i.status !== "Paid" && paySel.has(i.id))
+    if (invs.length === 0) { setProofError("Select at least one invoice to pay."); return }
+    setProofBusy(true); setProofError("")
+    try {
+      const dataUri = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result))
+        r.onerror = () => reject(r.error)
+        r.readAsDataURL(proofFile)
+      })
+      const amount = invs.reduce((s, i) => s + i.amount, 0)
+      const invoiceNumbers = invs.map(i => i.invoiceNumber)
+      await uploadPaymentProof({
+        customerId: user.id, customerName: user.displayName,
+        invoiceIds: invs.map(i => i.id), invoiceNumbers,
+        amount, fileName: proofFile.name, fileType: proofFile.type || "image/png",
+        dataUri, note: proofNote.trim(),
+      })
+      void sendEmail(user.email, "We've received your payment proof", paymentProofSubmittedEmailHtml(user.displayName, invoiceNumbers, amount))
+      void sendEmail(ADMIN_NOTIFY_EMAIL, `Payment proof to review — ${user.displayName}`, paymentProofAdminAlertEmailHtml(user.displayName, invoiceNumbers, amount))
+      setPayMsg({ ok: true, text: "Thanks — your payment proof has been submitted and is awaiting review. We'll email you once it's confirmed." })
+      setPaySel(new Set())
+      setShowProofModal(false)
+      await load()
+    } catch {
+      setProofError("Upload failed — please try again.")
+    }
+    setProofBusy(false)
   }
 
   const handleNav = (key: string) => {
@@ -568,12 +601,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               {unpaid.length > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   {paySel.size > 0 && <span style={{ fontSize: 13.5 }}>Selected: <strong>£{selTotal.toFixed(2)}</strong></span>}
-                  <Button className="btn-sm" disabled={paySel.size === 0} onClick={() => setShowPayModal(true)}>
-                    {paySel.size > 0 ? `Pay ${paySel.size} Invoice${paySel.size !== 1 ? "s" : ""} by Card` : "Select invoices to pay"}
+                  <Button className="btn-sm" disabled={paySel.size === 0} onClick={openProofUpload}>
+                    {paySel.size > 0 ? `Upload Payment Proof for ${paySel.size} Invoice${paySel.size !== 1 ? "s" : ""}` : "Select invoices to pay"}
                   </Button>
                 </div>
               )}
             </div>
+            <p style={{ padding: "0 20px 14px", margin: 0, fontSize: 12.5, color: "#6b7a70" }}>
+              Pay by bank transfer to Punjab Exotic Foods, then upload a screenshot of the transfer here — we'll confirm it once reviewed.
+            </p>
             <div className="cd-table-scroll">
             <table className="cd-table">
               <thead><tr><th></th><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
@@ -581,10 +617,11 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 {myInvoices.map(inv => {
                   const isOverdue = overdueIds.has(inv.id)
                   const unpaidRow = inv.status !== "Paid"
+                  const pendingProof = myProofs.find(p => p.status === "pending" && p.invoiceIds.includes(inv.id))
                   return (
                     <tr key={inv.id} className="cd-row cd-row-clickable" onClick={() => setInvoiceDetail(inv)}>
                       <td onClick={e => e.stopPropagation()}>
-                        {unpaidRow && (
+                        {unpaidRow && !pendingProof && (
                           <input type="checkbox" checked={paySel.has(inv.id)}
                             onChange={() => setPaySel(prev => {
                               const next = new Set(prev)
@@ -597,9 +634,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                       <td>£{inv.amount.toFixed(2)}</td>
                       <td style={{ color: isOverdue ? "#b91c1c" : "#6b7280" }}>{inv.dueDate}</td>
                       <td>
-                        <span className="cd-status-badge" style={{ background: inv.status === "Paid" ? "#dcfce7" : isOverdue ? "#fee2e2" : "#fef9c3", color: inv.status === "Paid" ? "#15803d" : isOverdue ? "#b91c1c" : "#a16207" }}>
-                          {inv.status === "Paid" ? "Paid" : isOverdue ? "Overdue" : "Unpaid"}
-                        </span>
+                        {inv.status === "Paid" ? (
+                          <span className="cd-status-badge" style={{ background: "#dcfce7", color: "#15803d" }}>Paid</span>
+                        ) : pendingProof ? (
+                          <span className="cd-status-badge" style={{ background: "#dbeafe", color: "#1d4ed8" }}>Awaiting Review</span>
+                        ) : (
+                          <span className="cd-status-badge" style={{ background: isOverdue ? "#fee2e2" : "#fef9c3", color: isOverdue ? "#b91c1c" : "#a16207" }}>
+                            {isOverdue ? "Overdue" : "Unpaid"}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )
@@ -689,8 +732,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", margin: "0 0 4px", borderRadius: 12, background: "#7f1d1d", color: "#fff", fontSize: 13.5 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
           <div style={{ flex: 1 }}>
-            <strong>Your account is on hold — ordering is paused until your outstanding balance is settled.</strong>{" "}
-            Please pay your overdue invoices in Balance, or call us on {URGENT_SUPPORT_PHONE}.
+            <strong>Payment needed to continue — your account is on hold until this is paid.</strong>{" "}
+            You can't place new orders until your balance is settled. Please pay in Balance, or call us on {URGENT_SUPPORT_PHONE}.
           </div>
           <Button className="btn-sm" variant="secondary" onClick={() => switchTab("balance")}>View &amp; Pay</Button>
         </div>
@@ -742,15 +785,39 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         initialSearch={quickSearch}
       />
 
-      {/* Pay invoices — full-page embedded Stripe Elements checkout, no redirect off-site */}
-      <PaymentPage
-        open={showPayModal}
-        invoices={myInvoices.filter(i => i.status !== "Paid" && paySel.has(i.id)).map(i => ({ id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount }))}
-        customerEmail={user.email}
-        customerName={user.displayName}
-        onClose={() => setShowPayModal(false)}
-        onPaid={handlePaid}
-      />
+      {/* Upload bank-transfer payment proof */}
+      <Modal open={showProofModal} title="Upload Payment Proof" onClose={() => setShowProofModal(false)}>
+        <div>
+          <p style={{ fontSize: 13.5, color: "#6b7a70", marginBottom: 14 }}>
+            Once you've paid by bank transfer, upload a screenshot of the transfer confirmation. An admin will check it
+            and mark your invoice{paySel.size !== 1 ? "s" : ""} as paid once confirmed.
+          </p>
+          <div style={{ marginBottom: 14 }}>
+            {myInvoices.filter(i => paySel.has(i.id)).map(i => (
+              <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, padding: "4px 0", color: "#374151" }}>
+                <span>{i.invoiceNumber}</span>
+                <strong>£{i.amount.toFixed(2)}</strong>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, color: "#14532d", marginTop: 8, paddingTop: 8, borderTop: "1px solid #eef1ee" }}>
+              <span>Total</span>
+              <span>£{myInvoices.filter(i => paySel.has(i.id)).reduce((s, i) => s + i.amount, 0).toFixed(2)}</span>
+            </div>
+          </div>
+          <label className="form-control">
+            <span>Screenshot of transfer</span>
+            <input type="file" accept="image/*" onChange={e => { setProofFile(e.target.files?.[0] ?? null); setProofError("") }} />
+          </label>
+          <div style={{ marginTop: 10 }}>
+            <TextArea label="Note (optional)" value={proofNote} onChange={e => setProofNote(e.target.value)} rows={2} placeholder="e.g. reference number used" />
+          </div>
+          {proofError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 10 }}>{proofError}</p>}
+          <div className="actions-row" style={{ marginTop: 16 }}>
+            <Button onClick={submitProof} disabled={proofBusy}>{proofBusy ? "Uploading…" : "Submit for Review"}</Button>
+            <Button variant="secondary" onClick={() => setShowProofModal(false)} disabled={proofBusy}>Cancel</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* New ticket modal */}
       <Modal open={showTicket} title="Submit Support Ticket" onClose={() => setShowTicket(false)}>
