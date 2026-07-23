@@ -12,7 +12,7 @@ import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { PlaceOrderModal, catColor } from "./PlaceOrderModal"
-import { PayInvoicesModal } from "../../components/PayInvoicesModal"
+import { PaymentPage } from "../../components/PaymentPage"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
@@ -742,11 +742,12 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         initialSearch={quickSearch}
       />
 
-      {/* Pay invoices — embedded Stripe Elements, no redirect off-site */}
-      <PayInvoicesModal
+      {/* Pay invoices — full-page embedded Stripe Elements checkout, no redirect off-site */}
+      <PaymentPage
         open={showPayModal}
         invoices={myInvoices.filter(i => i.status !== "Paid" && paySel.has(i.id)).map(i => ({ id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount }))}
         customerEmail={user.email}
+        customerName={user.displayName}
         onClose={() => setShowPayModal(false)}
         onPaid={handlePaid}
       />
