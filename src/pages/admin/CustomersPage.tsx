@@ -50,6 +50,7 @@ export function CustomersPage({
   const [importChecked, setImportChecked] = useState<Set<string>>(new Set())
   const [importBusy, setImportBusy] = useState(false)
   const [importMsg, setImportMsg] = useState('')
+  const [importProgress, setImportProgress] = useState('')
   const [importDone, setImportDone] = useState('')
 
   const filtered = useMemo(
@@ -121,18 +122,21 @@ export function CustomersPage({
 
   const handleStatementFile = async (file: File | undefined) => {
     if (!file) return
-    setImportBusy(true); setImportMsg(''); setImportRows([]); setImportDone('')
+    setImportBusy(true); setImportMsg(''); setImportProgress('Reading statement…'); setImportRows([]); setImportDone('')
     try {
-      const { rows } = await parseStatementPdf(file)
-      if (rows.length === 0) {
-        setImportMsg("No invoice lines found — the PDF may be a scanned image or an unusual layout. Check the file and try again.")
+      const { rows, renderFailed } = await parseStatementPdf(file, msg => setImportProgress(msg))
+      if (rows.length === 0 && renderFailed) {
+        setImportMsg("This PDF's scan couldn't be read (some scanned/exported PDFs aren't compatible with the in-browser reader). Please upload the original photo or screenshot instead (JPG/PNG) — that reads reliably.")
+      } else if (rows.length === 0) {
+        setImportMsg("No invoice lines found — the file may have unclear text or an unusual layout. Check it and try again, or send it to support so we can improve the reader.")
       } else {
         setImportRows(rows)
         setImportChecked(new Set(rows.map(r => r.invoiceNumber)))
       }
     } catch {
-      setImportMsg("Couldn't read that PDF — check it isn't password-protected and try again.")
+      setImportMsg("Couldn't read that file — check it isn't password-protected and try again.")
     }
+    setImportProgress('')
     setImportBusy(false)
   }
 
@@ -268,14 +272,15 @@ export function CustomersPage({
             <p style={{ fontSize: 13.5, color: '#6b7a70', marginBottom: 12 }}>
               One-time migration from your old system: upload this customer's statement PDF. Every line with a date,
               invoice number and amount becomes an unpaid invoice on their account, and their opening balance is set to the total.
+              If it's a scanned statement, a photo or screenshot (JPG/PNG) usually reads more reliably than a scanned PDF.
             </p>
             <input
-              type="file" accept="application/pdf"
+              type="file" accept="application/pdf,image/*"
               onChange={e => handleStatementFile(e.target.files?.[0])}
               disabled={importBusy}
               style={{ marginBottom: 12 }}
             />
-            {importBusy && <p style={{ fontSize: 13, color: '#6b7a70' }}>Working…</p>}
+            {importBusy && <p style={{ fontSize: 13, color: '#6b7a70' }}>{importProgress || 'Working…'}</p>}
             {importMsg && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px' }}>{importMsg}</p>}
             {importDone && <p style={{ color: '#15803d', fontSize: 13, background: '#f0fdf4', borderRadius: 8, padding: '8px 12px' }}>{importDone}</p>}
 

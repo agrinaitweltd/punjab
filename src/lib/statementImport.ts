@@ -77,13 +77,84 @@ function parseLine(line: string): StatementRow | null {
   return { date: iso, invoiceNumber, amount, raw: line.trim() }
 }
 
+// Tesseract (OCR) is even heavier than pdf.js — only loaded if a page turns
+// out to have no real text layer (i.e. it's a scanned image, not exported
+// text — very common for statements saved from a phone photo or a scan).
+let tesseractPromise: Promise<typeof import("tesseract.js")> | null = null
+function loadTesseract() {
+  if (!tesseractPromise) tesseractPromise = import("tesseract.js")
+  return tesseractPromise
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ])
+}
+
+/** OCRs an already-drawn canvas (works for both a rendered PDF page and a
+    plain photo/screenshot uploaded directly). */
+async function ocrCanvas(canvas: HTMLCanvasElement): Promise<string[]> {
+  const Tesseract = await loadTesseract()
+  const { data } = await Tesseract.recognize(canvas, "eng")
+  const lineTexts = (data as unknown as { lines?: { text: string }[] }).lines
+  if (lineTexts && lineTexts.length) return lineTexts.map(l => l.text).filter(t => t.trim())
+  return data.text.split("\n").filter(t => t.trim())
+}
+
+/** Renders a scanned PDF page to a canvas and OCRs it. Some PDFs (certain
+    scan/export tools) can make pdf.js's own canvas renderer hang indefinitely
+    on a single page — wrapped in a timeout so that fails fast with a clear
+    message instead of freezing the import forever. */
+async function ocrPdfPage(page: import("pdfjs-dist").PDFPageProxy): Promise<string[]> {
+  const viewport = page.getViewport({ scale: 2 })
+  const canvas = document.createElement("canvas")
+  canvas.width = viewport.width
+  canvas.height = viewport.height
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return []
+  const renderTask = page.render({ canvasContext: ctx, viewport, canvas })
+  await withTimeout(renderTask.promise, 20000, "PDF_RENDER_TIMEOUT")
+  return ocrCanvas(canvas)
+}
+
+/** Loads a plain image file (PNG/JPG screenshot or photo of a statement)
+    straight into a canvas for OCR — skips PDF parsing entirely, which is the
+    most reliable path for a scanned statement. */
+async function imageFileToLines(file: File): Promise<string[]> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => reject(new Error("Couldn't read that image."))
+    el.src = dataUrl
+  })
+  const canvas = document.createElement("canvas")
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return []
+  ctx.drawImage(img, 0, 0)
+  return ocrCanvas(canvas)
+}
+
 /** Extracts text lines from every page, keeping items on the same visual row
-    together (pdf.js returns positioned fragments, not lines). */
-async function pdfToLines(file: File): Promise<string[]> {
+    together (pdf.js returns positioned fragments, not lines). Falls back to
+    OCR for any page that has no real text layer (a scanned image). If a
+    page's renderer hangs or errors, that page is skipped (with the error
+    surfaced) rather than blocking the whole import forever. */
+async function pdfToLines(file: File, onProgress?: (msg: string) => void): Promise<{ lines: string[]; renderFailed: boolean }> {
   const pdfjs = await loadPdfjs()
   const buf = await file.arrayBuffer()
   const doc = await pdfjs.getDocument({ data: buf }).promise
   const lines: string[] = []
+  let renderFailed = false
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p)
     const content = await page.getTextContent()
@@ -95,17 +166,39 @@ async function pdfToLines(file: File): Promise<string[]> {
       if (!rows.has(y)) rows.set(y, [])
       rows.get(y)!.push({ x, str: item.str })
     }
+    if (rows.size === 0) {
+      // No extractable text on this page at all — it's a scanned image. Read it with OCR instead.
+      onProgress?.(doc.numPages > 1 ? `Reading scanned page ${p} of ${doc.numPages}… this can take a moment` : "Reading scanned statement… this can take a moment")
+      try {
+        const ocrLines = await ocrPdfPage(page)
+        lines.push(...ocrLines)
+      } catch {
+        renderFailed = true
+      }
+      continue
+    }
     const sorted = [...rows.entries()].sort((a, b) => b[0] - a[0]) // top → bottom
     for (const [, frags] of sorted) {
       frags.sort((a, b) => a.x - b.x)
       lines.push(frags.map(f => f.str).join(" "))
     }
   }
-  return lines
+  return { lines, renderFailed }
 }
 
-export async function parseStatementPdf(file: File): Promise<{ rows: StatementRow[]; totalLines: number }> {
-  const lines = await pdfToLines(file)
+export async function parseStatementPdf(
+  file: File, onProgress?: (msg: string) => void,
+): Promise<{ rows: StatementRow[]; totalLines: number; renderFailed?: boolean }> {
+  let lines: string[]
+  let renderFailed = false
+  if (file.type.startsWith("image/")) {
+    onProgress?.("Reading scanned statement… this can take a moment")
+    lines = await imageFileToLines(file)
+  } else {
+    const result = await pdfToLines(file, onProgress)
+    lines = result.lines
+    renderFailed = result.renderFailed
+  }
   const rows: StatementRow[] = []
   const seen = new Set<string>()
   for (const line of lines) {
@@ -115,5 +208,5 @@ export async function parseStatementPdf(file: File): Promise<{ rows: StatementRo
       rows.push(row)
     }
   }
-  return { rows, totalLines: lines.length }
+  return { rows, totalLines: lines.length, renderFailed }
 }
