@@ -40,6 +40,9 @@ export interface Customer {
   balance: number
   status: 'active' | 'inactive'
   lastActivity: string
+  creditLimit?: number
+  creditDays?: number
+  blocked?: boolean
 }
 
 export interface Product {
@@ -95,6 +98,9 @@ export interface Invoice {
   amount: number
   dueDate: string
   status: 'Unpaid' | 'Part Paid' | 'Paid'
+  /** Issue date (from the imported statement or order date) — used with the
+      customer's creditDays to work out when the invoice becomes overdue. */
+  date?: string
 }
 
 export interface Payment {

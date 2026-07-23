@@ -39,7 +39,7 @@ export function CookieConsent() {
       <p className="ck-copy">
         We use cookies to personalise content and to analyse our traffic. We also share
         information about your use of our site with our analytics partners who may combine
-        it with other information that you've provided to them. <a href="#" className="ck-link">Privacy Policy</a>
+        it with other information that you've provided to them. <a href="/privacy" className="ck-link" target="_blank" rel="noopener">Privacy Policy</a>
       </p>
 
       <div className="ck-options">

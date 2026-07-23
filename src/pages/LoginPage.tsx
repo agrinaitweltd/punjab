@@ -4,6 +4,49 @@ import type { UserRole } from "../types"
 import { getCustomers, updateCustomer } from "../api/customersApi"
 import { getAdmins, updateAdmin } from "../api/miscApi"
 import { sendEmail, otpEmailHtml } from "../lib/emailService"
+import { supabase } from "../lib/supabase"
+
+/* "Continue with Google" — Supabase OAuth. Redirects to Google, then back to
+   the portal where App.tsx completes the sign-in (existing account or a new
+   customer account created automatically). */
+function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
+  const [err, setErr] = useState("")
+  const go = async () => {
+    if (!supabase) { setErr("Google sign-in isn't available right now — please use your email and password."); return }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) setErr("Couldn't open Google sign-in — please try again.")
+  }
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0 10px" }}>
+        <span style={{ flex: 1, height: 1, background: "rgba(0,0,0,0.12)" }} />
+        <span style={{ fontSize: 11.5, color: "#7a8a80", textTransform: "uppercase", letterSpacing: 1 }}>or</span>
+        <span style={{ flex: 1, height: 1, background: "rgba(0,0,0,0.12)" }} />
+      </div>
+      <button
+        type="button"
+        onClick={go}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+          padding: "11px 16px", borderRadius: 12, border: "1.5px solid rgba(0,0,0,0.15)",
+          background: "#fff", color: "#1f2937", fontWeight: 600, fontSize: 14, cursor: "pointer",
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 48 48">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        {label}
+      </button>
+      {err && <p className="lx-error" style={{ marginTop: 8 }}>{err}</p>}
+    </>
+  )
+}
 
 function EyeIcon({ open }: { open: boolean }) {
   return open
@@ -238,6 +281,7 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
           </div>
           {err && <p className="lx-error">{err}</p>}
           <button type="submit" className="lx-login-btn" disabled={busy}>{busy ? "Checking…" : "Send my code"}</button>
+          <GoogleButton label="Continue with Google" />
         </form>
       )}
 
@@ -521,6 +565,17 @@ export function LoginPage({ onLogin, error }: {
           Wholesale exotic fruit &amp; veg for the UK's finest grocers.<br />
           Daily stock, live ordering and account management — all in one portal.
         </p>
+        <p className="lx-brand-copy" style={{ marginTop: 10 }}>
+          <strong>What is this website?</strong> Punjab Exotic Foods is an online ordering platform
+          where trade customers can browse authentic South Asian and exotic grocery produce, create
+          an account, sign in, place and manage orders, track deliveries and collections, and
+          securely pay for their purchases online.
+        </p>
+        <p className="lx-brand-copy" style={{ marginTop: 10, fontSize: 13 }}>
+          <a href="/privacy" style={{ color: "inherit" }}>Privacy Policy</a>
+          {" · "}
+          <a href="/terms" style={{ color: "inherit" }}>Terms &amp; Conditions</a>
+        </p>
         <div className="lx-brand-btns">
           <button type="button" className="lx-pill" onClick={() => setRole("customer")}>Customer Portal</button>
           <button type="button" className="lx-pill lx-pill-ghost" onClick={() => setRole("admin")}>Staff &amp; Admin</button>
@@ -590,6 +645,8 @@ export function LoginPage({ onLogin, error }: {
           <button type="submit" className="lx-login-btn" disabled={loading}>
             {loading ? "Signing in…" : "Log In"}
           </button>
+
+          <GoogleButton />
 
           <p className="lx-signup-note">First time here?</p>
           <button type="button" className="lx-signup-btn" onClick={() => setMode("activate")}>

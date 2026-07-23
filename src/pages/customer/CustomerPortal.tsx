@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
 import { getOrders } from "../../api/ordersApi"
-import { createTicket, getInvoices, getPayments, getTickets } from "../../api/miscApi"
+import { createTicket, getInvoices, getPayments, getTickets, updateInvoice, createPayment } from "../../api/miscApi"
+import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
-import type { Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
+import { getCreditStatus } from "../../lib/creditControl"
+import { URGENT_SUPPORT_PHONE } from "../../lib/emailService"
+import type { Customer, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
@@ -120,12 +123,17 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [orderDetail, setOrderDetail]   = useState<Order | null>(null)
   const [ticketDetail, setTicketDetail] = useState<SupportTicket | null>(null)
   const [invoiceDetail, setInvoiceDetail] = useState<Invoice | null>(null)
+  const [me, setMe]                     = useState<Customer | null>(null)
+  const [paySel, setPaySel]             = useState<Set<string>>(new Set())
+  const [payBusy, setPayBusy]           = useState(false)
+  const [payMsg, setPayMsg]             = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = async () => {
-    const [p, s, o, inv, pay, tix] = await Promise.all([
-      getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets()
+    const [p, s, o, inv, pay, tix, custs] = await Promise.all([
+      getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets(), getCustomers()
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
+    setMe(custs.find(c => c.id === user.id) ?? null)
     setFilesLoading(true)
     listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
     // Stock-update notification — shows once per daily cycle (06:00 GMT)
@@ -135,6 +143,63 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     } catch { /* storage unavailable */ }
   }
   useEffect(() => { load() }, [])
+
+  // Handle the return from Stripe Checkout: verify the session server-side,
+  // then mark the paid invoices and record the payment.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const outcome = params.get("checkout")
+    if (!outcome) return
+    window.history.replaceState({}, "", window.location.pathname)
+    if (outcome === "cancelled") {
+      setTab("balance"); setCurrent("payments")
+      setPayMsg({ ok: false, text: "Payment cancelled — nothing has been charged." })
+      return
+    }
+    const sessionId = params.get("session_id")
+    if (outcome !== "success" || !sessionId) return
+    ;(async () => {
+      setTab("balance"); setCurrent("payments")
+      try {
+        const r = await fetch(`/api/verify-checkout?session_id=${encodeURIComponent(sessionId)}`)
+        const data = await r.json()
+        if (data.paid && Array.isArray(data.invoiceIds) && data.invoiceIds.length > 0) {
+          for (const id of data.invoiceIds) await updateInvoice(id, { status: "Paid" })
+          await createPayment({ customerId: user.id, amount: data.amount ?? 0, date: new Date().toISOString().slice(0, 10), method: "Card (Stripe)" })
+          setPayMsg({ ok: true, text: `Payment of £${(data.amount ?? 0).toFixed(2)} received — thank you! Your invoices have been marked as paid.` })
+          setPaySel(new Set())
+          await load()
+        } else {
+          setPayMsg({ ok: false, text: "We couldn't confirm that payment — if you were charged, contact us and we'll put it right." })
+        }
+      } catch {
+        setPayMsg({ ok: false, text: "We couldn't confirm that payment — if you were charged, contact us and we'll put it right." })
+      }
+    })()
+  }, [])
+
+  const startPayment = async () => {
+    const invs = myInvoices.filter(i => i.status !== "Paid" && paySel.has(i.id))
+    if (invs.length === 0) return
+    setPayBusy(true); setPayMsg(null)
+    try {
+      const r = await fetch("/api/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoices: invs.map(i => ({ id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount })),
+          customerEmail: user.email,
+          origin: window.location.origin,
+        }),
+      })
+      const data = await r.json()
+      if (r.ok && data.url) { window.location.href = data.url; return }
+      setPayMsg({ ok: false, text: data.error || "Card payments aren't available right now — please pay by bank transfer or contact us." })
+    } catch {
+      setPayMsg({ ok: false, text: "Couldn't start the payment — please check your connection and try again." })
+    }
+    setPayBusy(false)
+  }
 
   const handleNav = (key: string) => {
     setCurrent(key)
@@ -453,7 +518,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           <div className="cd-table-card">
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>All Orders ({myOrders.length})</span>
-              <Button onClick={() => setShowOrder(true)}>+ Place Order</Button>
+              <Button onClick={() => setShowOrder(true)} disabled={Boolean(me?.blocked)}
+            title={me?.blocked ? "Ordering is paused until your balance is settled" : undefined}>+ Place Order</Button>
             </div>
             <div className="cd-table-scroll">
             <table className="cd-table">
@@ -508,8 +574,26 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       )
 
       // ── BALANCE ────────────────────────────────────────────
-      case "balance": return (
+      case "balance": {
+        const credit = me ? getCreditStatus(me, invoices) : null
+        const overdueIds = new Set(credit?.overdueInvoices.map(i => i.id) ?? [])
+        const unpaid = myInvoices.filter(i => i.status !== "Paid")
+        const selTotal = unpaid.filter(i => paySel.has(i.id)).reduce((s, i) => s + i.amount, 0)
+        return (
         <div className="cd-content">
+          {payMsg && (
+            <div style={{ padding: "10px 16px", borderRadius: 10, fontSize: 13.5, marginBottom: 4,
+              background: payMsg.ok ? "#f0fdf4" : "#fef2f2", color: payMsg.ok ? "#15803d" : "#b91c1c" }}>
+              {payMsg.text}
+            </div>
+          )}
+          {credit && credit.minimumDue > 0 && (
+            <div style={{ padding: "12px 16px", borderRadius: 10, fontSize: 13.5, marginBottom: 4, background: "#fef2f2", color: "#b91c1c" }}>
+              <strong>Payment required:</strong> please pay at least <strong>£{credit.minimumDue.toFixed(2)}</strong> now
+              {credit.overdueInvoices.length > 0 && <> — {credit.overdueInvoices.length} invoice{credit.overdueInvoices.length !== 1 ? "s are" : " is"} past your {me?.creditDays ?? 14}-day terms</>}
+              {credit.overLimitBy > 0 && <> — your balance is £{credit.overLimitBy.toFixed(2)} over your £{(me?.creditLimit ?? 0).toFixed(2)} credit limit</>}.
+            </div>
+          )}
           <div className="sh-stats" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
             <StatCard label="Outstanding Balance" value={`£${myBalance.toFixed(2)}`}
               iconBg="#fef2f2" iconColor="#dc2626"
@@ -517,31 +601,60 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <StatCard label="Invoices" value={String(myInvoices.length)}
               iconBg="#e8f8ec" iconColor="#1f7a3a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>} />
-            <StatCard label="Payments Made" value={String(myPayments.length)} delta="+5%" positive
+            <StatCard label="Payments Made" value={String(myPayments.length)}
               iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>} />
           </div>
           <div className="cd-table-card">
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0" }}><span style={{ fontWeight: 700, fontSize: 14 }}>Invoice History</span></div>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Invoices</span>
+              {unpaid.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {paySel.size > 0 && <span style={{ fontSize: 13.5 }}>Selected: <strong>£{selTotal.toFixed(2)}</strong></span>}
+                  <Button className="btn-sm" disabled={paySel.size === 0 || payBusy} onClick={startPayment}>
+                    {payBusy ? "Opening secure checkout…" : paySel.size > 0 ? `Pay ${paySel.size} Invoice${paySel.size !== 1 ? "s" : ""} by Card` : "Select invoices to pay"}
+                  </Button>
+                </div>
+              )}
+            </div>
             <div className="cd-table-scroll">
             <table className="cd-table">
-              <thead><tr><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
+              <thead><tr><th></th><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
               <tbody>
-                {myInvoices.map(inv => (
-                  <tr key={inv.id} className="cd-row cd-row-clickable" onClick={() => setInvoiceDetail(inv)}>
-                    <td><strong>{inv.invoiceNumber}</strong></td>
-                    <td>£{inv.amount.toFixed(2)}</td>
-                    <td style={{ color: "#6b7280" }}>{inv.dueDate}</td>
-                    <td><span className="cd-status-badge" style={{ background: inv.status === "Paid" ? "#dcfce7" : "#fee2e2", color: inv.status === "Paid" ? "#15803d" : "#b91c1c" }}>{inv.status}</span></td>
-                  </tr>
-                ))}
+                {myInvoices.map(inv => {
+                  const isOverdue = overdueIds.has(inv.id)
+                  const unpaidRow = inv.status !== "Paid"
+                  return (
+                    <tr key={inv.id} className="cd-row cd-row-clickable" onClick={() => setInvoiceDetail(inv)}>
+                      <td onClick={e => e.stopPropagation()}>
+                        {unpaidRow && (
+                          <input type="checkbox" checked={paySel.has(inv.id)}
+                            onChange={() => setPaySel(prev => {
+                              const next = new Set(prev)
+                              if (next.has(inv.id)) next.delete(inv.id); else next.add(inv.id)
+                              return next
+                            })} />
+                        )}
+                      </td>
+                      <td><strong>{inv.invoiceNumber}</strong></td>
+                      <td>£{inv.amount.toFixed(2)}</td>
+                      <td style={{ color: isOverdue ? "#b91c1c" : "#6b7280" }}>{inv.dueDate}</td>
+                      <td>
+                        <span className="cd-status-badge" style={{ background: inv.status === "Paid" ? "#dcfce7" : isOverdue ? "#fee2e2" : "#fef9c3", color: inv.status === "Paid" ? "#15803d" : isOverdue ? "#b91c1c" : "#a16207" }}>
+                          {inv.status === "Paid" ? "Paid" : isOverdue ? "Overdue" : "Unpaid"}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             </div>
             {myInvoices.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No invoices yet</div>}
           </div>
         </div>
-      )
+        )
+      }
 
       // ── DOCUMENTS ──────────────────────────────────────────
       case "documents": return (
@@ -614,6 +727,18 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         </div>
       )}
 
+      {/* Account blocked — payment required before any new orders */}
+      {me?.blocked && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", margin: "0 0 4px", borderRadius: 12, background: "#7f1d1d", color: "#fff", fontSize: 13.5 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          <div style={{ flex: 1 }}>
+            <strong>Your account is on hold — ordering is paused until your outstanding balance is settled.</strong>{" "}
+            Please pay your overdue invoices in Balance, or call us on {URGENT_SUPPORT_PHONE}.
+          </div>
+          <Button className="btn-sm" variant="secondary" onClick={() => switchTab("balance")}>View &amp; Pay</Button>
+        </div>
+      )}
+
       {/* Breadcrumb bar — Shopall style */}
       <div className="cb-bar">
         <button className="cb-arrow" onClick={() => switchTab("overview")} disabled={tab === "overview"} title="Back to overview">
@@ -629,7 +754,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Export
           </button>
-          <Button onClick={() => setShowOrder(true)}>+ Place Order</Button>
+          <Button onClick={() => setShowOrder(true)} disabled={Boolean(me?.blocked)}
+            title={me?.blocked ? "Ordering is paused until your balance is settled" : undefined}>+ Place Order</Button>
         </div>
       </div>
 
@@ -648,7 +774,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       {/* Place order — premium multi-item shop experience */}
       <PlaceOrderModal
         key={quickSearch}
-        open={showOrder}
+        open={showOrder && !me?.blocked}
         onClose={() => { setShowOrder(false); setQuickSearch("") }}
         products={products}
         stock={stock}

@@ -54,9 +54,17 @@ create table if not exists customers (
   payment_terms   text default 'Payment Before Order',
   balance         numeric(10,2) default 0,
   status          text default 'active',
+  credit_limit    numeric(10,2) default 0,
+  credit_days     integer default 14,
+  blocked         boolean default false,
   last_activity   timestamptz default now(),
   created_at      timestamptz default now()
 );
+
+-- If the customers table already existed before these columns were added, run:
+-- alter table customers add column if not exists credit_limit numeric(10,2) default 0;
+-- alter table customers add column if not exists credit_days integer default 14;
+-- alter table customers add column if not exists blocked boolean default false;
 
 -- PRODUCTS
 create table if not exists products (
@@ -108,9 +116,13 @@ create table if not exists invoices (
   invoice_number  text unique not null,
   amount          numeric(10,2) default 0,
   due_date        date,
+  date            date,
   status          text default 'Unpaid',
   created_at      timestamptz default now()
 );
+
+-- If the invoices table already existed before this column was added, run:
+-- alter table invoices add column if not exists date date;
 
 -- PAYMENTS
 create table if not exists payments (

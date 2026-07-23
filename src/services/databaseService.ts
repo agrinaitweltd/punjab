@@ -19,6 +19,8 @@ function mapCustomer(r: any): Customer {
     password: r.password, address: r.address, deliveryArea: r.delivery_area,
     paymentTerms: r.payment_terms, balance: r.balance ?? 0,
     status: r.status ?? "active", lastActivity: r.last_activity ?? "",
+    creditLimit: r.credit_limit ?? 0, creditDays: r.credit_days ?? 14,
+    blocked: r.blocked ?? false,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +53,7 @@ function mapInvoice(r: any): Invoice {
   return {
     id: r.id, customerId: r.customer_id ?? "", invoiceNumber: r.invoice_number,
     amount: r.amount ?? 0, dueDate: r.due_date ?? "", status: r.status ?? "Unpaid",
+    date: r.date ?? r.due_date ?? "",
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,12 +91,27 @@ function mapAdmin(r: any): AdminStaff {
 // ── camelCase input → snake_case for INSERT/UPDATE ───────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toCustomerRow(input: any) {
-  return {
+  const row: Record<string, unknown> = {
     company_name: input.companyName, contact_person: input.contactPerson,
     email: input.email, phone: input.phone, customer_number: input.customerNumber,
     password: input.password, address: input.address, delivery_area: input.deliveryArea,
     payment_terms: input.paymentTerms,
   }
+  // Credit-control fields — only included when explicitly set, so updates
+  // that don't touch them never send the keys at all.
+  if (input.creditLimit !== undefined) row.credit_limit = input.creditLimit
+  if (input.creditDays !== undefined) row.credit_days = input.creditDays
+  if (input.blocked !== undefined) row.blocked = input.blocked
+  if (input.balance !== undefined) row.balance = input.balance
+  return row
+}
+
+/** Strips the credit-control keys so a write can be retried against a DB
+    where the migration (credit_limit / credit_days / blocked) hasn't run. */
+function withoutCreditColumns(row: Record<string, unknown>) {
+  const { credit_limit: _cl, credit_days: _cd, blocked: _b, ...rest } = row
+  void _cl; void _cd; void _b
+  return rest
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toProductRow(input: any) {
@@ -114,13 +132,20 @@ class SupabaseDatabaseService {
   }
   async createCustomer(input: Omit<Customer, "id" | "lastActivity" | "status" | "balance">): Promise<Customer> {
     const row = { id: genId("c"), ...toCustomerRow(input), last_activity: new Date().toISOString(), status: "active", balance: 0 }
-    const { data, error } = await db().from("customers").insert(row).select().single()
+    let { data, error } = await db().from("customers").insert(row).select().single()
+    if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
+      ;({ data, error } = await db().from("customers").insert({ ...withoutCreditColumns(row), id: row.id }).select().single())
+    }
     if (error) throw error
     return mapCustomer(data)
   }
   async updateCustomer(id: string, input: Partial<Customer>): Promise<Customer | null> {
     const row = toCustomerRow(input)
-    const { data, error } = await db().from("customers").update(row).eq("id", id).select().single()
+    let { data, error } = await db().from("customers").update(row).eq("id", id).select().single()
+    // Retry without credit-control columns if the migration hasn't been run yet.
+    if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
+      ;({ data, error } = await db().from("customers").update(withoutCreditColumns(row)).eq("id", id).select().single())
+    }
     if (error) { console.error("updateCustomer", error); return null }
     return mapCustomer(data)
   }
@@ -218,16 +243,32 @@ class SupabaseDatabaseService {
     if (error) { console.error("getInvoices", error); return [] }
     return (data ?? []).map(mapInvoice)
   }
-  async createInvoice(input: Omit<Invoice, "id">): Promise<Invoice> {
-    const row = {
+  async createInvoice(input: Omit<Invoice, "id"> & { id?: string }): Promise<Invoice> {
+    const row: Record<string, unknown> = {
       // An empty string customerId (orphaned order whose customer was deleted)
       // must become a real null — the FK constraint checks any non-null value
       // against customers, so "" would fail as "customer not found".
-      id: genId("inv"), customer_id: input.customerId || null, invoice_number: input.invoiceNumber,
+      id: input.id ?? genId("inv"), customer_id: input.customerId || null, invoice_number: input.invoiceNumber,
       amount: input.amount, due_date: input.dueDate, status: input.status,
     }
-    const { data, error } = await db().from("invoices").insert(row).select().single()
+    if (input.date) row.date = input.date
+    let { data, error } = await db().from("invoices").insert(row).select().single()
+    // Retry without the issue-date column if that migration hasn't been run yet.
+    if (error && (error.code === "PGRST204" || /column .*date/.test(error.message ?? "")) && "date" in row) {
+      const { date: _d, ...rest } = row
+      void _d
+      ;({ data, error } = await db().from("invoices").insert(rest).select().single())
+    }
     if (error) throw error
+    return mapInvoice(data)
+  }
+  async updateInvoice(id: string, input: Partial<Invoice>): Promise<Invoice | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status) row.status = input.status
+    if (input.amount !== undefined) row.amount = input.amount
+    if (input.dueDate) row.due_date = input.dueDate
+    const { data, error } = await db().from("invoices").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateInvoice", error); return null }
     return mapInvoice(data)
   }
 

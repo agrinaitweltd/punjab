@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
 import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
-import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml } from '../../lib/emailService'
+import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml } from '../../lib/emailService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
 import { getStock, updateStock } from '../../api/stockApi'
@@ -41,6 +41,7 @@ import type {
 } from '../../types'
 import { AdminsPage } from './AdminsPage'
 import { ComplaintsPage } from './ComplaintsPage'
+import { CreditControlPage } from './CreditControlPage'
 import { CustomersPage } from './CustomersPage'
 import { DashboardHome } from './DashboardHome'
 import { DeliveryAreasPage } from './DeliveryAreasPage'
@@ -242,6 +243,37 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
     if (current === 'invoices') {
       return <InvoicesPage invoices={invoices} />
+    }
+
+    if (current === 'credit-control') {
+      return (
+        <CreditControlPage
+          customers={customers}
+          invoices={invoices}
+          onSendReminder={async (status) => {
+            const c = status.customer
+            if (!c.email) return
+            await sendEmail(
+              c.email,
+              `Payment required — ${status.overdueInvoices.length || status.unpaidCount} invoice${(status.overdueInvoices.length || status.unpaidCount) !== 1 ? 's' : ''} outstanding`,
+              overdueEmailHtml(
+                c.contactPerson || c.companyName,
+                status.overdueInvoices,
+                status.outstanding,
+                c.creditLimit ?? 0,
+                status.overLimitBy,
+              ),
+            )
+          }}
+          onToggleBlock={async (customer, blocked) => {
+            const updated = await updateCustomer(customer.id, { blocked })
+            if (!updated) {
+              window.alert("Couldn't update the account — if this keeps happening, the credit-control database migration in src/lib/schema.sql may not have been run yet.")
+            }
+            await load()
+          }}
+        />
+      )
     }
 
     if (current === 'payments') {

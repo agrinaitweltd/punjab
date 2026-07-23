@@ -128,6 +128,43 @@ export function paymentReceivedEmailHtml(
     <p style="color:#6b7280;font-size:12.5px">Keep this email as your receipt. Thank you for your business!</p>`)
 }
 
+export function overdueEmailHtml(
+  customerName: string,
+  overdueInvoices: { invoiceNumber: string; amount: number; daysOverdue: number }[],
+  totalOutstanding: number,
+  creditLimit: number,
+  overLimitBy: number,
+) {
+  const rows = overdueInvoices.map(inv => `
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;color:#374151"><strong>${inv.invoiceNumber}</strong></td>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:center;color:#b91c1c">${inv.daysOverdue} day${inv.daysOverdue !== 1 ? "s" : ""} overdue</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:right;color:#111827;font-weight:600">£${inv.amount.toFixed(2)}</td>
+    </tr>`).join("")
+  const overdueTotal = overdueInvoices.reduce((s, i) => s + i.amount, 0)
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Payment required — ${customerName}</h2>
+    <p>The following invoice${overdueInvoices.length !== 1 ? "s are" : " is"} now due for payment. Please settle ${overdueInvoices.length !== 1 ? "them" : "it"} as soon as possible to keep your account in good standing.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13.5px;margin:16px 0 10px">
+      <thead><tr>
+        <th style="text-align:left;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Invoice</th>
+        <th style="text-align:center;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Status</th>
+        <th style="text-align:right;padding-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#9aa79e">Amount</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;padding:10px 0;font-size:15px;font-weight:800;color:#b91c1c">
+      <span>Overdue total</span><span>£${overdueTotal.toFixed(2)}</span>
+    </div>
+    <div style="border:1.5px dashed #fca5a5;border-radius:12px;padding:14px 18px;margin:12px 0;background:#fef2f2;font-size:13.5px;color:#374151">
+      <p style="margin:0 0 4px">Total outstanding balance: <strong>£${totalOutstanding.toFixed(2)}</strong></p>
+      ${creditLimit > 0 ? `<p style="margin:0 0 4px">Your credit limit: <strong>£${creditLimit.toFixed(2)}</strong></p>` : ""}
+      ${overLimitBy > 0 ? `<p style="margin:0;color:#b91c1c"><strong>You are £${overLimitBy.toFixed(2)} over your credit limit</strong> — please pay at least this amount to continue ordering.</p>` : ""}
+    </div>
+    <p>You can view and pay your outstanding invoices any time in the <strong>Balance &amp; Payments</strong> section of your customer portal.</p>
+    <p style="color:#6b7280;font-size:12.5px">Already paid? Please ignore this email — payments can take a short while to show on your account.</p>`)
+}
+
 export function otpEmailHtml(code: string) {
   return wrap(`
     <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Your verification code</h2>

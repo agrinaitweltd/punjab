@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Customer } from '../../types'
+import { parseStatementPdf, type StatementRow } from '../../lib/statementImport'
+import { importStatementInvoices } from '../../api/miscApi'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Input, Select } from '../../components/ui/Input'
@@ -37,6 +39,13 @@ export function CustomersPage({
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
+  // One-time statement import
+  const [importTarget, setImportTarget] = useState<Customer | null>(null)
+  const [importRows, setImportRows] = useState<StatementRow[]>([])
+  const [importChecked, setImportChecked] = useState<Set<string>>(new Set())
+  const [importBusy, setImportBusy] = useState(false)
+  const [importMsg, setImportMsg] = useState('')
+  const [importDone, setImportDone] = useState('')
 
   const filtered = useMemo(
     () =>
@@ -81,6 +90,44 @@ export function CustomersPage({
     if (!editing) return
     await onUpdate(editing.id, editing)
     setEditing(null)
+  }
+
+  const openImport = (customer: Customer) => {
+    setImportTarget(customer); setImportRows([]); setImportChecked(new Set())
+    setImportMsg(''); setImportDone('')
+  }
+
+  const handleStatementFile = async (file: File | undefined) => {
+    if (!file) return
+    setImportBusy(true); setImportMsg(''); setImportRows([]); setImportDone('')
+    try {
+      const { rows } = await parseStatementPdf(file)
+      if (rows.length === 0) {
+        setImportMsg("No invoice lines found — the PDF may be a scanned image or an unusual layout. Check the file and try again.")
+      } else {
+        setImportRows(rows)
+        setImportChecked(new Set(rows.map(r => r.invoiceNumber)))
+      }
+    } catch {
+      setImportMsg("Couldn't read that PDF — check it isn't password-protected and try again.")
+    }
+    setImportBusy(false)
+  }
+
+  const confirmImport = async () => {
+    if (!importTarget) return
+    const rows = importRows.filter(r => importChecked.has(r.invoiceNumber))
+    if (rows.length === 0) return
+    setImportBusy(true)
+    const { created, failed } = await importStatementInvoices(importTarget.id, rows, importTarget.creditDays ?? 14)
+    // Opening balance = total of everything just imported (plus any existing balance)
+    const importedTotal = rows.filter(r => !failed.includes(r.invoiceNumber)).reduce((s, r) => s + r.amount, 0)
+    await onUpdate(importTarget.id, { balance: (importTarget.balance ?? 0) + importedTotal })
+    setImportDone(
+      `${created} invoice${created !== 1 ? 's' : ''} imported (£${importedTotal.toFixed(2)})` +
+      (failed.length ? ` — ${failed.length} skipped as duplicates: ${failed.join(', ')}` : ''),
+    )
+    setImportRows([]); setImportBusy(false)
   }
 
   return (
@@ -129,7 +176,7 @@ export function CustomersPage({
               <td>
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
                   <Button variant="secondary" className="btn-sm" onClick={() => setEditing(customer)}>Edit</Button>
-                  <Button variant="ghost" className="btn-sm">Send Payment Prompt</Button>
+                  <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
                   <Button variant="danger" className="btn-sm" onClick={() => onDelete(customer.id)}>Delete</Button>
                 </div>
               </td>
@@ -148,11 +195,78 @@ export function CustomersPage({
             <Input label="Phone" value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
             <Input label="Delivery Area" value={editing.deliveryArea} onChange={(e) => setEditing({ ...editing, deliveryArea: e.target.value })} />
             <Select label="Payment Terms" options={['Payment Before Order', '14 Days', '30 Days']} value={editing.paymentTerms} onChange={(value) => setEditing({ ...editing, paymentTerms: value })} />
+            <Input label="Credit Limit (£)" type="number" value={String(editing.creditLimit ?? 0)}
+              onChange={(e) => setEditing({ ...editing, creditLimit: parseFloat(e.target.value) || 0 })} />
+            <Input label="Credit Days" type="number" value={String(editing.creditDays ?? 14)}
+              onChange={(e) => setEditing({ ...editing, creditDays: parseInt(e.target.value) || 0 })} />
+            <p className="wide" style={{ fontSize: 12.5, color: '#6b7a70', margin: 0 }}>
+              Credit limit is the maximum outstanding balance allowed (0 = no limit). Credit days is how long each invoice can stay unpaid before it's overdue.
+            </p>
             <div className="wide actions-row">
               <Button type="submit">Save Changes</Button>
             </div>
           </form>
         ) : null}
+      </Modal>
+
+      {/* One-time statement import */}
+      <Modal open={Boolean(importTarget)} title={importTarget ? `Import Statement — ${importTarget.companyName}` : 'Import Statement'} onClose={() => setImportTarget(null)} wide>
+        {importTarget && (
+          <div>
+            <p style={{ fontSize: 13.5, color: '#6b7a70', marginBottom: 12 }}>
+              One-time migration from your old system: upload this customer's statement PDF. Every line with a date,
+              invoice number and amount becomes an unpaid invoice on their account, and their opening balance is set to the total.
+            </p>
+            <input
+              type="file" accept="application/pdf"
+              onChange={e => handleStatementFile(e.target.files?.[0])}
+              disabled={importBusy}
+              style={{ marginBottom: 12 }}
+            />
+            {importBusy && <p style={{ fontSize: 13, color: '#6b7a70' }}>Working…</p>}
+            {importMsg && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px' }}>{importMsg}</p>}
+            {importDone && <p style={{ color: '#15803d', fontSize: 13, background: '#f0fdf4', borderRadius: 8, padding: '8px 12px' }}>{importDone}</p>}
+
+            {importRows.length > 0 && (
+              <>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: '#374151', margin: '10px 0 6px' }}>
+                  Found {importRows.length} invoice{importRows.length !== 1 ? 's' : ''} — untick any that shouldn't be imported:
+                </p>
+                <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+                  <table className="ps-table" style={{ width: '100%' }}>
+                    <thead><tr><th></th><th>Date</th><th>Invoice No.</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+                    <tbody>
+                      {importRows.map(r => (
+                        <tr key={r.invoiceNumber} title={r.raw}>
+                          <td>
+                            <input type="checkbox" checked={importChecked.has(r.invoiceNumber)}
+                              onChange={() => setImportChecked(prev => {
+                                const next = new Set(prev)
+                                if (next.has(r.invoiceNumber)) next.delete(r.invoiceNumber); else next.add(r.invoiceNumber)
+                                return next
+                              })} />
+                          </td>
+                          <td>{r.date}</td>
+                          <td><code className="ps-code">{r.invoiceNumber}</code></td>
+                          <td style={{ textAlign: 'right' }}><strong>£{r.amount.toFixed(2)}</strong></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                  <span style={{ fontSize: 13.5 }}>
+                    Selected total:{' '}
+                    <strong>£{importRows.filter(r => importChecked.has(r.invoiceNumber)).reduce((s, r) => s + r.amount, 0).toFixed(2)}</strong>
+                  </span>
+                  <Button onClick={confirmImport} disabled={importBusy || importChecked.size === 0}>
+                    {importBusy ? 'Importing…' : `Import ${importChecked.size} Invoice${importChecked.size !== 1 ? 's' : ''}`}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   )

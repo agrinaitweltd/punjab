@@ -42,6 +42,44 @@ export async function createInvoice(input: Omit<Invoice, "id" | "invoiceNumber">
   return invoice
 }
 
+export async function updateInvoice(id: string, input: Partial<Invoice>): Promise<Invoice | null> {
+  if (supabaseReady) return databaseService.updateInvoice(id, input)
+  await new Promise(r => setTimeout(r, 100))
+  const idx = invoices.findIndex(i => i.id === id)
+  if (idx === -1) return null
+  invoices[idx] = { ...invoices[idx], ...input }
+  return invoices[idx]
+}
+
+/** One-time statement migration: saves the reviewed statement rows as unpaid
+    invoices for one customer. dueDate = issue date + the customer's credit days. */
+export async function importStatementInvoices(
+  customerId: string,
+  rows: { date: string; invoiceNumber: string; amount: number }[],
+  creditDays: number,
+): Promise<{ created: number; failed: string[] }> {
+  let created = 0
+  const failed: string[] = []
+  for (const row of rows) {
+    const due = new Date(row.date + "T00:00:00")
+    due.setDate(due.getDate() + creditDays)
+    try {
+      await createInvoice({
+        customerId,
+        invoiceNumber: row.invoiceNumber,
+        amount: row.amount,
+        date: row.date,
+        dueDate: due.toISOString().slice(0, 10),
+        status: "Unpaid",
+      })
+      created++
+    } catch {
+      failed.push(row.invoiceNumber) // usually a duplicate invoice number
+    }
+  }
+  return { created, failed }
+}
+
 export async function createPayment(input: Omit<Payment, "id" | "paymentReference">): Promise<Payment> {
   const existing = supabaseReady ? await databaseService.getPayments() : payments
   const paymentReference = nextNum(existing, "paymentReference", "PAY")
