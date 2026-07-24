@@ -1,7 +1,7 @@
 ﻿import { supabase as _sb } from "../lib/supabase"
 import type {
-  ActivityLog, AdminRole, AdminStaff, Customer, DeliveryArea,
-  Invoice, Order, Payment, Product, StockItem, SupportTicket,
+  ActivityLog, AdminRole, AdminStaff, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication, DeliveryArea,
+  Invoice, NotificationLog, Order, Payment, Product, StockItem, SupportTicket,
 } from "../types"
 
 function genId(prefix: string) { return `${prefix}-${Date.now()}` }
@@ -21,6 +21,8 @@ function mapCustomer(r: any): Customer {
     status: r.status ?? "active", lastActivity: r.last_activity ?? "",
     creditLimit: r.credit_limit ?? 0, creditDays: r.credit_days ?? 14,
     blocked: r.blocked ?? false,
+    vatNumber: r.vat_number ?? undefined, registeredAddress: r.registered_address ?? undefined,
+    notes: r.notes ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,7 +55,7 @@ function mapInvoice(r: any): Invoice {
   return {
     id: r.id, customerId: r.customer_id ?? "", invoiceNumber: r.invoice_number,
     amount: r.amount ?? 0, dueDate: r.due_date ?? "", status: r.status ?? "Unpaid",
-    date: r.date ?? r.due_date ?? "",
+    date: r.date ?? r.due_date ?? "", amountPaid: r.amount_paid ?? 0,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,6 +63,48 @@ function mapPayment(r: any): Payment {
   return {
     id: r.id, customerId: r.customer_id ?? "", paymentReference: r.payment_reference,
     amount: r.amount ?? 0, date: r.date ?? "", method: r.method ?? "",
+    invoiceId: r.invoice_id ?? undefined,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCreditNote(r: any): CreditNote {
+  return {
+    id: r.id, creditNumber: r.credit_number, customerId: r.customer_id ?? "",
+    amount: r.amount ?? 0, reason: r.reason ?? "", date: r.date ?? "",
+    linkedTicketId: r.linked_ticket_id ?? undefined, linkedInvoiceId: r.linked_invoice_id ?? undefined,
+    status: r.status ?? "Active", remainingBalance: r.remaining_balance ?? 0,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCreditNoteAllocation(r: any): CreditNoteAllocation {
+  return { id: r.id, creditNoteId: r.credit_note_id, invoiceId: r.invoice_id, amount: r.amount ?? 0, date: r.date ?? "" }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapBuyingSession(r: any): BuyingSession {
+  return { id: r.id, date: r.date, status: r.status ?? "Open", publishedAt: r.published_at ?? undefined }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapBuyingPrice(r: any): BuyingPrice {
+  return {
+    id: r.id, sessionId: r.session_id, date: r.date, supplier: r.supplier, product: r.product,
+    variety: r.variety ?? "", brand: r.brand ?? "", size: r.size ?? "", unit: r.unit ?? "",
+    price: r.price ?? 0, quantity: r.quantity ?? 0, notes: r.notes ?? undefined, confirmed: r.confirmed ?? false,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapNotificationLog(r: any): NotificationLog {
+  return {
+    id: r.id, invoiceId: r.invoice_id, customerId: r.customer_id, channel: r.channel ?? "email",
+    status: r.status ?? "Sent", scheduledFor: r.scheduled_for ?? undefined, sentAt: r.sent_at ?? undefined,
+    error: r.error ?? undefined,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCustomerApplication(r: any): CustomerApplication {
+  return {
+    id: r.id, companyName: r.company_name, contactName: r.contact_name, email: r.email,
+    phone: r.phone ?? "", registeredAddress: r.registered_address ?? "",
+    status: r.status ?? "Pending", notes: r.notes ?? undefined, date: r.date ?? "",
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,6 +154,9 @@ function toCustomerRow(input: any) {
   if (input.creditDays !== undefined) row.credit_days = input.creditDays
   if (input.blocked !== undefined) row.blocked = input.blocked
   if (input.balance !== undefined) row.balance = input.balance
+  if (input.vatNumber !== undefined) row.vat_number = input.vatNumber
+  if (input.registeredAddress !== undefined) row.registered_address = input.registeredAddress
+  if (input.notes !== undefined) row.notes = input.notes
   return row
 }
 
@@ -118,6 +165,14 @@ function toCustomerRow(input: any) {
 function withoutCreditColumns(row: Record<string, unknown>) {
   const { credit_limit: _cl, credit_days: _cd, blocked: _b, ...rest } = row
   void _cl; void _cd; void _b
+  return rest
+}
+
+/** Strips vat_number/registered_address/notes so a write can be retried
+    against a DB where that migration hasn't run yet. */
+function withoutCustomerProfileColumns(row: Record<string, unknown>) {
+  const { vat_number: _vn, registered_address: _ra, notes: _n, ...rest } = row
+  void _vn; void _ra; void _n
   return rest
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,8 +195,11 @@ class SupabaseDatabaseService {
   async createCustomer(input: Omit<Customer, "id" | "lastActivity" | "status" | "balance">): Promise<Customer> {
     const row = { id: genId("c"), ...toCustomerRow(input), last_activity: new Date().toISOString(), status: "active", balance: 0 }
     let { data, error } = await db().from("customers").insert(row).select().single()
+    if (error && (error.code === "PGRST204" || /vat_number|registered_address|notes/.test(error.message ?? ""))) {
+      ;({ data, error } = await db().from("customers").insert({ ...withoutCustomerProfileColumns(row), id: row.id }).select().single())
+    }
     if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
-      ;({ data, error } = await db().from("customers").insert({ ...withoutCreditColumns(row), id: row.id }).select().single())
+      ;({ data, error } = await db().from("customers").insert({ ...withoutCreditColumns(withoutCustomerProfileColumns(row)), id: row.id }).select().single())
     }
     if (error) throw error
     return mapCustomer(data)
@@ -149,9 +207,14 @@ class SupabaseDatabaseService {
   async updateCustomer(id: string, input: Partial<Customer>): Promise<Customer | null> {
     const row = toCustomerRow(input)
     let { data, error } = await db().from("customers").update(row).eq("id", id).select().single()
+    if (error && (error.code === "PGRST204" || /vat_number|registered_address|notes/.test(error.message ?? ""))) {
+      const fallbackRow = withoutCustomerProfileColumns(row)
+      if (Object.keys(fallbackRow).length === 0) { console.warn("updateCustomer: profile columns not migrated yet — skipped"); return null }
+      ;({ data, error } = await db().from("customers").update(fallbackRow).eq("id", id).select().single())
+    }
     // Retry without credit-control columns if the migration hasn't been run yet.
     if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
-      const fallbackRow = withoutCreditColumns(row)
+      const fallbackRow = withoutCreditColumns(withoutCustomerProfileColumns(row))
       if (Object.keys(fallbackRow).length === 0) {
         // Nothing left to persist (e.g. only `blocked` was set) — this is an
         // expected no-op until the migration runs, not a real failure.
@@ -281,7 +344,13 @@ class SupabaseDatabaseService {
     if (input.status) row.status = input.status
     if (input.amount !== undefined) row.amount = input.amount
     if (input.dueDate) row.due_date = input.dueDate
-    const { data, error } = await db().from("invoices").update(row).eq("id", id).select().single()
+    if (input.amountPaid !== undefined) row.amount_paid = input.amountPaid
+    let { data, error } = await db().from("invoices").update(row).eq("id", id).select().single()
+    if (error && (error.code === "PGRST204" || /amount_paid/.test(error.message ?? "")) && "amount_paid" in row) {
+      const { amount_paid: _ap, ...rest } = row
+      void _ap
+      ;({ data, error } = await db().from("invoices").update(rest).eq("id", id).select().single())
+    }
     if (error) { console.error("updateInvoice", error); return null }
     return mapInvoice(data)
   }
@@ -293,11 +362,17 @@ class SupabaseDatabaseService {
     return (data ?? []).map(mapPayment)
   }
   async createPayment(input: Omit<Payment, "id">): Promise<Payment> {
-    const row = {
+    const row: Record<string, unknown> = {
       id: genId("pay"), customer_id: input.customerId || null, payment_reference: input.paymentReference,
       amount: input.amount, date: input.date, method: input.method,
     }
-    const { data, error } = await db().from("payments").insert(row).select().single()
+    if (input.invoiceId) row.invoice_id = input.invoiceId
+    let { data, error } = await db().from("payments").insert(row).select().single()
+    if (error && (error.code === "PGRST204" || /invoice_id/.test(error.message ?? "")) && "invoice_id" in row) {
+      const { invoice_id: _iid, ...rest } = row
+      void _iid
+      ;({ data, error } = await db().from("payments").insert(rest).select().single())
+    }
     if (error) throw error
     return mapPayment(data)
   }
@@ -420,6 +495,154 @@ class SupabaseDatabaseService {
     const { data, error } = await db().from("admin_roles").select("*").order("name")
     if (error) { console.error("getAdminRoles", error); return [] }
     return (data ?? []).map(mapAdminRole)
+  }
+
+  // ── CREDIT NOTES ──────────────────────────────────────────────────
+  async getCreditNotes(): Promise<CreditNote[]> {
+    const { data, error } = await db().from("credit_notes").select("*").order("date", { ascending: false })
+    if (error) { console.error("getCreditNotes", error); return [] }
+    return (data ?? []).map(mapCreditNote)
+  }
+  async createCreditNote(input: Omit<CreditNote, "id">): Promise<CreditNote> {
+    const row = {
+      id: genId("cn"), credit_number: input.creditNumber, customer_id: input.customerId || null,
+      amount: input.amount, reason: input.reason, date: input.date,
+      linked_ticket_id: input.linkedTicketId || null, linked_invoice_id: input.linkedInvoiceId || null,
+      status: input.status, remaining_balance: input.remainingBalance,
+    }
+    const { data, error } = await db().from("credit_notes").insert(row).select().single()
+    if (error) throw error
+    return mapCreditNote(data)
+  }
+  async updateCreditNote(id: string, input: Partial<CreditNote>): Promise<CreditNote | null> {
+    const row: Record<string, unknown> = {}
+    if (input.reason !== undefined) row.reason = input.reason
+    if (input.amount !== undefined) row.amount = input.amount
+    if (input.status) row.status = input.status
+    if (input.remainingBalance !== undefined) row.remaining_balance = input.remainingBalance
+    const { data, error } = await db().from("credit_notes").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateCreditNote", error); return null }
+    return mapCreditNote(data)
+  }
+
+  async getCreditNoteAllocations(): Promise<CreditNoteAllocation[]> {
+    const { data, error } = await db().from("credit_note_allocations").select("*").order("date", { ascending: false })
+    if (error) { console.error("getCreditNoteAllocations", error); return [] }
+    return (data ?? []).map(mapCreditNoteAllocation)
+  }
+  async createCreditNoteAllocation(input: Omit<CreditNoteAllocation, "id">): Promise<CreditNoteAllocation> {
+    const row = {
+      id: genId("cna"), credit_note_id: input.creditNoteId, invoice_id: input.invoiceId,
+      amount: input.amount, date: input.date,
+    }
+    const { data, error } = await db().from("credit_note_allocations").insert(row).select().single()
+    if (error) throw error
+    return mapCreditNoteAllocation(data)
+  }
+
+  // ── CUSTOMER APPLICATIONS ──────────────────────────────────────────
+  async getCustomerApplications(): Promise<CustomerApplication[]> {
+    const { data, error } = await db().from("customer_applications").select("*").order("date", { ascending: false })
+    if (error) { console.error("getCustomerApplications", error); return [] }
+    return (data ?? []).map(mapCustomerApplication)
+  }
+  async createCustomerApplication(input: Omit<CustomerApplication, "id" | "status">): Promise<CustomerApplication> {
+    const row = {
+      id: genId("capp"), company_name: input.companyName, contact_name: input.contactName,
+      email: input.email, phone: input.phone || null, registered_address: input.registeredAddress || null,
+      status: "Pending", date: input.date,
+    }
+    const { data, error } = await db().from("customer_applications").insert(row).select().single()
+    if (error) throw error
+    return mapCustomerApplication(data)
+  }
+  async updateCustomerApplication(id: string, input: Partial<CustomerApplication>): Promise<CustomerApplication | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status) row.status = input.status
+    if (input.notes !== undefined) row.notes = input.notes
+    const { data, error } = await db().from("customer_applications").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateCustomerApplication", error); return null }
+    return mapCustomerApplication(data)
+  }
+
+  // ── PRODUCE BUYING DESK ─────────────────────────────────────────────
+  async getBuyingSessions(): Promise<BuyingSession[]> {
+    const { data, error } = await db().from("buying_sessions").select("*").order("date", { ascending: false })
+    if (error) { console.error("getBuyingSessions", error); return [] }
+    return (data ?? []).map(mapBuyingSession)
+  }
+  async getOrCreateBuyingSession(date: string): Promise<BuyingSession> {
+    const { data: existing } = await db().from("buying_sessions").select("*").eq("date", date).maybeSingle()
+    if (existing) return mapBuyingSession(existing)
+    const row = { id: genId("bs"), date, status: "Open" }
+    const { data, error } = await db().from("buying_sessions").insert(row).select().single()
+    if (error) throw error
+    return mapBuyingSession(data)
+  }
+  async updateBuyingSession(id: string, input: Partial<BuyingSession>): Promise<BuyingSession | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status) row.status = input.status
+    if (input.publishedAt !== undefined) row.published_at = input.publishedAt
+    const { data, error } = await db().from("buying_sessions").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateBuyingSession", error); return null }
+    return mapBuyingSession(data)
+  }
+
+  async getBuyingPrices(): Promise<BuyingPrice[]> {
+    const { data, error } = await db().from("buying_prices").select("*").order("date", { ascending: false })
+    if (error) { console.error("getBuyingPrices", error); return [] }
+    return (data ?? []).map(mapBuyingPrice)
+  }
+  async createBuyingPrice(input: Omit<BuyingPrice, "id">): Promise<BuyingPrice> {
+    const row = {
+      id: genId("bp"), session_id: input.sessionId, date: input.date, supplier: input.supplier,
+      product: input.product, variety: input.variety || null, brand: input.brand || null,
+      size: input.size || null, unit: input.unit || null, price: input.price, quantity: input.quantity,
+      notes: input.notes || null, confirmed: input.confirmed,
+    }
+    const { data, error } = await db().from("buying_prices").insert(row).select().single()
+    if (error) throw error
+    return mapBuyingPrice(data)
+  }
+  async updateBuyingPrice(id: string, input: Partial<BuyingPrice>): Promise<BuyingPrice | null> {
+    const row: Record<string, unknown> = {}
+    if (input.price !== undefined) row.price = input.price
+    if (input.quantity !== undefined) row.quantity = input.quantity
+    if (input.notes !== undefined) row.notes = input.notes
+    if (input.confirmed !== undefined) row.confirmed = input.confirmed
+    const { data, error } = await db().from("buying_prices").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateBuyingPrice", error); return null }
+    return mapBuyingPrice(data)
+  }
+  async deleteBuyingPrice(id: string): Promise<boolean> {
+    const { error } = await db().from("buying_prices").delete().eq("id", id)
+    return !error
+  }
+
+  // ── PAYMENT REMINDER NOTIFICATIONS ──────────────────────────────────
+  async getNotificationLogs(): Promise<NotificationLog[]> {
+    const { data, error } = await db().from("notification_logs").select("*").order("created_at", { ascending: false })
+    if (error) { console.error("getNotificationLogs", error); return [] }
+    return (data ?? []).map(mapNotificationLog)
+  }
+  async createNotificationLog(input: Omit<NotificationLog, "id">): Promise<NotificationLog> {
+    const row = {
+      id: genId("nl"), invoice_id: input.invoiceId, customer_id: input.customerId, channel: input.channel,
+      status: input.status, scheduled_for: input.scheduledFor || null, sent_at: input.sentAt || null,
+      error: input.error || null,
+    }
+    const { data, error } = await db().from("notification_logs").insert(row).select().single()
+    if (error) throw error
+    return mapNotificationLog(data)
+  }
+  async updateNotificationLog(id: string, input: Partial<NotificationLog>): Promise<NotificationLog | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status) row.status = input.status
+    if (input.sentAt !== undefined) row.sent_at = input.sentAt
+    if (input.error !== undefined) row.error = input.error
+    const { data, error } = await db().from("notification_logs").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateNotificationLog", error); return null }
+    return mapNotificationLog(data)
   }
 
   // ── AUDIT LOG ─────────────────────────────────────────────────────

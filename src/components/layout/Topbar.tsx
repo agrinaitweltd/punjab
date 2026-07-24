@@ -4,9 +4,10 @@ const PAGE_LABELS: Record<string, string> = {
   dashboard: "Overview", products: "Product", orders: "Order", customers: "Customer",
   tickets: "Message", stock: "Stock", payments: "Payments", stats: "Analytics",
   "delivery-areas": "Deliveries", enquiries: "Enquiries", complaints: "Complaints",
-  "credit-control": "Credit Control", "payment-proofs": "Payment Proofs",
+  "credit-control": "Credit Control", "payment-proofs": "Payment Proofs", "credit-notes": "Credit Notes",
+  "customer-applications": "Customer Applications", "payment-reminders": "Payment Reminders",
   admins: "Admin Users", "data-extract": "Data Extract", files: "Files",
-  session: "Daily Session", "place-order": "Place Order",
+  session: "Produce Buying Desk", "place-order": "Place Order",
 }
 
 export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBellClick }: {

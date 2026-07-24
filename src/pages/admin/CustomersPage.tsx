@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Customer, DeliveryArea } from '../../types'
+import type { Customer, CreditNote, CreditNoteAllocation, DeliveryArea, Invoice, Payment } from '../../types'
 import { parseStatementPdf, type StatementRow } from '../../lib/statementImport'
 import { importStatementInvoices } from '../../api/miscApi'
 import { Button } from '../../components/ui/Button'
@@ -9,6 +9,7 @@ import { Input, Select } from '../../components/ui/Input'
 import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
+import { CustomerStatementModal } from './CustomerStatementModal'
 
 const initialForm = {
   companyName: '',
@@ -22,9 +23,26 @@ const initialForm = {
   paymentTerms: '14 Days',
 }
 
+const initialFullForm = {
+  companyName: '',
+  contactPerson: '',
+  email: '',
+  password: '',
+  phone: '',
+  registeredAddress: '',
+  address: '', // delivery address
+  vatNumber: '',
+  creditLimit: '0',
+  notes: '',
+}
+
 export function CustomersPage({
   customers,
   deliveryAreas,
+  invoices = [],
+  payments = [],
+  creditNotes = [],
+  creditNoteAllocations = [],
   onCreate,
   onUpdate,
   onDelete,
@@ -32,7 +50,11 @@ export function CustomersPage({
 }: {
   customers: Customer[]
   deliveryAreas: DeliveryArea[]
-  onCreate: (input: typeof initialForm) => Promise<void>
+  invoices?: Invoice[]
+  payments?: Payment[]
+  creditNotes?: CreditNote[]
+  creditNoteAllocations?: CreditNoteAllocation[]
+  onCreate: (input: typeof initialForm & Partial<Pick<Customer, 'registeredAddress' | 'vatNumber' | 'creditLimit' | 'notes'>>) => Promise<void>
   onUpdate: (id: string, input: Partial<Customer>) => Promise<void>
   onDelete: (id: string) => Promise<void>
   /** Gates the Delete button — Salesperson/Cashier-type roles can view and
@@ -47,7 +69,10 @@ export function CustomersPage({
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
+  const [addMode, setAddMode] = useState<'invite' | 'full'>('invite')
+  const [fullForm, setFullForm] = useState(initialFullForm)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [statementTarget, setStatementTarget] = useState<Customer | null>(null)
   // One-time statement import
   const [importTarget, setImportTarget] = useState<Customer | null>(null)
   const [importRows, setImportRows] = useState<StatementRow[]>([])
@@ -88,6 +113,41 @@ export function CustomersPage({
         password: `pending-${Math.random().toString(36).slice(2, 10)}`,
       })
       setNewEmail('')
+      setShowAdd(false)
+    } catch {
+      setAddError('Could not create the customer — please try again.')
+    }
+    setAdding(false)
+  }
+
+  const submitFullCreate = async (event: FormEvent) => {
+    event.preventDefault()
+    const email = fullForm.email.trim().toLowerCase()
+    if (!fullForm.companyName.trim()) { setAddError('Company name is required.'); return }
+    if (!email || !email.includes('@')) { setAddError('Enter a valid email address.'); return }
+    if (!fullForm.password || fullForm.password.length < 6) { setAddError('Password must be at least 6 characters.'); return }
+    if (customers.some(c => c.email?.toLowerCase() === email)) { setAddError('A customer with that email already exists.'); return }
+    setAddError(''); setAdding(true)
+    const nums = customers.map(c => parseInt(c.customerNumber.replace(/\D/g, '')) || 0)
+    const nextNum = `CUST-${String(Math.max(1000, ...nums) + 1)}`
+    try {
+      await onCreate({
+        ...initialForm,
+        companyName: fullForm.companyName.trim(),
+        contactPerson: fullForm.contactPerson.trim(),
+        email,
+        password: fullForm.password,
+        phone: fullForm.phone.trim(),
+        address: fullForm.address.trim(),
+        customerNumber: nextNum,
+        deliveryArea: initialForm.deliveryArea,
+        paymentTerms: initialForm.paymentTerms,
+        registeredAddress: fullForm.registeredAddress.trim(),
+        vatNumber: fullForm.vatNumber.trim() || undefined,
+        creditLimit: parseFloat(fullForm.creditLimit) || 0,
+        notes: fullForm.notes.trim() || undefined,
+      })
+      setFullForm(initialFullForm)
       setShowAdd(false)
     } catch {
       setAddError('Could not create the customer — please try again.')
@@ -170,27 +230,66 @@ export function CustomersPage({
             Manage customer login accounts, delivery areas and payment types.
           </p>
         </div>
-        <Button onClick={() => { setNewEmail(''); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>
+        <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invite'); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>
       </div>
 
-      <Modal open={showAdd} title="Invite New Customer" onClose={() => setShowAdd(false)}>
-        <form onSubmit={submitCreate}>
-          <div className="inv-hero">
-            <span className="inv-ico">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            </span>
-            <p>Just enter their email — we'll send an invitation and they'll fill in their company details, phone and password themselves on first login.</p>
-          </div>
-          <label className="form-control">
-            <span>Customer Email</span>
-            <input type="email" placeholder="orders@company.co.uk" value={newEmail} onChange={(e) => { setNewEmail(e.target.value); setAddError('') }} required autoFocus />
-          </label>
-          {addError && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', marginTop: 10 }}>{addError}</p>}
-          <div className="actions-row" style={{ marginTop: 16 }}>
-            <Button type="submit" disabled={adding}>{adding ? 'Sending invite…' : 'Send Invitation'}</Button>
-            <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
-          </div>
-        </form>
+      <Modal open={showAdd} title={addMode === 'invite' ? 'Invite New Customer' : 'Create Customer Account'} onClose={() => setShowAdd(false)} wide={addMode === 'full'}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          <button type="button" onClick={() => { setAddMode('invite'); setAddError('') }}
+            style={{ flex: 1, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', border: addMode === 'invite' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'invite' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13, color: addMode === 'invite' ? '#14532d' : '#374151' }}>
+            Invite by Email
+          </button>
+          <button type="button" onClick={() => { setAddMode('full'); setAddError('') }}
+            style={{ flex: 1, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', border: addMode === 'full' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'full' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13, color: addMode === 'full' ? '#14532d' : '#374151' }}>
+            Enter Full Details
+          </button>
+        </div>
+
+        {addMode === 'invite' ? (
+          <form onSubmit={submitCreate}>
+            <div className="inv-hero">
+              <span className="inv-ico">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              </span>
+              <p>Just enter their email — we'll send an invitation and they'll fill in their company details, phone and password themselves on first login.</p>
+            </div>
+            <label className="form-control">
+              <span>Customer Email</span>
+              <input type="email" placeholder="orders@company.co.uk" value={newEmail} onChange={(e) => { setNewEmail(e.target.value); setAddError('') }} required autoFocus />
+            </label>
+            {addError && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', marginTop: 10 }}>{addError}</p>}
+            <div className="actions-row" style={{ marginTop: 16 }}>
+              <Button type="submit" disabled={adding}>{adding ? 'Sending invite…' : 'Send Invitation'}</Button>
+              <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+            </div>
+          </form>
+        ) : (
+          <form className="form-grid" onSubmit={submitFullCreate}>
+            <p className="wide" style={{ fontSize: 12.5, color: '#6b7a70', margin: '0 0 -6px' }}>
+              Manually create the account now — the customer can log in immediately with the email and password you set below.
+            </p>
+            <Input label="Customer Name" value={fullForm.contactPerson} onChange={(e) => setFullForm({ ...fullForm, contactPerson: e.target.value })} required autoFocus />
+            <Input label="Company Name" value={fullForm.companyName} onChange={(e) => setFullForm({ ...fullForm, companyName: e.target.value })} required />
+            <Input label="Email" type="email" value={fullForm.email} onChange={(e) => setFullForm({ ...fullForm, email: e.target.value })} required />
+            <Input label="Password" type="password" value={fullForm.password} onChange={(e) => setFullForm({ ...fullForm, password: e.target.value })} required />
+            <Input label="Phone Number" value={fullForm.phone} onChange={(e) => setFullForm({ ...fullForm, phone: e.target.value })} />
+            <Input label="VAT Number (optional)" value={fullForm.vatNumber} onChange={(e) => setFullForm({ ...fullForm, vatNumber: e.target.value })} />
+            <div className="wide"><Input label="Registered Company Address" value={fullForm.registeredAddress} onChange={(e) => setFullForm({ ...fullForm, registeredAddress: e.target.value })} /></div>
+            <div className="wide"><Input label="Delivery Address" value={fullForm.address} onChange={(e) => setFullForm({ ...fullForm, address: e.target.value })} /></div>
+            <Input label="Credit Limit (£)" type="number" min="0" step="0.01" value={fullForm.creditLimit} onChange={(e) => setFullForm({ ...fullForm, creditLimit: e.target.value })} />
+            <div className="wide">
+              <label className="form-control">
+                <span>Notes</span>
+                <textarea rows={2} value={fullForm.notes} onChange={(e) => setFullForm({ ...fullForm, notes: e.target.value })} placeholder="Internal notes about this customer…" />
+              </label>
+            </div>
+            {addError && <p className="wide" style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', margin: 0 }}>{addError}</p>}
+            <div className="wide actions-row">
+              <Button type="submit" disabled={adding}>{adding ? 'Creating…' : 'Create Customer'}</Button>
+              <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Card title="Customers" actions={<Input label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, contact, email or number" />}>
@@ -215,6 +314,7 @@ export function CustomersPage({
               <td>
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
                   <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
+                  <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Statement</Button>
                   <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
                   {canDelete && (
                     <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => confirmDelete(customer)}>
@@ -239,6 +339,8 @@ export function CustomersPage({
             <Input label="Contact Person" value={editing.contactPerson} onChange={(e) => setEditing({ ...editing, contactPerson: e.target.value })} />
             <Input label="Email" type="email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} required />
             <Input label="Phone" value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
+            <Input label="VAT Number (optional)" value={editing.vatNumber ?? ''} onChange={(e) => setEditing({ ...editing, vatNumber: e.target.value })} />
+            <div className="wide"><Input label="Registered Company Address" value={editing.registeredAddress ?? ''} onChange={(e) => setEditing({ ...editing, registeredAddress: e.target.value })} placeholder="Street, city, postcode" /></div>
             <div className="wide"><Input label="Delivery Address" value={editing.address} onChange={(e) => setEditing({ ...editing, address: e.target.value })} placeholder="Street, city, postcode" /></div>
 
             <p className="wide" style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7a70', textTransform: 'uppercase', letterSpacing: 0.5, margin: '10px 0 -6px' }}>
@@ -261,6 +363,16 @@ export function CustomersPage({
             <p className="wide" style={{ fontSize: 12.5, color: '#6b7a70', margin: 0 }}>
               Credit limit is the maximum outstanding balance allowed (0 = no limit). Credit days is how long each invoice can stay unpaid before it's overdue.
             </p>
+
+            <p className="wide" style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7a70', textTransform: 'uppercase', letterSpacing: 0.5, margin: '10px 0 -6px' }}>
+              Notes
+            </p>
+            <div className="wide">
+              <label className="form-control">
+                <span>Internal Notes</span>
+                <textarea rows={3} value={editing.notes ?? ''} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} placeholder="Internal notes about this customer…" />
+              </label>
+            </div>
 
             {editError && <p className="wide" style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', margin: 0 }}>{editError}</p>}
             <div className="wide actions-row">
@@ -331,6 +443,16 @@ export function CustomersPage({
           </div>
         )}
       </Modal>
+
+      <CustomerStatementModal
+        open={Boolean(statementTarget)}
+        onClose={() => setStatementTarget(null)}
+        customer={statementTarget}
+        invoices={invoices}
+        payments={payments}
+        creditNotes={creditNotes}
+        allocations={creditNoteAllocations}
+      />
     </div>
   )
 }

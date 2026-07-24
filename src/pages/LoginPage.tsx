@@ -2,7 +2,7 @@ import { useRef, useState } from "react"
 import type { FormEvent } from "react"
 import type { UserRole } from "../types"
 import { getCustomers, updateCustomer } from "../api/customersApi"
-import { getAdmins, updateAdmin } from "../api/miscApi"
+import { getAdmins, updateAdmin, createCustomerApplication } from "../api/miscApi"
 import { sendEmail, otpEmailHtml } from "../lib/emailService"
 
 /* "Continue with Google" — temporarily disabled on the live site (Google
@@ -513,6 +513,78 @@ function ForgotPasswordFlow({ onBack, onDone }: { onBack: () => void; onDone: (e
   )
 }
 
+/* ── Public "Apply For An Account" — creates an application only, no login ── */
+function ApplyFlow({ onBack }: { onBack: () => void }) {
+  const [form, setForm] = useState({ companyName: "", contactName: "", email: "", phone: "", registeredAddress: "" })
+  const [err, setErr]   = useState("")
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault(); setErr("")
+    if (!form.companyName.trim() || !form.contactName.trim() || !form.email.trim()) {
+      setErr("Please fill in Company Name, Contact Name and Email."); return
+    }
+    setBusy(true)
+    try {
+      await createCustomerApplication({
+        companyName: form.companyName.trim(), contactName: form.contactName.trim(),
+        email: form.email.trim(), phone: form.phone.trim(), registeredAddress: form.registeredAddress.trim(),
+        date: new Date().toISOString().slice(0, 10),
+      })
+      setDone(true)
+    } catch { setErr("Couldn't submit your application — please try again.") }
+    setBusy(false)
+  }
+
+  if (done) {
+    return (
+      <div className="lx-card">
+        <div style={{ textAlign: "center" }}>
+          <div className="lx-done-ico">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <h1 className="lx-title" style={{ marginBottom: 8 }}>Application submitted!</h1>
+          <p className="lx-sub">Thanks — we've received your application and will be in touch once it's been reviewed.</p>
+          <button type="button" className="lx-login-btn" onClick={onBack}>Back to login</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="lx-card">
+      <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
+      <form onSubmit={submit}>
+        <h1 className="lx-title">Apply For An Account</h1>
+        <p className="lx-sub">Tell us about your business — we'll review your application and set up your account.</p>
+        <label className="lx-label">Company Name</label>
+        <div className="lx-input-wrap">
+          <input className="lx-input" placeholder="Fresh Market Ltd" value={form.companyName} onChange={e => setForm({ ...form, companyName: e.target.value })} required autoFocus />
+        </div>
+        <label className="lx-label">Contact Name</label>
+        <div className="lx-input-wrap">
+          <input className="lx-input" placeholder="Your full name" value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} required />
+        </div>
+        <label className="lx-label">Email</label>
+        <div className="lx-input-wrap">
+          <input className="lx-input" type="email" placeholder="you@company.co.uk" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
+        </div>
+        <label className="lx-label">Phone Number</label>
+        <div className="lx-input-wrap">
+          <input className="lx-input" placeholder="+44 7700 900123" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+        </div>
+        <label className="lx-label">Company Registered Address</label>
+        <div className="lx-input-wrap">
+          <input className="lx-input" placeholder="12 Market Street, Birmingham B1 1AA" value={form.registeredAddress} onChange={e => setForm({ ...form, registeredAddress: e.target.value })} />
+        </div>
+        {err && <p className="lx-error">{err}</p>}
+        <button type="submit" className="lx-login-btn" disabled={busy}>{busy ? "Submitting…" : "Submit Application"}</button>
+      </form>
+    </div>
+  )
+}
+
 export function LoginPage({ onLogin, error }: {
   onLogin: (role: UserRole, username: string, password: string) => Promise<void>
   error: string
@@ -523,7 +595,7 @@ export function LoginPage({ onLogin, error }: {
   const [showPw, setShowPw]     = useState(false)
   const [remember, setRemember] = useState(false)
   const [loading, setLoading]   = useState(false)
-  const [mode, setMode]         = useState<"login" | "activate" | "forgot">("login")
+  const [mode, setMode]         = useState<"login" | "activate" | "forgot" | "apply">("login")
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setLoading(true)
@@ -573,6 +645,8 @@ export function LoginPage({ onLogin, error }: {
             onBack={() => setMode("login")}
             onDone={(em, r) => { setUsername(em); setRole(r); setMode("login") }}
           />
+        ) : mode === "apply" ? (
+          <ApplyFlow onBack={() => setMode("login")} />
         ) : (
         <form className="lx-card" onSubmit={submit}>
           <h1 className="lx-title">Log In to Punjab™</h1>
@@ -631,6 +705,11 @@ export function LoginPage({ onLogin, error }: {
           <button type="button" className="lx-signup-btn" onClick={() => setMode("activate")}>
             Activate your account with email
           </button>
+          {role === "customer" && (
+            <button type="button" className="lx-signup-btn" onClick={() => setMode("apply")}>
+              Apply For An Account
+            </button>
+          )}
         </form>
         )}
       </div>

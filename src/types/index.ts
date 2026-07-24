@@ -70,6 +70,9 @@ export interface Customer {
   creditLimit?: number
   creditDays?: number
   blocked?: boolean
+  vatNumber?: string
+  registeredAddress?: string
+  notes?: string
 }
 
 export interface Product {
@@ -128,6 +131,9 @@ export interface Invoice {
   /** Issue date (from the imported statement or order date) — used with the
       customer's creditDays to work out when the invoice becomes overdue. */
   date?: string
+  /** Total paid so far via payments and/or applied credit notes. amount -
+      amountPaid is the outstanding balance shown on statements. */
+  amountPaid?: number
 }
 
 export interface Payment {
@@ -137,6 +143,86 @@ export interface Payment {
   amount: number
   date: string
   method: string
+  /** The specific invoice this payment was allocated to, if any — lets a
+      statement show a per-invoice payment history rather than just a flat
+      list of payments for the whole account. */
+  invoiceId?: string
+}
+
+/** Option A: issued against a specific invoice (reduces its balance
+    immediately). Option B: a standalone "account credit" (no linkedInvoiceId)
+    that sits on the customer's account until applied to a future invoice via
+    a CreditNoteAllocation. */
+export interface CreditNote {
+  id: string
+  creditNumber: string
+  customerId: string
+  amount: number
+  reason: string
+  date: string
+  linkedTicketId?: string
+  linkedInvoiceId?: string
+  status: 'Active' | 'Void'
+  /** How much of `amount` hasn't been applied to an invoice yet. */
+  remainingBalance: number
+}
+
+/** One application of a credit note's balance against a specific invoice —
+    kept as its own rows (rather than just decrementing a total) so both the
+    credit note and the invoice have an auditable history of exactly when and
+    how much was applied. */
+export interface CreditNoteAllocation {
+  id: string
+  creditNoteId: string
+  invoiceId: string
+  amount: number
+  date: string
+}
+
+export interface CustomerApplication {
+  id: string
+  companyName: string
+  contactName: string
+  email: string
+  phone: string
+  registeredAddress: string
+  status: "Pending" | "Approved" | "Rejected"
+  notes?: string
+  date: string
+}
+
+export interface BuyingSession {
+  id: string
+  date: string
+  status: 'Open' | 'Closed'
+  publishedAt?: string
+}
+
+export interface BuyingPrice {
+  id: string
+  sessionId: string
+  date: string
+  supplier: string
+  product: string
+  variety: string
+  brand: string
+  size: string
+  unit: string
+  price: number
+  quantity: number
+  notes?: string
+  confirmed: boolean
+}
+
+export interface NotificationLog {
+  id: string
+  invoiceId: string
+  customerId: string
+  channel: 'email' | 'whatsapp'
+  status: 'Sent' | 'Failed' | 'Scheduled'
+  scheduledFor?: string
+  sentAt?: string
+  error?: string
 }
 
 export interface SupportTicket {

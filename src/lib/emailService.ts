@@ -226,6 +226,24 @@ export function overdueEmailHtml(
     <p style="color:#6b7280;font-size:12.5px">Already paid? Please ignore this email — payments can take a short while to show on your account.</p>`)
 }
 
+export function paymentReminderEmailHtml(
+  customerName: string, invoiceNumber: string, amountOutstanding: number, dueDate: string, paymentLink: string,
+) {
+  return wrap(`
+    <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Payment reminder — ${customerName}</h2>
+    <p>This is a reminder that invoice <strong>${invoiceNumber}</strong> is still outstanding.</p>
+    <div style="border:1.5px dashed #86c99a;border-radius:12px;padding:14px 18px;margin:16px 0;background:#f0fdf4;font-size:14px;color:#111827">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Invoice</span><strong>${invoiceNumber}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Due date</span><strong>${dueDate}</strong></div>
+      <div style="display:flex;justify-content:space-between;font-size:17px;font-weight:800;color:#14532d"><span>Amount Outstanding</span><span>£${amountOutstanding.toFixed(2)}</span></div>
+    </div>
+    <p style="text-align:center;margin:20px 0">
+      <a href="${paymentLink}" style="display:inline-block;background:#1f7a3a;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:10px">Pay Now</a>
+    </p>
+    <p>If you've already paid, please ignore this reminder — it can take a short while to show on your account.</p>
+    <p style="color:#6b7280;font-size:12.5px">Questions about this invoice? Call us on ${URGENT_SUPPORT_PHONE} or reply to this email.</p>`)
+}
+
 export function otpEmailHtml(code: string) {
   return wrap(`
     <h2 style="margin:0 0 12px;font-size:19px;color:#111827">Your verification code</h2>

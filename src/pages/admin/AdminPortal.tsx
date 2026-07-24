@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
 import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
-import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml } from '../../lib/emailService'
+import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml, paymentReminderEmailHtml } from '../../lib/emailService'
 import { getCreditStatus } from '../../lib/creditControl'
 import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
@@ -30,11 +30,34 @@ import {
   updateInvoice,
   getAdminRoles,
   logActivity,
+  getCreditNotes,
+  getCreditNoteAllocations,
+  createCreditNote,
+  updateCreditNote,
+  createCreditNoteAllocation,
+  getCustomerApplications,
+  updateCustomerApplication,
+  getBuyingSessions,
+  getOrCreateBuyingSession,
+  updateBuyingSession,
+  getBuyingPrices,
+  createBuyingPrice,
+  updateBuyingPrice,
+  deleteBuyingPrice,
+  getNotificationLogs,
+  createNotificationLog,
 } from '../../api/miscApi'
+import { computeCreditApplication } from '../../lib/creditNotes'
 import type {
   ActivityLog,
   AdminStaff,
+  BuyingPrice,
+  BuyingSession,
   Customer,
+  NotificationLog,
+  CreditNote,
+  CreditNoteAllocation,
+  CustomerApplication,
   DeliveryArea,
   Invoice,
   Order,
@@ -47,6 +70,8 @@ import type {
 import { AdminsPage } from './AdminsPage'
 import { ComplaintsPage } from './ComplaintsPage'
 import { CreditControlPage } from './CreditControlPage'
+import { CreditNotesPage } from './CreditNotesPage'
+import { CustomerApplicationsPage } from './CustomerApplicationsPage'
 import { PaymentProofsPage } from './PaymentProofsPage'
 import { CustomersPage } from './CustomersPage'
 import { DashboardHome } from './DashboardHome'
@@ -56,7 +81,8 @@ import { OrdersPage } from './OrdersPage'
 import { PaymentsPage } from './PaymentsPage'
 import { ProductsPage } from './ProductsPage'
 import { FilesPage } from './FilesPage'
-import { SessionPage } from './SessionPage'
+import { BuyingDeskPage } from './BuyingDeskPage'
+import { PaymentRemindersPage } from './PaymentRemindersPage'
 import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
 import { StockPage } from './StockPage'
@@ -75,6 +101,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [deliveryAreas, setDeliveryAreas] = useState<DeliveryArea[]>([])
   const [paymentProofs, setPaymentProofs] = useState<PaymentProof[]>([])
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([])
+  const [creditNoteAllocations, setCreditNoteAllocations] = useState<CreditNoteAllocation[]>([])
+  const [applications, setApplications] = useState<CustomerApplication[]>([])
+  const [buyingSessions, setBuyingSessions] = useState<BuyingSession[]>([])
+  const [buyingPrices, setBuyingPrices] = useState<BuyingPrice[]>([])
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -89,6 +121,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       ticketsData,
       deliveryAreasData,
       paymentProofsData,
+      creditNotesData,
+      creditNoteAllocationsData,
+      applicationsData,
+      buyingSessionsData,
+      buyingPricesData,
+      notificationLogsData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -101,6 +139,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getTickets(),
       getDeliveryAreas(),
       listPaymentProofs(),
+      getCreditNotes(),
+      getCreditNoteAllocations(),
+      getCustomerApplications(),
+      getBuyingSessions(),
+      getBuyingPrices(),
+      getNotificationLogs(),
     ])
 
     setCustomers(customersData)
@@ -114,6 +158,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setTickets(ticketsData)
     setDeliveryAreas(deliveryAreasData)
     setPaymentProofs(paymentProofsData)
+    setCreditNotes(creditNotesData)
+    setCreditNoteAllocations(creditNoteAllocationsData)
+    setApplications(applicationsData)
+    setBuyingSessions(buyingSessionsData)
+    setBuyingPrices(buyingPricesData)
+    setNotificationLogs(notificationLogsData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -161,7 +211,81 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'session') {
-      return <SessionPage onFinished={async () => { await load(); setCurrent('stock') }} />
+      const canEditBuying = user.isSuperAdmin || Boolean(user.permissions?.buyingPricesEdit)
+      return (
+        <BuyingDeskPage
+          sessions={buyingSessions}
+          prices={buyingPrices}
+          canEdit={canEditBuying}
+          onStartSession={async (date) => {
+            await getOrCreateBuyingSession(date)
+            await load()
+          }}
+          onAddPrice={async (input) => {
+            await createBuyingPrice({ ...input, confirmed: false })
+            void logActivity(user.displayName, `added buying price for ${input.product} from ${input.supplier} (£${input.price.toFixed(2)})`)
+            await load()
+          }}
+          onUpdatePrice={async (id, input) => {
+            await updateBuyingPrice(id, input)
+            await load()
+          }}
+          onDeletePrice={async (id) => {
+            await deleteBuyingPrice(id)
+            await load()
+          }}
+          onConfirm={async (price) => {
+            await updateBuyingPrice(price.id, { confirmed: true })
+            void logActivity(user.displayName, `confirmed order for ${price.product} from ${price.supplier} (£${(price.price * price.quantity).toFixed(2)})`)
+            await load()
+          }}
+          onEndDailyBuying={async (session, confirmedPrices) => {
+            // Move confirmed produce into Stock — hidden (status "out") until published.
+            let allProducts = await getProducts()
+            for (const cp of confirmedPrices) {
+              const existing = allProducts.find(p => p.productName.toLowerCase() === cp.product.toLowerCase())
+              if (!existing) {
+                await createProduct({
+                  productName: cp.product, category: 'Other Produce', variety: cp.variety || cp.brand || '',
+                  size: [cp.size, cp.unit].filter(Boolean).join(' ') || 'box', boxesPerPallet: 0, productImage: '',
+                  sku: cp.product.toUpperCase().replace(/[^A-Z0-9]+/g, '-').slice(0, 24) + '-' + Date.now().toString().slice(-4),
+                })
+              }
+            }
+            allProducts = await getProducts()
+            const stock = await getStock()
+            for (const cp of confirmedPrices) {
+              const product = allProducts.find(p => p.productName.toLowerCase() === cp.product.toLowerCase())
+              const stockRow = product && stock.find(s => s.productId === product.id)
+              if (stockRow) {
+                await updateStock(stockRow.id, { availableQuantity: cp.quantity, status: 'out' })
+              }
+            }
+            await updateBuyingSession(session.id, { status: 'Closed' })
+            void logActivity(user.displayName, `ended daily buying for ${session.date} — ${confirmedPrices.length} item(s) moved to Stock`)
+            await load()
+          }}
+          onPublish={async (session, sellingPrices) => {
+            const allProducts = await getProducts()
+            const stock = await getStock()
+            const sessionConfirmed = buyingPrices.filter(p => p.date === session.date && p.confirmed)
+            for (const cp of sessionConfirmed) {
+              const product = allProducts.find(p => p.productName.toLowerCase() === cp.product.toLowerCase())
+              const stockRow = product && stock.find(s => s.productId === product.id)
+              const sellingPrice = sellingPrices[cp.id] ?? 0
+              if (stockRow) {
+                await updateStock(stockRow.id, {
+                  price: sellingPrice,
+                  status: cp.quantity === 0 ? 'out' : cp.quantity <= 10 ? 'low' : 'available',
+                })
+              }
+            }
+            await updateBuyingSession(session.id, { publishedAt: new Date().toISOString() })
+            void logActivity(user.displayName, `published today's buying prices for ${session.date}`)
+            await load()
+          }}
+        />
+      )
     }
 
     if (current === 'files') {
@@ -173,6 +297,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <CustomersPage
           customers={customers}
           deliveryAreas={deliveryAreas}
+          invoices={invoices}
+          payments={payments}
+          creditNotes={creditNotes}
+          creditNoteAllocations={creditNoteAllocations}
           onCreate={async (input) => {
             await createCustomer(input)
             if (input.email) {
@@ -367,6 +495,152 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             if (!updated) {
               window.alert("Couldn't update the account — if this keeps happening, the credit-control database migration in src/lib/schema.sql may not have been run yet.")
             }
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'credit-notes') {
+      return (
+        <CreditNotesPage
+          creditNotes={creditNotes}
+          allocations={creditNoteAllocations}
+          customers={customers}
+          invoices={invoices}
+          tickets={tickets}
+          canManage={user.isSuperAdmin || Boolean(user.permissions?.creditNotesIssue)}
+          onIssue={async (input, mode) => {
+            const note = await createCreditNote({
+              customerId: input.customerId, amount: input.amount, reason: input.reason,
+              date: new Date().toISOString().slice(0, 10),
+              linkedTicketId: input.linkedTicketId, linkedInvoiceId: input.linkedInvoiceId,
+              status: 'Active', remainingBalance: input.amount,
+            })
+            // Option A (against an invoice) applies immediately so the
+            // invoice's balance updates right away, as requested.
+            if (mode === 'invoice' && input.linkedInvoiceId) {
+              const invoice = invoices.find(i => i.id === input.linkedInvoiceId)
+              if (invoice) {
+                const result = computeCreditApplication(note, invoice, input.amount)
+                if (result.appliedAmount > 0) {
+                  await createCreditNoteAllocation({
+                    creditNoteId: note.id, invoiceId: invoice.id,
+                    amount: result.appliedAmount, date: new Date().toISOString().slice(0, 10),
+                  })
+                  await updateInvoice(invoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
+                  await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance })
+                }
+              }
+            }
+            const customer = customers.find(c => c.id === input.customerId)
+            void logActivity(user.displayName, `issued credit note ${note.creditNumber} for ${customer?.companyName ?? input.customerId} (£${input.amount.toFixed(2)})`)
+            await load()
+          }}
+          onEdit={async (id, input) => {
+            await updateCreditNote(id, input)
+            void logActivity(user.displayName, `edited credit note ${id}`)
+            await load()
+          }}
+          onVoid={async (note) => {
+            await updateCreditNote(note.id, { status: 'Void' })
+            void logActivity(user.displayName, `voided credit note ${note.creditNumber}`)
+            await load()
+          }}
+          onApply={async (note, invoiceId, amount) => {
+            const invoice = invoices.find(i => i.id === invoiceId)
+            if (!invoice) return
+            const result = computeCreditApplication(note, invoice, amount)
+            if (result.appliedAmount <= 0) return
+            await createCreditNoteAllocation({
+              creditNoteId: note.id, invoiceId: invoice.id,
+              amount: result.appliedAmount, date: new Date().toISOString().slice(0, 10),
+            })
+            await updateInvoice(invoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
+            await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance })
+            void logActivity(user.displayName, `applied £${result.appliedAmount.toFixed(2)} credit from ${note.creditNumber} to ${invoice.invoiceNumber}`)
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'customer-applications') {
+      return (
+        <CustomerApplicationsPage
+          applications={applications}
+          canManage={user.isSuperAdmin || Boolean(user.permissions?.applicationsManage)}
+          onApprove={async (application) => {
+            await createCustomer({
+              companyName: application.companyName,
+              contactPerson: application.contactName,
+              email: application.email,
+              phone: application.phone,
+              registeredAddress: application.registeredAddress,
+              address: '',
+              customerNumber: `CUST-${Date.now().toString().slice(-6)}`,
+              password: '',
+              deliveryArea: '',
+              paymentTerms: 'Payment Before Order',
+            })
+            await updateCustomerApplication(application.id, { status: 'Approved' })
+            if (application.email) {
+              void sendEmail(application.email, "Welcome to the Punjab Exotic Foods Portal",
+                welcomeEmailHtml(application.contactName || application.companyName, "customer", window.location.origin))
+            }
+            void logActivity(user.displayName, `approved customer application for ${application.companyName}`)
+            await load()
+          }}
+          onReject={async (application) => {
+            await updateCustomerApplication(application.id, { status: 'Rejected' })
+            void logActivity(user.displayName, `rejected customer application for ${application.companyName}`)
+            await load()
+          }}
+          onSaveNotes={async (id, notes) => {
+            await updateCustomerApplication(id, { notes })
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'payment-reminders') {
+      const paymentLink = `${window.location.origin}`
+      return (
+        <PaymentRemindersPage
+          invoices={invoices}
+          customers={customers}
+          notificationLogs={notificationLogs}
+          canManage={user.isSuperAdmin || Boolean(user.permissions?.paymentsRecord)}
+          onSendNow={async (invoice, customer) => {
+            const sent = await sendEmail(customer.email, `Payment reminder — invoice ${invoice.invoiceNumber}`,
+              paymentReminderEmailHtml(customer.contactPerson || customer.companyName, invoice.invoiceNumber, invoice.amount - (invoice.amountPaid ?? 0), invoice.dueDate, paymentLink))
+            await createNotificationLog({
+              invoiceId: invoice.id, customerId: customer.id, channel: 'email',
+              status: sent.ok ? 'Sent' : 'Failed', sentAt: new Date().toISOString(), error: sent.ok ? undefined : sent.error,
+            })
+            void logActivity(user.displayName, `sent payment reminder for invoice ${invoice.invoiceNumber} to ${customer.companyName}`)
+            await load()
+          }}
+          onSchedule={async (invoice, customer, scheduledFor) => {
+            await createNotificationLog({
+              invoiceId: invoice.id, customerId: customer.id, channel: 'email',
+              status: 'Scheduled', scheduledFor: new Date(scheduledFor).toISOString(),
+            })
+            void logActivity(user.displayName, `scheduled payment reminder for invoice ${invoice.invoiceNumber} to ${customer.companyName}`)
+            await load()
+          }}
+          onResend={async (log) => {
+            const invoice = invoices.find(i => i.id === log.invoiceId)
+            const customer = customers.find(c => c.id === log.customerId)
+            if (!invoice || !customer) return
+            const sent = await sendEmail(customer.email, `Payment reminder — invoice ${invoice.invoiceNumber}`,
+              paymentReminderEmailHtml(customer.contactPerson || customer.companyName, invoice.invoiceNumber, invoice.amount - (invoice.amountPaid ?? 0), invoice.dueDate, paymentLink))
+            await createNotificationLog({
+              invoiceId: invoice.id, customerId: customer.id, channel: 'email',
+              status: sent.ok ? 'Sent' : 'Failed', sentAt: new Date().toISOString(), error: sent.ok ? undefined : sent.error,
+            })
+            void logActivity(user.displayName, `resent payment reminder for invoice ${invoice.invoiceNumber} to ${customer.companyName}`)
             await load()
           }}
         />

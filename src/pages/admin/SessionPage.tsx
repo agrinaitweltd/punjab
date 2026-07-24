@@ -46,6 +46,10 @@ const CATALOG: CatalogItem[] = Object.entries(PRODUCE).flatMap(([category, group
   Object.entries(groups).flatMap(([group, names]) =>
     names.map(name => ({ name, group, category, size: "box" }))))
 
+/** Flat, de-duplicated product name list — reused by the Produce Buying Desk
+    for its product/supplier-quotation autocomplete. */
+export const PRODUCE_CATALOG_NAMES = [...new Set(CATALOG.map(c => c.name))].sort()
+
 const CATEGORIES = Object.keys(PRODUCE)
 const CAT_COLORS: Record<string, string> = {
   Fruits: "#e05c2a", Vegetables: "#22913f", "Peppers & Chillies": "#d93025",

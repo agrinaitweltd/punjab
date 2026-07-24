@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
 import { getOrders } from "../../api/ordersApi"
-import { createTicket, getInvoices, getPayments, getTickets } from "../../api/miscApi"
+import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, getCreditNoteAllocations } from "../../api/miscApi"
 import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
 import { getCreditStatus } from "../../lib/creditControl"
+import { invoiceOutstanding } from "../../lib/creditNotes"
 import { sendEmail, URGENT_SUPPORT_PHONE, ADMIN_NOTIFY_EMAIL, paymentProofSubmittedEmailHtml, paymentProofAdminAlertEmailHtml } from "../../lib/emailService"
 import { uploadPaymentProof, listPaymentProofsForCustomer, MAX_PROOF_BYTES, type PaymentProof } from "../../lib/paymentProofService"
-import type { Customer, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
+import type { Customer, CreditNote, CreditNoteAllocation, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
@@ -107,6 +108,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [orders, setOrders]             = useState<Order[]>([])
   const [invoices, setInvoices]         = useState<Invoice[]>([])
   const [payments, setPayments]         = useState<Payment[]>([])
+  const [creditNotes, setCreditNotes]   = useState<CreditNote[]>([])
+  const [creditNoteAllocations, setCreditNoteAllocations] = useState<CreditNoteAllocation[]>([])
   const [tickets, setTickets]           = useState<SupportTicket[]>([])
   const [selected, setSelected]         = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<string>("")
@@ -135,10 +138,12 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [proofError, setProofError]     = useState("")
 
   const load = async () => {
-    const [p, s, o, inv, pay, tix, custs] = await Promise.all([
-      getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets(), getCustomers()
+    const [p, s, o, inv, pay, tix, custs, cn, cna] = await Promise.all([
+      getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets(), getCustomers(),
+      getCreditNotes(), getCreditNoteAllocations(),
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
+    setCreditNotes(cn); setCreditNoteAllocations(cna)
     setMe(custs.find(c => c.id === user.id) ?? null)
     setFilesLoading(true)
     listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
@@ -223,7 +228,14 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const myTickets  = useMemo(() => tickets.filter(t => t.customerId === user.id), [tickets, user.id])
   const myInvoices = useMemo(() => invoices.filter(i => i.customerId === user.id), [invoices, user.id])
   const myPayments = useMemo(() => payments.filter(p => p.customerId === user.id), [payments, user.id])
-  const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount, 0)
+  const myCreditNotes = useMemo(() => creditNotes.filter(c => c.customerId === user.id), [creditNotes, user.id])
+  const myCreditAllocations = useMemo(
+    () => creditNoteAllocations.filter(a => myCreditNotes.some(c => c.id === a.creditNoteId)),
+    [creditNoteAllocations, myCreditNotes],
+  )
+  const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + invoiceOutstanding(i), 0)
+  const totalCreditApplied = myCreditAllocations.reduce((s, a) => s + a.amount, 0)
+  const remainingCredit = myCreditNotes.filter(c => c.status === "Active").reduce((s, c) => s + c.remainingBalance, 0)
   const stockMap   = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
 
   // Keep checking for order/ticket updates while the customer stays on one page
@@ -584,7 +596,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               {credit.overLimitBy > 0 && <> — your balance is £{credit.overLimitBy.toFixed(2)} over your £{(me?.creditLimit ?? 0).toFixed(2)} credit limit</>}.
             </div>
           )}
-          <div className="sh-stats" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+          <div className="sh-stats" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
             <StatCard label="Outstanding Balance" value={`£${myBalance.toFixed(2)}`}
               iconBg="#fef2f2" iconColor="#dc2626"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>} />
@@ -594,6 +606,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <StatCard label="Payments Made" value={String(myPayments.length)}
               iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>} />
+            <StatCard label="Remaining Credit" value={`£${remainingCredit.toFixed(2)}`}
+              iconBg="#eff6ff" iconColor="#1d4ed8"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 9l6-1z"/></svg>} />
           </div>
           <div className="cd-table-card">
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -612,12 +627,13 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             </p>
             <div className="cd-table-scroll">
             <table className="cd-table">
-              <thead><tr><th></th><th>Invoice #</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
+              <thead><tr><th></th><th>Invoice #</th><th>Amount</th><th>Paid</th><th>Outstanding</th><th>Due Date</th><th>Status</th></tr></thead>
               <tbody>
                 {myInvoices.map(inv => {
                   const isOverdue = overdueIds.has(inv.id)
                   const unpaidRow = inv.status !== "Paid"
                   const pendingProof = myProofs.find(p => p.status === "pending" && p.invoiceIds.includes(inv.id))
+                  const paidSoFar = inv.amountPaid ?? 0
                   return (
                     <tr key={inv.id} className="cd-row cd-row-clickable" onClick={() => setInvoiceDetail(inv)}>
                       <td onClick={e => e.stopPropagation()}>
@@ -632,12 +648,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                       </td>
                       <td><strong>{inv.invoiceNumber}</strong></td>
                       <td>£{inv.amount.toFixed(2)}</td>
+                      <td style={{ color: "#15803d" }}>{paidSoFar > 0 ? `£${paidSoFar.toFixed(2)}` : "—"}</td>
+                      <td style={{ color: invoiceOutstanding(inv) > 0 ? "#b91c1c" : "#9ca3af" }}>£{invoiceOutstanding(inv).toFixed(2)}</td>
                       <td style={{ color: isOverdue ? "#b91c1c" : "#6b7280" }}>{inv.dueDate}</td>
                       <td>
                         {inv.status === "Paid" ? (
                           <span className="cd-status-badge" style={{ background: "#dcfce7", color: "#15803d" }}>Paid</span>
                         ) : pendingProof ? (
                           <span className="cd-status-badge" style={{ background: "#dbeafe", color: "#1d4ed8" }}>Awaiting Review</span>
+                        ) : inv.status === "Part Paid" ? (
+                          <span className="cd-status-badge" style={{ background: "#dbeafe", color: "#1d4ed8" }}>Part Paid</span>
                         ) : (
                           <span className="cd-status-badge" style={{ background: isOverdue ? "#fee2e2" : "#fef9c3", color: isOverdue ? "#b91c1c" : "#a16207" }}>
                             {isOverdue ? "Overdue" : "Unpaid"}
@@ -651,6 +671,38 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             </table>
             </div>
             {myInvoices.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No invoices yet</div>}
+          </div>
+
+          <div className="cd-table-card">
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0" }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Credit Notes</span>
+              <span style={{ marginLeft: 8, fontSize: 12.5, color: "#9ca3af" }}>Credit issued to your account, e.g. for returns or adjustments</span>
+            </div>
+            <div className="cd-table-scroll">
+            <table className="cd-table">
+              <thead><tr><th>Credit #</th><th>Date</th><th>Amount</th><th>Reason</th><th>Remaining</th><th>Status</th></tr></thead>
+              <tbody>
+                {myCreditNotes.map(cn => (
+                  <tr key={cn.id} className="cd-row">
+                    <td><strong>{cn.creditNumber}</strong></td>
+                    <td style={{ color: "#6b7280" }}>{cn.date}</td>
+                    <td>£{cn.amount.toFixed(2)}</td>
+                    <td>{cn.reason}</td>
+                    <td style={{ color: cn.remainingBalance > 0 ? "#15803d" : "#9ca3af" }}>£{cn.remainingBalance.toFixed(2)}</td>
+                    <td>
+                      <span className="cd-status-badge" style={cn.status === "Active" ? { background: "#dcfce7", color: "#15803d" } : { background: "#f3f4f6", color: "#6b7280" }}>{cn.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+            {myCreditNotes.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No credit notes yet</div>}
+            {totalCreditApplied > 0 && (
+              <p style={{ padding: "0 20px 14px", margin: 0, fontSize: 12.5, color: "#6b7a70" }}>
+                Credit Applied to invoices so far: <strong>£{totalCreditApplied.toFixed(2)}</strong>
+              </p>
+            )}
           </div>
         </div>
         )
@@ -914,8 +966,27 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <div className="ord-review">
               <div className="ord-row"><span>Status</span><span className="cd-status-badge" style={{ background: invoiceDetail.status === "Paid" ? "#dcfce7" : "#fee2e2", color: invoiceDetail.status === "Paid" ? "#15803d" : "#b91c1c" }}>{invoiceDetail.status}</span></div>
               <div className="ord-row"><span>Due date</span><strong>{invoiceDetail.dueDate}</strong></div>
-              <div className="ord-row ord-total"><span>Amount</span><strong>£{invoiceDetail.amount.toFixed(2)}</strong></div>
+              <div className="ord-row"><span>Invoice Total</span><strong>£{invoiceDetail.amount.toFixed(2)}</strong></div>
+              <div className="ord-row"><span>Amount Paid</span><strong style={{ color: "#15803d" }}>£{(invoiceDetail.amountPaid ?? 0).toFixed(2)}</strong></div>
+              <div className="ord-row ord-total"><span>Outstanding Balance</span><strong style={{ color: invoiceOutstanding(invoiceDetail) > 0 ? "#b91c1c" : "#9ca3af" }}>£{invoiceOutstanding(invoiceDetail).toFixed(2)}</strong></div>
             </div>
+            {(() => {
+              const invPayments = myPayments.filter(p => p.invoiceId === invoiceDetail.id)
+              const invAllocations = myCreditAllocations.filter(a => a.invoiceId === invoiceDetail.id)
+              if (invPayments.length === 0 && invAllocations.length === 0) return null
+              return (
+                <div style={{ marginTop: 12 }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: "#6b7280", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.5 }}>Payment History</p>
+                  {invPayments.map(p => (
+                    <div key={p.id} style={{ fontSize: 12.5, color: "#374151", padding: "4px 0" }}>· {p.date} — Payment {p.paymentReference} £{p.amount.toFixed(2)}</div>
+                  ))}
+                  {invAllocations.map(a => {
+                    const note = myCreditNotes.find(c => c.id === a.creditNoteId)
+                    return <div key={a.id} style={{ fontSize: 12.5, color: "#1d4ed8", padding: "4px 0" }}>· {a.date} — Credit applied {note?.creditNumber ?? ""} £{a.amount.toFixed(2)}</div>
+                  })}
+                </div>
+              )
+            })()}
             <p style={{ fontSize: 12.5, color: "#9ca3af", margin: "14px 2px" }}>
               Looking for the PDF? Check <strong>Documents</strong> in the sidebar — your admin may have uploaded it there.
             </p>

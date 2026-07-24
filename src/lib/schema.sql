@@ -90,6 +90,9 @@ create table if not exists customers (
   credit_limit    numeric(10,2) default 0,
   credit_days     integer default 14,
   blocked         boolean default false,
+  vat_number        text,
+  registered_address text,
+  notes             text,
   last_activity   timestamptz default now(),
   created_at      timestamptz default now()
 );
@@ -98,6 +101,9 @@ create table if not exists customers (
 -- alter table customers add column if not exists credit_limit numeric(10,2) default 0;
 -- alter table customers add column if not exists credit_days integer default 14;
 -- alter table customers add column if not exists blocked boolean default false;
+-- alter table customers add column if not exists vat_number text;
+-- alter table customers add column if not exists delivery_address text;
+-- alter table customers add column if not exists notes text;
 
 -- PRODUCTS
 create table if not exists products (
@@ -151,11 +157,13 @@ create table if not exists invoices (
   due_date        date,
   date            date,
   status          text default 'Unpaid',
+  amount_paid     numeric(10,2) default 0,
   created_at      timestamptz default now()
 );
 
--- If the invoices table already existed before this column was added, run:
+-- If the invoices table already existed before these columns were added, run:
 -- alter table invoices add column if not exists date date;
+-- alter table invoices add column if not exists amount_paid numeric(10,2) default 0;
 
 -- PAYMENTS
 create table if not exists payments (
@@ -165,8 +173,106 @@ create table if not exists payments (
   amount             numeric(10,2) default 0,
   date               date default current_date,
   method             text default 'Bank Transfer',
+  invoice_id         text references invoices(id) on delete set null,
   created_at         timestamptz default now()
 );
+
+-- If the payments table already existed before this column was added, run:
+-- alter table payments add column if not exists invoice_id text references invoices(id) on delete set null;
+
+-- CREDIT NOTES — issued either against a specific invoice (Option A, reduces
+-- that invoice's balance immediately) or as a standalone account credit
+-- (Option B, linked_invoice_id is null) that sits on the account until
+-- applied to a future invoice.
+create table if not exists credit_notes (
+  id                text primary key default gen_random_uuid()::text,
+  credit_number     text unique not null,
+  customer_id       text references customers(id) on delete cascade,
+  amount            numeric(10,2) not null default 0,
+  reason            text,
+  date              date default current_date,
+  linked_ticket_id  text references support_tickets(id) on delete set null,
+  linked_invoice_id text references invoices(id) on delete set null,
+  status            text not null default 'Active' check (status in ('Active', 'Void')),
+  remaining_balance numeric(10,2) not null default 0,
+  created_at        timestamptz default now()
+);
+
+-- CREDIT NOTE ALLOCATIONS — an auditable record of each time some of a
+-- credit note's balance was applied against an invoice.
+create table if not exists credit_note_allocations (
+  id              text primary key default gen_random_uuid()::text,
+  credit_note_id  text references credit_notes(id) on delete cascade,
+  invoice_id      text references invoices(id) on delete cascade,
+  amount          numeric(10,2) not null default 0,
+  date            date default current_date,
+  created_at      timestamptz default now()
+);
+
+alter table credit_notes disable row level security;
+alter table credit_note_allocations disable row level security;
+
+-- CUSTOMER APPLICATIONS — public "Apply For An Account" submissions.
+-- These do NOT create a customer login; an admin must approve them first.
+create table if not exists customer_applications (
+  id                  text primary key default gen_random_uuid()::text,
+  company_name        text not null,
+  contact_name        text not null,
+  email               text not null,
+  phone               text,
+  registered_address  text,
+  status              text not null default 'Pending' check (status in ('Pending', 'Approved', 'Rejected')),
+  notes               text,
+  date                date default current_date,
+  created_at          timestamptz default now()
+);
+alter table customer_applications disable row level security;
+
+-- PRODUCE BUYING DESK — replaces the old client-side-only Daily Session.
+-- One buying_sessions row per calendar buying date; buying_prices holds
+-- every supplier quotation entered that day (confirmed = true once the
+-- order is placed with that supplier).
+create table if not exists buying_sessions (
+  id            text primary key default gen_random_uuid()::text,
+  date          date unique not null,
+  status        text not null default 'Open' check (status in ('Open', 'Closed')),
+  published_at  timestamptz,
+  created_at    timestamptz default now()
+);
+alter table buying_sessions disable row level security;
+
+create table if not exists buying_prices (
+  id          text primary key default gen_random_uuid()::text,
+  session_id  text references buying_sessions(id) on delete cascade,
+  date        date not null,
+  supplier    text not null,
+  product     text not null,
+  variety     text,
+  brand       text,
+  size        text,
+  unit        text,
+  price       numeric(10,2) not null default 0,
+  quantity    numeric(10,2) not null default 0,
+  notes       text,
+  confirmed   boolean not null default false,
+  created_at  timestamptz default now()
+);
+alter table buying_prices disable row level security;
+
+-- PAYMENT REMINDER NOTIFICATIONS — one row per send attempt (email now;
+-- whatsapp is stubbed until a WhatsApp Business/Twilio account is connected).
+create table if not exists notification_logs (
+  id             text primary key default gen_random_uuid()::text,
+  invoice_id     text references invoices(id) on delete cascade,
+  customer_id    text references customers(id) on delete cascade,
+  channel        text not null check (channel in ('email', 'whatsapp')),
+  status         text not null check (status in ('Sent', 'Failed', 'Scheduled')),
+  scheduled_for  timestamptz,
+  sent_at        timestamptz,
+  error          text,
+  created_at     timestamptz default now()
+);
+alter table notification_logs disable row level security;
 
 -- SUPPORT TICKETS
 create table if not exists support_tickets (
