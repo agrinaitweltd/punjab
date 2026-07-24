@@ -7,6 +7,7 @@ import { getCreditNotes, getCreditNoteAllocations, createCreditNote, updateCredi
 import { getCustomerApplications, createCustomerApplication, updateCustomerApplication } from '../services/customerApplicationService'
 import { getBuyingSessions, getOrCreateBuyingSession, updateBuyingSession, getBuyingPrices, createBuyingPrice, updateBuyingPrice, deleteBuyingPrice } from '../services/buyingDeskService'
 import { getNotificationLogs, createNotificationLog, updateNotificationLog } from '../services/notificationService'
+import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../services/supplierService'
 
 export { getActivity, getInvoices, getPayments, createInvoice, createPayment, updateInvoice, importStatementInvoices }
 export { getTickets, createTicket, updateTicketStatus }
@@ -16,6 +17,7 @@ export { getCreditNotes, getCreditNoteAllocations, createCreditNote, updateCredi
 export { getCustomerApplications, createCustomerApplication, updateCustomerApplication }
 export { getBuyingSessions, getOrCreateBuyingSession, updateBuyingSession, getBuyingPrices, createBuyingPrice, updateBuyingPrice, deleteBuyingPrice }
 export { getNotificationLogs, createNotificationLog, updateNotificationLog }
+export { getSuppliers, createSupplier, updateSupplier, deleteSupplier }
 
 export function createTicketForCustomer(subject: string, message: string, customerId: string) {
   return createTicket('customer', customerId, subject, message)

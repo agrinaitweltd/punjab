@@ -12,6 +12,7 @@ const STATUS_META: Record<StockItem['status'], { label: string; bg: string; colo
   out:       { label: 'Out of Stock', bg: '#fee2e2', color: '#b91c1c' },
 }
 const AV_COLORS = ['#22913f', '#f2790f', '#0ea5e9', '#8b5cf6', '#d93025']
+const PACKAGING_OPTIONS = ['Pallets', 'Bags', 'Boxes', 'Crates', 'Sacks', 'Trays', 'Bunches', 'Punnets', 'Loose (per kg)']
 
 export function StockPage({
   products, stock, onUpdateStock, onNavigate,
@@ -22,7 +23,7 @@ export function StockPage({
   onNavigate?: (key: string) => void
 }) {
   const [editingStock, setEditingStock] = useState<StockItem | null>(null)
-  const [editForm, setEditForm] = useState({ availableQuantity: 0, price: 0, status: 'available' as StockItem['status'] })
+  const [editForm, setEditForm] = useState({ availableQuantity: 0, price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
   const [query, setQuery] = useState('')
 
   const fresh = isStockFresh(stock)
@@ -47,7 +48,7 @@ export function StockPage({
 
   const handleEdit = (item: StockItem) => {
     setEditingStock(item)
-    setEditForm({ availableQuantity: item.availableQuantity, price: item.price, status: item.status })
+    setEditForm({ availableQuantity: item.availableQuantity, price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0] })
   }
 
   const handleSave = async () => {
@@ -56,6 +57,7 @@ export function StockPage({
       availableQuantity: editForm.availableQuantity,
       price: editForm.price,
       status: editForm.status,
+      packaging: editForm.packaging,
     })
     setEditingStock(null)
   }
@@ -90,11 +92,11 @@ export function StockPage({
         </span>
         <div className="stk-banner-body">
           {fresh
-            ? <><strong>Synced with today's session.</strong> {counts.today} line{counts.today !== 1 ? 's' : ''} updated {updatedAt ? `at ${formatLondonTime(updatedAt)}` : 'today'} — live until {formatWallWeekday(nextCycleStart())} 06:00 UK time.</>
-            : <><strong>No session published today.</strong> Start the daily session to set today's produce, quantities and prices.</>}
+            ? <><strong>Synced with today's buying prices.</strong> {counts.today} line{counts.today !== 1 ? 's' : ''} updated {updatedAt ? `at ${formatLondonTime(updatedAt)}` : 'today'} — live until {formatWallWeekday(nextCycleStart())} 06:00 UK time.</>
+            : <><strong>Today's prices haven't been published yet.</strong> Use the Buying Desk to set today's produce, quantities and prices.</>}
         </div>
         <button className="stk-banner-btn" onClick={() => onNavigate?.('session')}>
-          {fresh ? 'Review Session' : 'Start Daily Session'}
+          {fresh ? 'Review Buying Desk' : 'Go to Buying Desk'}
         </button>
       </div>
 
@@ -140,7 +142,7 @@ export function StockPage({
                         </div>
                       </div>
                     </td>
-                    <td style={{ color: '#6b7280', fontSize: 13 }}>{product?.size || '—'}</td>
+                    <td style={{ color: '#6b7280', fontSize: 13 }}>{item.packaging || '—'}</td>
                     <td>
                       <div className="stk-qty">
                         <button className="stk-step" title="Remove 10" onClick={() => handleQuickUpdate(item.id, -10)}>−10</button>
@@ -167,7 +169,7 @@ export function StockPage({
             <div style={{ padding: '42px 24px', textAlign: 'center', color: '#9ca3af' }}>
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
               <div style={{ fontWeight: 600, marginBottom: 4, color: '#374151' }}>{stock.length === 0 ? 'No stock lines yet' : 'Nothing matches your search'}</div>
-              <div style={{ fontSize: 13 }}>{stock.length === 0 ? 'Run the Daily Session to publish today\'s produce, or add products first.' : 'Try a different search term.'}</div>
+              <div style={{ fontSize: 13 }}>{stock.length === 0 ? 'Add products, then confirm and end daily buying to bring them here.' : 'Try a different search term.'}</div>
             </div>
           )}
         </div>
@@ -175,9 +177,15 @@ export function StockPage({
 
       <Modal open={Boolean(editingStock)} title="Edit Stock Line" onClose={() => setEditingStock(null)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-control">
+            <span>Packaging</span>
+            <select value={editForm.packaging} onChange={(e) => setEditForm({ ...editForm, packaging: e.target.value })}>
+              {PACKAGING_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
           <Input label="Available Quantity" type="number" min="0" value={editForm.availableQuantity}
             onChange={(e) => setEditForm({ ...editForm, availableQuantity: Number(e.target.value) })} />
-          <Input label="Price (£ per unit)" type="number" step="0.01" min="0" value={editForm.price}
+          <Input label="Selling Price (£ per unit)" type="number" step="0.01" min="0" value={editForm.price}
             onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })} />
           <div className="form-control">
             <span>Status</span>

@@ -41,8 +41,8 @@ const PRODUCE: Record<string, Record<string, string[]>> = {
   },
 }
 
-type CatalogItem = { name: string; group: string; category: string; size: string }
-const CATALOG: CatalogItem[] = Object.entries(PRODUCE).flatMap(([category, groups]) =>
+export type CatalogItem = { name: string; group: string; category: string; size: string }
+export const CATALOG: CatalogItem[] = Object.entries(PRODUCE).flatMap(([category, groups]) =>
   Object.entries(groups).flatMap(([group, names]) =>
     names.map(name => ({ name, group, category, size: "box" }))))
 
@@ -50,8 +50,8 @@ const CATALOG: CatalogItem[] = Object.entries(PRODUCE).flatMap(([category, group
     for its product/supplier-quotation autocomplete. */
 export const PRODUCE_CATALOG_NAMES = [...new Set(CATALOG.map(c => c.name))].sort()
 
-const CATEGORIES = Object.keys(PRODUCE)
-const CAT_COLORS: Record<string, string> = {
+export const CATEGORIES = Object.keys(PRODUCE)
+export const CAT_COLORS: Record<string, string> = {
   Fruits: "#e05c2a", Vegetables: "#22913f", "Peppers & Chillies": "#d93025",
   Herbs: "#0ea5e9", "Other Produce": "#b8860b",
 }

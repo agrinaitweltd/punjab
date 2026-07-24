@@ -1,13 +1,11 @@
 import { useMemo, useState } from "react"
-import type { BuyingPrice, BuyingSession } from "../../types"
+import type { BuyingPrice, BuyingSession, Product, Supplier } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
-import { Input, Select, TextArea } from "../../components/ui/Input"
-import { PRODUCE_CATALOG_NAMES } from "./SessionPage"
+import { Input, Select } from "../../components/ui/Input"
+import { CAT_COLORS, type CatalogItem } from "./SessionPage"
 
-type Tab = "current" | "best" | "confirmed" | "history" | "analytics"
-
-const DEFAULT_SUPPLIERS = ["Birmingham Wholesale Market", "New Spitalfields Market", "Western International Market"]
+type Tab = "current" | "best" | "confirmed" | "history" | "analytics" | "suppliers"
 
 function todayIso() { return new Date().toISOString().slice(0, 10) }
 
@@ -38,21 +36,28 @@ function PriceLine({ points, color = "#1f7a3a", empty }: { points: number[]; col
 }
 
 export function BuyingDeskPage({
-  sessions, prices, suppliers = DEFAULT_SUPPLIERS, canEdit = true,
-  onStartSession, onAddPrice, onUpdatePrice, onDeletePrice, onConfirm, onEndDailyBuying, onPublish,
+  sessions, prices, products, suppliers, canEdit = true,
+  onStartSession, onAddPrice, onUpdatePrice, onDeletePrice, onConfirm, onEndDailyBuying, onCreateSupplier,
 }: {
   sessions: BuyingSession[]
   prices: BuyingPrice[]
-  suppliers?: string[]
-  /** Gates Add/Edit/Delete/Confirm/Publish — history & analytics stay viewable to everyone. */
+  /** Products already created in the Products section — the Buying Desk only
+      lets admins quote/confirm prices for produce that exists there already,
+      it doesn't create new products itself. */
+  products: Product[]
+  suppliers: Supplier[]
+  /** Gates Add/Edit/Delete/Confirm/End — history & analytics stay viewable to everyone. */
   canEdit?: boolean
   onStartSession: (date: string) => Promise<void>
   onAddPrice: (input: Omit<BuyingPrice, "id" | "confirmed">) => Promise<void>
   onUpdatePrice: (id: string, input: Partial<BuyingPrice>) => Promise<void>
   onDeletePrice: (id: string) => Promise<void>
   onConfirm: (price: BuyingPrice) => Promise<void>
+  /** Moves confirmed items into Stock (hidden, qty 0) and navigates the admin
+      to the Stock section, where quantity & selling price are set before it
+      goes live — the Buying Desk itself no longer asks for those. */
   onEndDailyBuying: (session: BuyingSession, confirmedPrices: BuyingPrice[]) => Promise<void>
-  onPublish: (session: BuyingSession, sellingPrices: Record<string, number>) => Promise<void>
+  onCreateSupplier: (input: Omit<Supplier, "id">) => Promise<void>
 }) {
   const [tab, setTab] = useState<Tab>("current")
   const [date, setDate] = useState(todayIso())
@@ -61,13 +66,54 @@ export function BuyingDeskPage({
 
   const session = sessions.find(s => s.date === date) ?? null
   const sessionPrices = useMemo(() => prices.filter(p => p.date === date), [prices, date])
-  const unconfirmed = sessionPrices.filter(p => !p.confirmed)
+  const unconfirmed = useMemo(() => [...sessionPrices.filter(p => !p.confirmed)].sort((a, b) => a.product.localeCompare(b.product)), [sessionPrices])
   const confirmed = sessionPrices.filter(p => p.confirmed)
 
-  // ── Add Price modal ──
+  // ── Add Prices — browse & select products already created in the Products
+  // section, then set supplier & price for each (Buying Desk records price
+  // quotations only — quantity & selling price are set later in Stock).
+  type DraftItem = CatalogItem & { supplier: string; brand: string; price: string; notes: string }
+  const productCatalog: CatalogItem[] = useMemo(() => products.map(p => ({
+    name: p.productName, group: p.variety || p.category || "Other", category: p.category || "Other", size: p.size,
+  })), [products])
+  const productCategories = useMemo(() => [...new Set(productCatalog.map(c => c.category))].sort(), [productCatalog])
+
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ supplier: suppliers[0] ?? "", product: "", variety: "", brand: "", size: "", unit: "box", price: "", quantity: "", notes: "" })
+  const [addStep, setAddStep] = useState<"select" | "details">("select")
+  const [addSearch, setAddSearch] = useState("")
+  const [addCat, setAddCat] = useState<string>("")
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([])
   const [addError, setAddError] = useState("")
+
+  const [showAddSupplier, setShowAddSupplier] = useState(false)
+  const [supplierForm, setSupplierForm] = useState({ name: "", contact: "", country: "" })
+  const [supplierError, setSupplierError] = useState("")
+  const [supplierBusy, setSupplierBusy] = useState(false)
+
+  const openAdd = () => {
+    setDraftItems([]); setAddSearch(""); setAddCat(productCategories[0] ?? ""); setAddStep("select"); setAddError(""); setShowAdd(true)
+  }
+
+  const q = addSearch.trim().toLowerCase()
+  const visibleCatalog = useMemo(() => {
+    if (q) return productCatalog.filter(c => `${c.name} ${c.group} ${c.category}`.toLowerCase().includes(q))
+    return productCatalog.filter(c => c.category === addCat)
+  }, [q, addCat, productCatalog])
+  const visibleGroups = useMemo(() => {
+    const map = new Map<string, CatalogItem[]>()
+    for (const c of visibleCatalog) { if (!map.has(c.group)) map.set(c.group, []); map.get(c.group)!.push(c) }
+    return [...map.entries()]
+  }, [visibleCatalog])
+
+  const isSelected = (name: string, group: string) => draftItems.some(i => i.name === name && i.group === group)
+  const toggleItem = (c: CatalogItem) => {
+    setDraftItems(prev => isSelected(c.name, c.group)
+      ? prev.filter(i => !(i.name === c.name && i.group === c.group))
+      : [...prev, { ...c, supplier: suppliers[0]?.name ?? "", brand: "", price: "", notes: "" }])
+  }
+  const countInCat = (cat: string) => draftItems.filter(i => i.category === cat).length
+  const setDraft = (name: string, group: string, patch: Partial<DraftItem>) =>
+    setDraftItems(prev => prev.map(i => i.name === name && i.group === group ? { ...i, ...patch } : i))
 
   const startSession = async () => {
     setBusy(true); setStartError("")
@@ -78,23 +124,34 @@ export function BuyingDeskPage({
 
   const submitAdd = async () => {
     setAddError("")
-    if (!form.supplier.trim()) { setAddError("Enter a supplier."); return }
-    if (!form.product.trim()) { setAddError("Enter a product."); return }
-    const price = parseFloat(form.price)
-    const quantity = parseFloat(form.quantity)
-    if (!price || price <= 0) { setAddError("Enter a valid price."); return }
-    if (!quantity || quantity <= 0) { setAddError("Enter a valid quantity."); return }
+    if (draftItems.length === 0) { setAddError("Select at least one product."); return }
+    for (const item of draftItems) {
+      if (!item.supplier.trim()) { setAddError(`Choose a supplier for ${item.name}.`); return }
+      if (!(Number(item.price) > 0)) { setAddError(`Enter a valid price for ${item.name}.`); return }
+    }
     setBusy(true)
     try {
-      await onAddPrice({
-        sessionId: session?.id ?? "", date, supplier: form.supplier.trim(), product: form.product.trim(),
-        variety: form.variety.trim(), brand: form.brand.trim(), size: form.size.trim(), unit: form.unit.trim(),
-        price, quantity, notes: form.notes.trim() || undefined,
-      })
-      setForm({ supplier: suppliers[0] ?? "", product: "", variety: "", brand: "", size: "", unit: "box", price: "", quantity: "", notes: "" })
+      for (const item of draftItems) {
+        await onAddPrice({
+          sessionId: session?.id ?? "", date, supplier: item.supplier.trim(), product: item.name,
+          brand: item.brand.trim(), size: item.size, price: Number(item.price), notes: item.notes.trim() || undefined,
+        })
+      }
       setShowAdd(false)
-    } catch { setAddError("Couldn't save this price — please try again.") }
+    } catch { setAddError("Couldn't save these prices — please try again.") }
     setBusy(false)
+  }
+
+  const submitAddSupplier = async () => {
+    setSupplierError("")
+    if (!supplierForm.name.trim()) { setSupplierError("Enter a supplier name."); return }
+    setSupplierBusy(true)
+    try {
+      await onCreateSupplier({ name: supplierForm.name.trim(), contact: supplierForm.contact.trim(), country: supplierForm.country.trim() })
+      setSupplierForm({ name: "", contact: "", country: "" })
+      setShowAddSupplier(false)
+    } catch { setSupplierError("Couldn't add this supplier — please try again.") }
+    setSupplierBusy(false)
   }
 
   // ── Best Prices ──
@@ -114,51 +171,34 @@ export function BuyingDeskPage({
   }, [sessionPrices])
 
   // ── Confirmed Orders ──
+  const [confirmedQuery, setConfirmedQuery] = useState("")
+  const filteredConfirmed = useMemo(() => {
+    const cq = confirmedQuery.trim().toLowerCase()
+    return confirmed.filter(p => !cq || `${p.supplier} ${p.product}`.toLowerCase().includes(cq))
+      .sort((a, b) => a.product.localeCompare(b.product))
+  }, [confirmed, confirmedQuery])
   const bySupplier = useMemo(() => {
     const map = new Map<string, BuyingPrice[]>()
-    for (const p of confirmed) {
+    for (const p of filteredConfirmed) {
       if (!map.has(p.supplier)) map.set(p.supplier, [])
       map.get(p.supplier)!.push(p)
     }
-    return [...map.entries()]
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmed])
-  const grandTotal = confirmed.reduce((s, p) => s + p.price * p.quantity, 0)
-
-  const [publishing, setPublishing] = useState(false)
-  const [sellingPrices, setSellingPrices] = useState<Record<string, string>>({})
-
-  const beginPublishing = () => {
-    const next: Record<string, string> = {}
-    for (const p of confirmed) next[p.id] = (p.price * 1.3).toFixed(2)
-    setSellingPrices(next)
-    setPublishing(true)
-  }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [filteredConfirmed])
 
   const endDailyBuying = async () => {
     if (!session) return
-    if (!window.confirm(`End daily buying for ${date}? This moves ${confirmed.length} confirmed item${confirmed.length !== 1 ? "s" : ""} into Stock (not yet visible to customers).`)) return
+    if (!window.confirm(`End daily buying for ${date}? This moves ${confirmed.length} confirmed item${confirmed.length !== 1 ? "s" : ""} into Stock — you'll set quantity and selling price there before it goes live.`)) return
     setBusy(true)
-    try { await onEndDailyBuying(session, confirmed); beginPublishing() } finally { setBusy(false) }
-  }
-
-  const submitPublish = async () => {
-    if (!session) return
-    setBusy(true)
-    try {
-      const map: Record<string, number> = {}
-      for (const p of confirmed) map[p.id] = parseFloat(sellingPrices[p.id]) || 0
-      await onPublish(session, map)
-      setPublishing(false)
-    } finally { setBusy(false) }
+    try { await onEndDailyBuying(session, confirmed) } finally { setBusy(false) }
   }
 
   // ── Buying History ──
   const [historyQuery, setHistoryQuery] = useState("")
   const filteredHistory = useMemo(() => {
-    const q = historyQuery.trim().toLowerCase()
-    return prices.filter(p => !q || `${p.date} ${p.supplier} ${p.product}`.toLowerCase().includes(q))
-      .sort((a, b) => b.date.localeCompare(a.date))
+    const hq = historyQuery.trim().toLowerCase()
+    return prices.filter(p => !hq || `${p.supplier} ${p.product}`.toLowerCase().includes(hq))
+      .sort((a, b) => a.product.localeCompare(b.product) || b.date.localeCompare(a.date))
   }, [prices, historyQuery])
 
   // ── Buying Analytics ──
@@ -183,13 +223,23 @@ export function BuyingDeskPage({
     const avg = allPrices.reduce((s, v) => s + v, 0) / allPrices.length
     const highest = Math.max(...allPrices)
     const lowest = Math.min(...allPrices)
-    const totalSpend = analyticsRows.filter(r => r.confirmed).reduce((s, r) => s + r.price * r.quantity, 0)
     const pctChange = series.length >= 2 ? ((series[series.length - 1] - series[0]) / series[0]) * 100 : 0
-    return { series, avg, highest, lowest, totalSpend, pctChange }
+    return { series, avg, highest, lowest, pctChange }
   }, [analyticsRows])
 
   const allSuppliers = useMemo(() => [...new Set(prices.map(p => p.supplier))].sort(), [prices])
   const allProducts = useMemo(() => [...new Set(prices.map(p => p.product))].sort(), [prices])
+
+  // ── Supplier Analytics ──
+  const supplierStats = useMemo(() => {
+    return suppliers.map(sup => {
+      const rows = prices.filter(p => p.supplier === sup.name)
+      const confirmedRows = rows.filter(p => p.confirmed)
+      const avg = rows.length ? rows.reduce((s, r) => s + r.price, 0) / rows.length : 0
+      const bestWins = bestByProduct.filter(b => b.best.supplier === sup.name).length
+      return { supplier: sup, quotes: rows.length, confirmed: confirmedRows.length, avgPrice: avg, bestWins }
+    }).sort((a, b) => a.supplier.name.localeCompare(b.supplier.name))
+  }, [suppliers, prices, bestByProduct])
 
   return (
     <div className="stack">
@@ -198,7 +248,7 @@ export function BuyingDeskPage({
           <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Produce Buying Desk</h2>
           <p style={{ fontSize: 13.5, color: "#6b7a70", marginTop: 3 }}>
-            Record supplier quotations each morning, confirm orders, then publish today's prices to customers.
+            Record supplier quotations each morning, confirm orders, then set quantity &amp; selling price in Stock.
           </p>
         </div>
         <label className="form-control" style={{ marginBottom: 0 }}>
@@ -219,7 +269,7 @@ export function BuyingDeskPage({
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {([
               ["current", "Current Buying Prices"], ["best", "Best Prices"], ["confirmed", "Confirmed Orders"],
-              ["history", "Buying History"], ["analytics", "Buying Analytics"],
+              ["history", "Buying History"], ["analytics", "Buying Analytics"], ["suppliers", "Supplier Analytics"],
             ] as [Tab, string][]).map(([key, label]) => (
               <button key={key} type="button" onClick={() => setTab(key)}
                 style={{ padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: tab === key ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: tab === key ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: tab === key ? "#14532d" : "#374151" }}>
@@ -237,38 +287,30 @@ export function BuyingDeskPage({
                 </div>
                 {canEdit && (
                   <div className="ps-toolbar-right">
-                    <Button className="btn-sm" onClick={() => setShowAdd(true)}>+ Add Price</Button>
+                    <Button variant="secondary" className="btn-sm" onClick={() => setShowAddSupplier(true)}>+ Add Supplier</Button>
+                    <Button className="btn-sm" onClick={openAdd}>+ Add Price</Button>
                   </div>
                 )}
               </div>
               <div className="ps-table-wrap">
                 <table className="ps-table">
                   <thead><tr>
-                    <th>Supplier</th><th>Product</th><th>Variety</th><th>Brand</th><th>Size</th><th>Unit</th>
-                    <th>Price</th><th>Qty</th><th>Notes</th><th>Actions</th>
+                    <th>Product</th><th>Supplier</th><th>Brand</th><th>Size</th>
+                    <th>Price</th><th>Notes</th><th>Actions</th>
                   </tr></thead>
                   <tbody>
-                    {[...unconfirmed].sort((a, b) => a.product.localeCompare(b.product)).map(p => (
+                    {unconfirmed.map(p => (
                       <tr key={p.id} className="ps-row">
-                        <td>{p.supplier}</td>
                         <td><strong>{p.product}</strong></td>
-                        <td>{p.variety || "—"}</td>
+                        <td>{p.supplier}</td>
                         <td>{p.brand || "—"}</td>
                         <td>{p.size || "—"}</td>
-                        <td>{p.unit || "—"}</td>
                         <td>
                           {canEdit ? (
                             <input type="number" min="0.01" step="0.01" defaultValue={p.price}
                               style={{ width: 80 }}
                               onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && v !== p.price) onUpdatePrice(p.id, { price: v }) }} />
                           ) : `£${p.price.toFixed(2)}`}
-                        </td>
-                        <td>
-                          {canEdit ? (
-                            <input type="number" min="1" defaultValue={p.quantity}
-                              style={{ width: 70 }}
-                              onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && v !== p.quantity) onUpdatePrice(p.id, { quantity: v }) }} />
-                          ) : p.quantity}
                         </td>
                         <td style={{ color: "#6b7280" }}>{p.notes || "—"}</td>
                         <td>
@@ -324,21 +366,27 @@ export function BuyingDeskPage({
               <div className="ps-stats-row">
                 <div className="ps-stat"><p className="ps-stat-label">Confirmed Items</p><p className="ps-stat-value">{confirmed.length}</p></div>
                 <div className="ps-stat"><p className="ps-stat-label">Suppliers</p><p className="ps-stat-value">{bySupplier.length}</p></div>
-                <div className="ps-stat"><p className="ps-stat-label">Total Spend</p><p className="ps-stat-value">£{grandTotal.toFixed(2)}</p></div>
+              </div>
+              <div className="ps-toolbar" style={{ background: "none", border: "none", padding: 0 }}>
+                <div className="ps-toolbar-right">
+                  <div className="ps-search-wrap">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input className="ps-search" placeholder="Search supplier or product…" value={confirmedQuery} onChange={e => setConfirmedQuery(e.target.value)} />
+                  </div>
+                </div>
               </div>
               {bySupplier.map(([supplier, rows]) => (
                 <div key={supplier} className="ps-table-card">
                   <div style={{ padding: "12px 16px", borderBottom: "1px solid #eaecf0", fontWeight: 700 }}>{supplier}</div>
                   <div className="ps-table-wrap">
                     <table className="ps-table">
-                      <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead>
+                      <thead><tr><th>Product</th><th>Brand</th><th>Price</th></tr></thead>
                       <tbody>
                         {rows.map(r => (
                           <tr key={r.id} className="ps-row">
-                            <td>{r.product}{r.variety ? ` — ${r.variety}` : ""}</td>
-                            <td>£{r.price.toFixed(2)}</td>
-                            <td>{r.quantity}</td>
-                            <td><strong>£{(r.price * r.quantity).toFixed(2)}</strong></td>
+                            <td>{r.product}</td>
+                            <td>{r.brand || "—"}</td>
+                            <td><strong>£{r.price.toFixed(2)}</strong></td>
                           </tr>
                         ))}
                       </tbody>
@@ -353,35 +401,12 @@ export function BuyingDeskPage({
               )}
               {canEdit && confirmed.length > 0 && session.status === "Open" && (
                 <div className="actions-row">
-                  <Button onClick={endDailyBuying} disabled={busy}>{busy ? "Ending…" : "End Daily Buying"}</Button>
+                  <Button onClick={endDailyBuying} disabled={busy}>{busy ? "Ending…" : "End Daily Buying → Go to Stock"}</Button>
                 </div>
               )}
-              {canEdit && session.status === "Closed" && !session.publishedAt && (
-                <div className="ps-table-card" style={{ padding: 16 }}>
-                  <p style={{ fontWeight: 700, marginBottom: 10 }}>Set today's selling prices before publishing</p>
-                  {!publishing ? (
-                    <Button onClick={beginPublishing}>Review &amp; Publish Prices</Button>
-                  ) : (
-                    <>
-                      <div className="ss-rows">
-                        {confirmed.map(p => (
-                          <div key={p.id} className="ss-row" style={{ gridTemplateColumns: "1fr 120px" }}>
-                            <div className="ss-row-name">{p.product}<small>buy £{p.price.toFixed(2)} · {p.supplier}</small></div>
-                            <input type="number" min="0.01" step="0.01" value={sellingPrices[p.id] ?? ""} onChange={e => setSellingPrices(prev => ({ ...prev, [p.id]: e.target.value }))} />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="actions-row" style={{ marginTop: 14 }}>
-                        <Button onClick={submitPublish} disabled={busy}>{busy ? "Publishing…" : "Publish Today's Prices"}</Button>
-                        <Button variant="secondary" onClick={() => setPublishing(false)}>Cancel</Button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              {session.publishedAt && (
+              {session.status === "Closed" && (
                 <div className="ps-table-card" style={{ padding: 16, textAlign: "center", color: "#15803d", fontWeight: 700 }}>
-                  Published — live on the Stock page for customers.
+                  Moved to Stock — set quantity and selling price there before it goes live to customers.
                 </div>
               )}
             </div>
@@ -394,21 +419,20 @@ export function BuyingDeskPage({
                 <div className="ps-toolbar-right">
                   <div className="ps-search-wrap">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input className="ps-search" placeholder="Search date, supplier, product…" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} />
+                    <input className="ps-search" placeholder="Search supplier or product…" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} />
                   </div>
                 </div>
               </div>
               <div className="ps-table-wrap">
                 <table className="ps-table">
-                  <thead><tr><th>Date</th><th>Supplier</th><th>Product</th><th>Price</th><th>Qty</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Product</th><th>Date</th><th>Supplier</th><th>Price</th><th>Status</th></tr></thead>
                   <tbody>
                     {filteredHistory.slice(0, 200).map(p => (
                       <tr key={p.id} className="ps-row">
+                        <td><strong>{p.product}</strong></td>
                         <td style={{ color: "#6b7280" }}>{p.date}</td>
                         <td>{p.supplier}</td>
-                        <td>{p.product}</td>
                         <td>£{p.price.toFixed(2)}</td>
-                        <td>{p.quantity}</td>
                         <td>
                           <span className="ps-badge" style={p.confirmed ? { background: "#dcfce7", color: "#15803d" } : { background: "#fef9c3", color: "#a16207" }}>
                             {p.confirmed ? "Confirmed" : "Quoted"}
@@ -449,7 +473,6 @@ export function BuyingDeskPage({
                     <div className="ps-stat"><p className="ps-stat-label">Average Price</p><p className="ps-stat-value">£{analyticsStats.avg.toFixed(2)}</p></div>
                     <div className="ps-stat"><p className="ps-stat-label">Highest</p><p className="ps-stat-value">£{analyticsStats.highest.toFixed(2)}</p></div>
                     <div className="ps-stat"><p className="ps-stat-label">Lowest</p><p className="ps-stat-value">£{analyticsStats.lowest.toFixed(2)}</p></div>
-                    <div className="ps-stat"><p className="ps-stat-label">Total Spend (confirmed)</p><p className="ps-stat-value">£{analyticsStats.totalSpend.toFixed(2)}</p></div>
                   </div>
                   <div className="ps-table-card" style={{ padding: 16 }}>
                     <p style={{ fontSize: 12.5, fontWeight: 700, color: "#6b7280", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
@@ -469,33 +492,139 @@ export function BuyingDeskPage({
               )}
             </div>
           )}
+
+          {/* ── Supplier Analytics ── */}
+          {tab === "suppliers" && (
+            <div className="ps-table-card">
+              <div className="ps-table-wrap">
+                <table className="ps-table">
+                  <thead><tr><th>Supplier</th><th>Country</th><th>Contact</th><th>Quotes</th><th>Confirmed</th><th>Avg Price</th><th>Best-Price Wins</th></tr></thead>
+                  <tbody>
+                    {supplierStats.map(s => (
+                      <tr key={s.supplier.id} className="ps-row">
+                        <td><strong>{s.supplier.name}</strong></td>
+                        <td>{s.supplier.country || "—"}</td>
+                        <td>{s.supplier.contact || "—"}</td>
+                        <td>{s.quotes}</td>
+                        <td>{s.confirmed}</td>
+                        <td>{s.quotes ? `£${s.avgPrice.toFixed(2)}` : "—"}</td>
+                        <td>{s.bestWins}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {supplierStats.length === 0 && (
+                  <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
+                    No suppliers yet — add one from the Current Buying Prices tab.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
 
-      {/* Add Price modal */}
-      <Modal open={showAdd} title="Add Price" onClose={() => setShowAdd(false)}>
+      {/* Add Prices modal — browse & select from existing Products, then set supplier & price */}
+      <Modal open={showAdd} title="Add Prices" onClose={() => setShowAdd(false)} wide>
+        {productCatalog.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
+            No products yet — add produce in the <strong>Products</strong> section first, then come back here to record buying prices for it.
+          </div>
+        ) : addStep === "select" ? (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700 }}>Select today's produce <span style={{ color: "#6b7280", fontWeight: 500 }}>({draftItems.length} selected)</span></h3>
+              <div className="ps-search-wrap" style={{ maxWidth: 260 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input className="ps-search" placeholder="Search produce…" value={addSearch} onChange={e => setAddSearch(e.target.value)} />
+              </div>
+            </div>
+            {!q && (
+              <div className="ss-cats">
+                {productCategories.map(cat => (
+                  <button key={cat} type="button" className={"ss-cat" + (addCat === cat ? " on" : "")} onClick={() => setAddCat(cat)}
+                    style={addCat === cat ? { borderColor: CAT_COLORS[cat] ?? "#1f7a3a", color: CAT_COLORS[cat] ?? "#1f7a3a" } : undefined}>
+                    <span className="ss-cat-dot" style={{ background: CAT_COLORS[cat] ?? "#22913f" }} />
+                    {cat}
+                    {countInCat(cat) > 0 && <span className="ss-cat-count">{countInCat(cat)}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="ss-scroll">
+              {visibleGroups.map(([group, groupItems]) => (
+                <div key={group}>
+                  <p className="ss-group-title">{group} <span>({groupItems.length})</span></p>
+                  <div className="ss-grid">
+                    {groupItems.map((c, ci) => (
+                      <button key={c.group + c.name} type="button" className={"ss-item" + (isSelected(c.name, c.group) ? " sel" : "")} style={{ animationDelay: `${Math.min(ci, 14) * 0.02}s` }} onClick={() => toggleItem(c)}>
+                        <span className="ss-item-av" style={{ background: CAT_COLORS[c.category] ?? "#22913f" }}>{c.name.slice(0, 2).toUpperCase()}</span>
+                        <span style={{ minWidth: 0 }}>
+                          <span className="ss-item-name">{c.name}</span>
+                          <span className="ss-item-meta">{c.group}</span>
+                        </span>
+                        {isSelected(c.name, c.group) && (
+                          <span className="ss-item-check">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {visibleCatalog.length === 0 && <div className="db-empty">No produce matches "{addSearch}".</div>}
+            </div>
+            {addError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 10 }}>{addError}</p>}
+            <div className="ss-foot">
+              <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+              <Button onClick={() => { if (draftItems.length === 0) { setAddError("Select at least one product."); return } setAddError(""); setAddStep("details") }} disabled={draftItems.length === 0}>
+                Next: Supplier &amp; Price ({draftItems.length}) →
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Who's it from, and how much?</h3>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 14 }}>Set the supplier, brand and price for each item.</p>
+            {suppliers.length === 0 && (
+              <p style={{ fontSize: 12.5, color: "#a16207", background: "#fef9c3", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+                No suppliers yet — close this and use "+ Add Supplier" first.
+              </p>
+            )}
+            <div className="ss-rows">
+              {draftItems.map(i => (
+                <div key={i.group + i.name} className="ss-row">
+                  <div className="ss-row-name">{i.name}<small>{i.group} · {i.category}</small></div>
+                  <select value={i.supplier} title="Supplier" onChange={e => setDraft(i.name, i.group, { supplier: e.target.value })}>
+                    {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
+                  <input placeholder="Brand" value={i.brand} title="Brand"
+                    onChange={e => setDraft(i.name, i.group, { brand: e.target.value })} />
+                  <input type="number" min="0.01" step="0.01" placeholder="Price £" value={i.price}
+                    onChange={e => setDraft(i.name, i.group, { price: e.target.value })} />
+                </div>
+              ))}
+            </div>
+            {addError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 12 }}>{addError}</p>}
+            <div className="ss-foot">
+              <Button variant="secondary" onClick={() => setAddStep("select")}>← Back</Button>
+              <Button onClick={submitAdd} disabled={busy}>{busy ? "Saving…" : `Save ${draftItems.length} Price${draftItems.length !== 1 ? "s" : ""}`}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Add Supplier modal */}
+      <Modal open={showAddSupplier} title="Add Supplier" onClose={() => setShowAddSupplier(false)}>
         <div className="form-grid">
-          <label className="form-control">
-            <span>Supplier</span>
-            <input list="bd-suppliers" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} />
-            <datalist id="bd-suppliers">{suppliers.map(s => <option key={s} value={s} />)}</datalist>
-          </label>
-          <label className="form-control">
-            <span>Product</span>
-            <input list="bd-products" value={form.product} onChange={e => setForm({ ...form, product: e.target.value })} />
-            <datalist id="bd-products">{PRODUCE_CATALOG_NAMES.map(n => <option key={n} value={n} />)}</datalist>
-          </label>
-          <Input label="Variety" value={form.variety} onChange={e => setForm({ ...form, variety: e.target.value })} />
-          <Input label="Brand" value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} />
-          <Input label="Size" value={form.size} onChange={e => setForm({ ...form, size: e.target.value })} placeholder="e.g. 5kg" />
-          <Input label="Unit" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} placeholder="e.g. box" />
-          <Input label="Price (£)" type="number" min="0.01" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
-          <Input label="Quantity" type="number" min="1" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} />
-          <div className="wide"><TextArea label="Notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
-          {addError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{addError}</p>}
+          <div className="wide"><Input label="Supplier Name" value={supplierForm.name} onChange={e => setSupplierForm({ ...supplierForm, name: e.target.value })} required autoFocus /></div>
+          <Input label="Contact (phone or email)" value={supplierForm.contact} onChange={e => setSupplierForm({ ...supplierForm, contact: e.target.value })} />
+          <Input label="Country" value={supplierForm.country} onChange={e => setSupplierForm({ ...supplierForm, country: e.target.value })} />
+          {supplierError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{supplierError}</p>}
           <div className="wide actions-row">
-            <Button onClick={submitAdd} disabled={busy}>{busy ? "Saving…" : "Save Price"}</Button>
-            <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button onClick={submitAddSupplier} disabled={supplierBusy}>{supplierBusy ? "Adding…" : "Add Supplier"}</Button>
+            <Button variant="secondary" onClick={() => setShowAddSupplier(false)}>Cancel</Button>
           </div>
         </div>
       </Modal>

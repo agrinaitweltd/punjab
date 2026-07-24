@@ -93,6 +93,9 @@ export interface StockItem {
   price: number
   lastUpdated: string
   status: 'available' | 'low' | 'out'
+  /** How it's packaged — pallets, bags, boxes, etc. — set when an admin
+      publishes quantity & selling price for the first time. */
+  packaging?: string
 }
 
 export type OrderStatus =
@@ -204,14 +207,18 @@ export interface BuyingPrice {
   date: string
   supplier: string
   product: string
-  variety: string
   brand: string
   size: string
-  unit: string
   price: number
-  quantity: number
   notes?: string
   confirmed: boolean
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  contact: string
+  country: string
 }
 
 export interface NotificationLog {

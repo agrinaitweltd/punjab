@@ -279,7 +279,7 @@ export function DashboardHome({
           )}
         </div>
         <button className="stk-banner-btn" onClick={() => onNavigate?.(stockFresh ? "stock" : "session")}>
-          {stockFresh ? "Review Stock" : "Start Daily Session"}
+          {stockFresh ? "Review Stock" : "Go to Buying Desk"}
         </button>
       </div>
 

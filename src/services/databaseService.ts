@@ -1,7 +1,7 @@
 ﻿import { supabase as _sb } from "../lib/supabase"
 import type {
   ActivityLog, AdminRole, AdminStaff, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication, DeliveryArea,
-  Invoice, NotificationLog, Order, Payment, Product, StockItem, SupportTicket,
+  Invoice, NotificationLog, Order, Payment, Product, StockItem, Supplier, SupportTicket,
 } from "../types"
 
 function genId(prefix: string) { return `${prefix}-${Date.now()}` }
@@ -38,6 +38,7 @@ function mapStock(r: any): StockItem {
   return {
     id: r.id, productId: r.product_id, availableQuantity: r.available_quantity ?? 0,
     price: r.price ?? 0, lastUpdated: r.last_updated ?? "", status: r.status ?? "available",
+    packaging: r.packaging ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,9 +88,13 @@ function mapBuyingSession(r: any): BuyingSession {
 function mapBuyingPrice(r: any): BuyingPrice {
   return {
     id: r.id, sessionId: r.session_id, date: r.date, supplier: r.supplier, product: r.product,
-    variety: r.variety ?? "", brand: r.brand ?? "", size: r.size ?? "", unit: r.unit ?? "",
-    price: r.price ?? 0, quantity: r.quantity ?? 0, notes: r.notes ?? undefined, confirmed: r.confirmed ?? false,
+    brand: r.brand ?? "", size: r.size ?? "",
+    price: r.price ?? 0, notes: r.notes ?? undefined, confirmed: r.confirmed ?? false,
   }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapSupplier(r: any): Supplier {
+  return { id: r.id, name: r.name, contact: r.contact ?? "", country: r.country ?? "" }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapNotificationLog(r: any): NotificationLog {
@@ -266,13 +271,19 @@ class SupabaseDatabaseService {
     return (data ?? []).map(mapStock)
   }
   async updateStock(id: string, input: Partial<StockItem>): Promise<StockItem | null> {
-    const row = {
+    const row: Record<string, unknown> = {
       available_quantity: input.availableQuantity,
       price: input.price,
       status: input.status,
       last_updated: new Date().toISOString(),
     }
-    const { data, error } = await db().from("stock_items").update(row).eq("id", id).select().single()
+    if (input.packaging !== undefined) row.packaging = input.packaging
+    let { data, error } = await db().from("stock_items").update(row).eq("id", id).select().single()
+    if (error && (error.code === "PGRST204" || /packaging/.test(error.message ?? ""))) {
+      const { packaging: _p, ...fallbackRow } = row
+      void _p
+      ;({ data, error } = await db().from("stock_items").update(fallbackRow).eq("id", id).select().single())
+    }
     if (error) { console.error("updateStock", error); return null }
     return mapStock(data)
   }
@@ -596,9 +607,8 @@ class SupabaseDatabaseService {
   async createBuyingPrice(input: Omit<BuyingPrice, "id">): Promise<BuyingPrice> {
     const row = {
       id: genId("bp"), session_id: input.sessionId, date: input.date, supplier: input.supplier,
-      product: input.product, variety: input.variety || null, brand: input.brand || null,
-      size: input.size || null, unit: input.unit || null, price: input.price, quantity: input.quantity,
-      notes: input.notes || null, confirmed: input.confirmed,
+      product: input.product, brand: input.brand || null, size: input.size || null,
+      price: input.price, quantity: 0, notes: input.notes || null, confirmed: input.confirmed,
     }
     const { data, error } = await db().from("buying_prices").insert(row).select().single()
     if (error) throw error
@@ -607,7 +617,6 @@ class SupabaseDatabaseService {
   async updateBuyingPrice(id: string, input: Partial<BuyingPrice>): Promise<BuyingPrice | null> {
     const row: Record<string, unknown> = {}
     if (input.price !== undefined) row.price = input.price
-    if (input.quantity !== undefined) row.quantity = input.quantity
     if (input.notes !== undefined) row.notes = input.notes
     if (input.confirmed !== undefined) row.confirmed = input.confirmed
     const { data, error } = await db().from("buying_prices").update(row).eq("id", id).select().single()
@@ -616,6 +625,32 @@ class SupabaseDatabaseService {
   }
   async deleteBuyingPrice(id: string): Promise<boolean> {
     const { error } = await db().from("buying_prices").delete().eq("id", id)
+    return !error
+  }
+
+  // ── SUPPLIERS ─────────────────────────────────────────────────────
+  async getSuppliers(): Promise<Supplier[]> {
+    const { data, error } = await db().from("suppliers").select("*").order("name")
+    if (error) { console.error("getSuppliers", error); return [] }
+    return (data ?? []).map(mapSupplier)
+  }
+  async createSupplier(input: Omit<Supplier, "id">): Promise<Supplier> {
+    const row = { id: genId("sup"), name: input.name, contact: input.contact || null, country: input.country || null }
+    const { data, error } = await db().from("suppliers").insert(row).select().single()
+    if (error) throw error
+    return mapSupplier(data)
+  }
+  async updateSupplier(id: string, input: Partial<Supplier>): Promise<Supplier | null> {
+    const row: Record<string, unknown> = {}
+    if (input.name !== undefined) row.name = input.name
+    if (input.contact !== undefined) row.contact = input.contact
+    if (input.country !== undefined) row.country = input.country
+    const { data, error } = await db().from("suppliers").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateSupplier", error); return null }
+    return mapSupplier(data)
+  }
+  async deleteSupplier(id: string): Promise<boolean> {
+    const { error } = await db().from("suppliers").delete().eq("id", id)
     return !error
   }
 

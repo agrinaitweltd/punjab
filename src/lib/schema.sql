@@ -126,6 +126,7 @@ create table if not exists stock_items (
   price              numeric(10,2) default 0,
   last_updated       text,
   status             text default 'available',
+  packaging          text,
   created_at         timestamptz default now()
 );
 
@@ -258,6 +259,19 @@ create table if not exists buying_prices (
   created_at  timestamptz default now()
 );
 alter table buying_prices disable row level security;
+
+-- SUPPLIERS — used by the Produce Buying Desk's supplier picker & analytics.
+create table if not exists suppliers (
+  id          text primary key default gen_random_uuid()::text,
+  name        text unique not null,
+  contact     text,
+  country     text,
+  created_at  timestamptz default now()
+);
+alter table suppliers disable row level security;
+
+-- If stock_items already existed before this column was added, run:
+-- alter table stock_items add column if not exists packaging text;
 
 -- PAYMENT REMINDER NOTIFICATIONS — one row per send attempt (email now;
 -- whatsapp is stubbed until a WhatsApp Business/Twilio account is connected).

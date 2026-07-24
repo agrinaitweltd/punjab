@@ -46,6 +46,8 @@ import {
   deleteBuyingPrice,
   getNotificationLogs,
   createNotificationLog,
+  getSuppliers,
+  createSupplier,
 } from '../../api/miscApi'
 import { computeCreditApplication } from '../../lib/creditNotes'
 import type {
@@ -55,6 +57,7 @@ import type {
   BuyingSession,
   Customer,
   NotificationLog,
+  Supplier,
   CreditNote,
   CreditNoteAllocation,
   CustomerApplication,
@@ -107,6 +110,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [buyingSessions, setBuyingSessions] = useState<BuyingSession[]>([])
   const [buyingPrices, setBuyingPrices] = useState<BuyingPrice[]>([])
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -127,6 +131,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       buyingSessionsData,
       buyingPricesData,
       notificationLogsData,
+      suppliersData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -145,6 +150,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getBuyingSessions(),
       getBuyingPrices(),
       getNotificationLogs(),
+      getSuppliers(),
     ])
 
     setCustomers(customersData)
@@ -164,6 +170,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setBuyingSessions(buyingSessionsData)
     setBuyingPrices(buyingPricesData)
     setNotificationLogs(notificationLogsData)
+    setSuppliers(suppliersData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -216,6 +223,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <BuyingDeskPage
           sessions={buyingSessions}
           prices={buyingPrices}
+          products={products}
+          suppliers={suppliers}
           canEdit={canEditBuying}
           onStartSession={async (date) => {
             await getOrCreateBuyingSession(date)
@@ -236,52 +245,29 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           }}
           onConfirm={async (price) => {
             await updateBuyingPrice(price.id, { confirmed: true })
-            void logActivity(user.displayName, `confirmed order for ${price.product} from ${price.supplier} (£${(price.price * price.quantity).toFixed(2)})`)
+            void logActivity(user.displayName, `confirmed order for ${price.product} from ${price.supplier} (£${price.price.toFixed(2)})`)
             await load()
           }}
           onEndDailyBuying={async (session, confirmedPrices) => {
-            // Move confirmed produce into Stock — hidden (status "out") until published.
-            let allProducts = await getProducts()
-            for (const cp of confirmedPrices) {
-              const existing = allProducts.find(p => p.productName.toLowerCase() === cp.product.toLowerCase())
-              if (!existing) {
-                await createProduct({
-                  productName: cp.product, category: 'Other Produce', variety: cp.variety || cp.brand || '',
-                  size: [cp.size, cp.unit].filter(Boolean).join(' ') || 'box', boxesPerPallet: 0, productImage: '',
-                  sku: cp.product.toUpperCase().replace(/[^A-Z0-9]+/g, '-').slice(0, 24) + '-' + Date.now().toString().slice(-4),
-                })
-              }
-            }
-            allProducts = await getProducts()
+            // Move confirmed produce into Stock — hidden (status "out", qty 0)
+            // until an admin sets quantity & selling price on the Stock page.
+            const allProducts = await getProducts()
             const stock = await getStock()
             for (const cp of confirmedPrices) {
               const product = allProducts.find(p => p.productName.toLowerCase() === cp.product.toLowerCase())
               const stockRow = product && stock.find(s => s.productId === product.id)
               if (stockRow) {
-                await updateStock(stockRow.id, { availableQuantity: cp.quantity, status: 'out' })
+                await updateStock(stockRow.id, { availableQuantity: 0, status: 'out' })
               }
             }
             await updateBuyingSession(session.id, { status: 'Closed' })
             void logActivity(user.displayName, `ended daily buying for ${session.date} — ${confirmedPrices.length} item(s) moved to Stock`)
             await load()
+            navigate('stock')
           }}
-          onPublish={async (session, sellingPrices) => {
-            const allProducts = await getProducts()
-            const stock = await getStock()
-            const sessionConfirmed = buyingPrices.filter(p => p.date === session.date && p.confirmed)
-            for (const cp of sessionConfirmed) {
-              const product = allProducts.find(p => p.productName.toLowerCase() === cp.product.toLowerCase())
-              const stockRow = product && stock.find(s => s.productId === product.id)
-              const sellingPrice = sellingPrices[cp.id] ?? 0
-              if (stockRow) {
-                await updateStock(stockRow.id, {
-                  price: sellingPrice,
-                  status: cp.quantity === 0 ? 'out' : cp.quantity <= 10 ? 'low' : 'available',
-                })
-              }
-            }
-            await updateBuyingSession(session.id, { publishedAt: new Date().toISOString() })
-            void logActivity(user.displayName, `published today's buying prices for ${session.date}`)
+          onCreateSupplier={async (input) => {
+            await createSupplier(input)
+            void logActivity(user.displayName, `added supplier ${input.name}`)
             await load()
           }}
         />
