@@ -70,7 +70,7 @@ values (
   true,
   true,
   '{"customers":true,"prices":true,"stock":true,"orders":true,"enquiries":true,"tickets":true,"payments":true,"complaints":true,"extracts":true,"stats":true,"admins":true,"products":true,"customersCreate":true,"customersDelete":true,"invoicesDelete":true,"paymentsRecord":true,"paymentsDelete":true,"paymentsAllocate":true,"buyingPricesEdit":true,"creditNotesIssue":true,"applicationsManage":true,"usersManage":true}'::jsonb
-) on conflict (username) do nothing;
+) on conflict (id) do nothing;
 
 -- CUSTOMERS
 create table if not exists customers (
@@ -102,7 +102,7 @@ create table if not exists customers (
 -- alter table customers add column if not exists credit_days integer default 14;
 -- alter table customers add column if not exists blocked boolean default false;
 -- alter table customers add column if not exists vat_number text;
--- alter table customers add column if not exists delivery_address text;
+-- alter table customers add column if not exists registered_address text;
 -- alter table customers add column if not exists notes text;
 
 -- PRODUCTS
