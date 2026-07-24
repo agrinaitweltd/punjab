@@ -28,6 +28,8 @@ import {
   createInvoice,
   createPayment,
   updateInvoice,
+  getAdminRoles,
+  logActivity,
 } from '../../api/miscApi'
 import type {
   ActivityLog,
@@ -126,6 +128,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const { unseenCount: newOrders, markAllSeen: markOrdersSeen } = useUnseenCount(orders, `punjab-seen-orders-${user.id}`)
   const { unseenCount: newTickets, markAllSeen: markTicketsSeen } = useUnseenCount(tickets, `punjab-seen-tickets-${user.id}`)
   const pendingProofsCount = paymentProofs.filter(p => p.status === 'pending').length
+  const canRecordPayments = Boolean(user.isSuperAdmin || user.permissions?.paymentsRecord)
   const { toasts, dismiss } = useLiveToasts(orders, (prevById, o) =>
     prevById.has(o.id) ? null : { id: `order-${o.id}`, title: "New order received", body: `${o.orderNumber} — ${o.customerName} — £${o.amount.toFixed(2)}` })
 
@@ -183,9 +186,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await load()
           }}
           onDelete={async (id) => {
+            const target = customers.find(c => c.id === id)
             await deleteCustomer(id)
+            void logActivity(user.displayName, `deleted customer${target ? ` ${target.companyName}` : ""}`)
             await load()
           }}
+          canDelete={user.isSuperAdmin || Boolean(user.permissions?.customersDelete)}
         />
       )
     }
@@ -263,7 +269,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await updateOrder(id, input)
             await load()
           }}
-          onMarkPaid={async (order) => {
+          onMarkPaid={!canRecordPayments ? undefined : async (order) => {
             const invoiceNumber = `INV-${order.orderNumber}`
             const today = new Date().toISOString().slice(0, 10)
             // An invoice may already exist (created when the order was confirmed and
@@ -287,6 +293,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 await updateCustomer(customer.id, { blocked: false })
               }
             }
+            void logActivity(user.displayName, `marked order ${order.orderNumber} as paid`)
             await load()
           }}
         />
@@ -301,6 +308,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <PaymentProofsPage
           proofs={paymentProofs}
+          canRecord={canRecordPayments}
           onApprove={async (proof) => {
             for (const id of proof.invoiceIds) await updateInvoice(id, { status: 'Paid' })
             await createPayment({ customerId: proof.customerId, amount: proof.amount, date: new Date().toISOString().slice(0, 10), method: 'Bank Transfer (Verified)' })
@@ -317,6 +325,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 await updateCustomer(customer.id, { blocked: false })
               }
             }
+            void logActivity(user.displayName, `approved payment proof for ${customer?.companyName ?? proof.customerId} (£${proof.amount.toFixed(2)})`)
             await load()
           }}
           onReject={async (proof, reason) => {
@@ -326,6 +335,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               void sendEmail(customer.email, "We couldn't confirm your payment",
                 paymentRejectedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount, reason))
             }
+            void logActivity(user.displayName, `rejected payment proof for ${customer?.companyName ?? proof.customerId}`)
             await load()
           }}
         />
@@ -411,24 +421,31 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <AdminsPage
           admins={admins}
-          onCreate={async (name, email, password, role, permissions) => {
-            await createAdmin({ name, email, password, role, active: true, isSuperAdmin: false, permissions })
+          loadRoles={getAdminRoles}
+          onCreate={async (name, email, password, role, jobTitle, permissions) => {
+            await createAdmin({ name, email, password, role, jobTitle, active: true, isSuperAdmin: false, permissions })
             if (email) {
               void sendEmail(email, "Your Punjab Exotic Foods admin account",
                 welcomeEmailHtml(name, "admin", window.location.origin))
             }
+            void logActivity(user.displayName, `created admin account for ${name} (${role})`)
             await load()
           }}
           onUpdate={async (id, data) => {
             await updateAdmin(id, data)
+            void logActivity(user.displayName, `updated admin account for ${data.name ?? id}`)
             await load()
           }}
           onDelete={async (id) => {
+            const target = admins.find(a => a.id === id)
             await deleteAdmin(id)
+            void logActivity(user.displayName, `deleted admin account${target ? ` for ${target.name}` : ""}`)
             await load()
           }}
           onToggleActive={async (id, active) => {
+            const target = admins.find(a => a.id === id)
             await toggleAdminActive(id, active)
+            void logActivity(user.displayName, `${active ? "activated" : "deactivated"} admin account${target ? ` for ${target.name}` : ""}`)
             await load()
           }}
         />

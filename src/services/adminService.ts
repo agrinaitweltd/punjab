@@ -1,7 +1,8 @@
-import type { AdminStaff } from "../types"
+import type { AdminRole, AdminStaff } from "../types"
 import { mockAdmins } from "../data/mockData"
 import { databaseService } from "./databaseService"
 import { supabaseReady } from "../lib/supabase"
+import { FALLBACK_ROLE_TEMPLATES } from "../lib/permissions"
 
 let admins = [...mockAdmins]
 
@@ -53,4 +54,18 @@ export async function toggleAdminActive(id: string, active: boolean): Promise<bo
   if (idx === -1) return false
   admins[idx] = { ...admins[idx], active }
   return true
+}
+
+export async function getAdminRoles(): Promise<AdminRole[]> {
+  if (supabaseReady) {
+    const roles = await databaseService.getAdminRoles()
+    if (roles.length > 0) return roles
+  }
+  // Offline, or the admin_roles migration hasn't been run yet — fall back to
+  // the same built-in templates so the role picker still works.
+  return FALLBACK_ROLE_TEMPLATES
+}
+
+export async function logActivity(actorName: string, action: string): Promise<void> {
+  if (supabaseReady) return databaseService.logActivity(actorName, action)
 }

@@ -28,12 +28,16 @@ export function CustomersPage({
   onCreate,
   onUpdate,
   onDelete,
+  canDelete = true,
 }: {
   customers: Customer[]
   deliveryAreas: DeliveryArea[]
   onCreate: (input: typeof initialForm) => Promise<void>
   onUpdate: (id: string, input: Partial<Customer>) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  /** Gates the Delete button — Salesperson/Cashier-type roles can view and
+      create customers but shouldn't be able to delete them. */
+  canDelete?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [newEmail, setNewEmail] = useState('')
@@ -212,9 +216,11 @@ export function CustomersPage({
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
                   <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
                   <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
-                  <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => confirmDelete(customer)}>
-                    {deletingId === customer.id ? 'Deleting…' : 'Delete'}
-                  </Button>
+                  {canDelete && (
+                    <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => confirmDelete(customer)}>
+                      {deletingId === customer.id ? 'Deleting…' : 'Delete'}
+                    </Button>
+                  )}
                 </div>
               </td>
             </tr>

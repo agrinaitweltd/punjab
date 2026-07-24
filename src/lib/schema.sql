@@ -19,14 +19,46 @@ create table if not exists admin_staff (
   password       text not null,
   phone          text,
   role           text not null default 'Staff',
+  job_title      text,
   active         boolean not null default true,
   is_super_admin boolean not null default false,
   permissions    jsonb not null default '{}'::jsonb,
   created_at     timestamptz default now()
 );
 
+-- If admin_staff already existed before this column was added, run:
+-- alter table admin_staff add column if not exists job_title text;
+
+-- ADMIN ROLES — named permission templates the admin picker can apply to a
+-- staff account. The account's own `permissions` column (above) remains the
+-- single source of truth checked at runtime; these rows are just reusable
+-- starting points, so editing a template later doesn't retroactively change
+-- anyone already using it.
+create table if not exists admin_roles (
+  id          text primary key default gen_random_uuid()::text,
+  name        text unique not null,
+  description text,
+  permissions jsonb not null default '{}'::jsonb,
+  is_system   boolean not null default false,
+  created_at  timestamptz default now()
+);
+
+insert into admin_roles (id, name, description, permissions, is_system) values
+  ('role-super-admin', 'Super Admin', 'Full access to every module and action.',
+    '{"customers":true,"prices":true,"stock":true,"orders":true,"enquiries":true,"tickets":true,"payments":true,"complaints":true,"extracts":true,"stats":true,"admins":true,"products":true,"customersCreate":true,"customersDelete":true,"invoicesDelete":true,"paymentsRecord":true,"paymentsDelete":true,"paymentsAllocate":true,"buyingPricesEdit":true,"creditNotesIssue":true,"applicationsManage":true,"usersManage":true}'::jsonb,
+    true),
+  ('role-salesperson', 'Salesperson', 'Can create customer applications and accounts, and view products/prices. Cannot delete invoices/payments or manage users.',
+    '{"customers":true,"products":true,"prices":true,"orders":true,"customersCreate":true,"applicationsManage":true}'::jsonb,
+    true),
+  ('role-cashier', 'Cashier', 'Records payments, views balances/statements, allocates payments. Cannot edit buying prices or delete customers.',
+    '{"customers":true,"payments":true,"stats":true,"paymentsRecord":true,"paymentsAllocate":true}'::jsonb,
+    true)
+on conflict (name) do nothing;
+
+alter table admin_roles disable row level security;
+
 -- Seed owner login (email: info@punjabexoticfoods.com  password: admin123)
-insert into admin_staff (id, name, username, email, password, role, active, is_super_admin, permissions)
+insert into admin_staff (id, name, username, email, password, role, job_title, active, is_super_admin, permissions)
 values (
   'adm-owner',
   'Punjab Exotic Foods',
@@ -34,9 +66,10 @@ values (
   'info@punjabexoticfoods.com',
   'admin123',
   'Owner',
+  'Owner',
   true,
   true,
-  '{"customers":true,"prices":true,"stock":true,"orders":true,"enquiries":true,"tickets":true,"payments":true,"complaints":true,"extracts":true,"stats":true,"admins":true,"products":true}'::jsonb
+  '{"customers":true,"prices":true,"stock":true,"orders":true,"enquiries":true,"tickets":true,"payments":true,"complaints":true,"extracts":true,"stats":true,"admins":true,"products":true,"customersCreate":true,"customersDelete":true,"invoicesDelete":true,"paymentsRecord":true,"paymentsDelete":true,"paymentsAllocate":true,"buyingPricesEdit":true,"creditNotesIssue":true,"applicationsManage":true,"usersManage":true}'::jsonb
 ) on conflict (username) do nothing;
 
 -- CUSTOMERS

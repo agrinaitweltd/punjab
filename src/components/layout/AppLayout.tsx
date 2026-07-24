@@ -42,6 +42,7 @@ export function AppLayout({
         onNavigate={handleNavigate}
         userName={user.displayName}
         isSuperAdmin={user.isSuperAdmin}
+        permissions={user.permissions}
         mobileOpen={mobileOpen}
         badges={badges}
       />

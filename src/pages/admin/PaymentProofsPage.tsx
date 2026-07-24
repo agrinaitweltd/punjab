@@ -3,10 +3,13 @@ import type { PaymentProof } from "../../lib/paymentProofService"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 
-export function PaymentProofsPage({ proofs, onApprove, onReject }: {
+export function PaymentProofsPage({ proofs, onApprove, onReject, canRecord = true }: {
   proofs: PaymentProof[]
   onApprove: (proof: PaymentProof) => Promise<void>
   onReject: (proof: PaymentProof, reason: string) => Promise<void>
+  /** Gates Payment Received / Reject — view-only for roles without the
+      paymentsRecord permission. */
+  canRecord?: boolean
 }) {
   const [preview, setPreview] = useState<PaymentProof | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -79,13 +82,15 @@ export function PaymentProofsPage({ proofs, onApprove, onReject }: {
                     {p.status === "rejected" && <span className="ps-badge ps-badge-red">Rejected</span>}
                   </td>
                   <td onClick={e => e.stopPropagation()}>
-                    {p.status === "pending" ? (
+                    {p.status === "pending" && canRecord ? (
                       <div style={{ display: "flex", gap: 6 }}>
                         <Button className="btn-sm" disabled={busyId === p.id} onClick={() => approve(p)}>
                           {busyId === p.id ? "Working…" : "Payment Received"}
                         </Button>
                         <Button variant="danger" className="btn-sm" disabled={busyId === p.id} onClick={() => reject(p)}>Reject</Button>
                       </div>
+                    ) : p.status === "pending" ? (
+                      <span style={{ fontSize: 12, color: "#9ca3af" }}>Awaiting review</span>
                     ) : (
                       <span style={{ fontSize: 12, color: "#9ca3af" }}>
                         {p.reviewedAt ? new Date(p.reviewedAt).toLocaleDateString("en-GB") : ""}
@@ -121,7 +126,7 @@ export function PaymentProofsPage({ proofs, onApprove, onReject }: {
             {preview.status === "rejected" && preview.reviewNote && (
               <p style={{ marginTop: 12, fontSize: 13, color: "#b91c1c", background: "#fef2f2", borderRadius: 8, padding: "8px 12px" }}>Rejected: {preview.reviewNote}</p>
             )}
-            {preview.status === "pending" && (
+            {preview.status === "pending" && canRecord && (
               <div className="actions-row" style={{ marginTop: 16 }}>
                 <Button disabled={busyId === preview.id} onClick={() => approve(preview)}>Payment Received</Button>
                 <Button variant="danger" disabled={busyId === preview.id} onClick={() => reject(preview)}>Reject</Button>

@@ -1,5 +1,15 @@
 ﻿import { useState, useEffect } from "react"
-import type { UserRole } from "../../types"
+import type { PermissionSet, UserRole } from "../../types"
+
+/* Maps a nav item's key to the permission flag that gates it for non-super
+   admins. Items not listed here (Dashboard, Daily Session, Deliveries,
+   Files, Settings) are operational pages every admin can see. */
+const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
+  products: "products", orders: "orders", customers: "customers", tickets: "tickets",
+  payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
+  stats: "stats", stock: "stock", "data-extract": "extracts",
+  enquiries: "enquiries", complaints: "complaints",
+}
 
 const adminMain = [
   { key: "dashboard",  label: "Dashboard", d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
@@ -60,20 +70,30 @@ function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
   )
 }
 
-export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen, badges }: {
-  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean; mobileOpen?: boolean
+export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, mobileOpen, badges }: {
+  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
+  permissions?: PermissionSet; mobileOpen?: boolean
   badges?: Record<string, number>
 }) {
   const [query, setQuery] = useState("")
   const [collapsed, setCollapsed] = useState(false)
   const isAdmin = role === "admin"
 
+  // Super admins see every nav item; everyone else only sees items their
+  // permissions actually grant (items with no mapped permission — dashboard,
+  // daily session, deliveries, files, settings — stay visible to all admins).
+  const allowed = <T extends { key: string }>(items: T[]) =>
+    isSuperAdmin ? items : items.filter(i => {
+      const permKey = NAV_PERMISSION_KEY[i.key]
+      return !permKey || Boolean(permissions?.[permKey])
+    })
+
   const q = query.trim().toLowerCase()
   const matches = <T extends { label: string }>(items: T[]) =>
     q ? items.filter(i => i.label.toLowerCase().includes(q)) : items
-  const mainItems      = matches(isAdmin ? adminMain : customerMain)
-  const toolItems      = matches(adminTools)
-  const workspaceItems = matches(adminWorkspace)
+  const mainItems      = matches(allowed(isAdmin ? adminMain : customerMain))
+  const toolItems      = matches(allowed(adminTools))
+  const workspaceItems = matches(allowed(adminWorkspace))
   const bottomItems    = matches(adminBottom)
   const badgeFor = (key: string) => { const n = badges?.[key] ?? 0; return n > 0 ? String(n > 99 ? "99+" : n) : undefined }
 
@@ -142,7 +162,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen, b
             </nav>
           </div>
         )}
-        {(workspaceItems.length > 0 || (isSuperAdmin && (!q || "admin users".includes(q)))) && (
+        {(workspaceItems.length > 0 || ((isSuperAdmin || permissions?.usersManage) && (!q || "admin users".includes(q)))) && (
           <div className="sb-section">
             <p className="sb-section-label">Workspace</p>
             <nav>
@@ -150,8 +170,8 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, mobileOpen, b
                 <NavItem key={item.key} label={item.label} dot={item.dot} badge={badgeFor(item.key)}
                   active={current === item.key} onClick={() => onNavigate(item.key)} />
               ))}
-              {/* Only super-admins see the Admins management link */}
-              {isSuperAdmin && (!q || "admin users".includes(q)) && (
+              {/* Only super-admins (or an explicit usersManage grant) see the Admins management link */}
+              {(isSuperAdmin || permissions?.usersManage) && (!q || "admin users".includes(q)) && (
                 <NavItem
                   label="Admin Users"
                   d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"

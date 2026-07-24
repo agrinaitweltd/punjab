@@ -1,6 +1,6 @@
 ﻿import { supabase as _sb } from "../lib/supabase"
 import type {
-  ActivityLog, AdminStaff, Customer, DeliveryArea,
+  ActivityLog, AdminRole, AdminStaff, Customer, DeliveryArea,
   Invoice, Order, Payment, Product, StockItem, SupportTicket,
 } from "../types"
 
@@ -83,8 +83,15 @@ function mapDeliveryArea(r: any): DeliveryArea {
 function mapAdmin(r: any): AdminStaff {
   return {
     id: r.id, name: r.name, email: r.email, password: r.password ?? "",
-    role: r.role ?? "Staff", active: r.active ?? true,
+    role: r.role ?? "Staff", jobTitle: r.job_title ?? "", active: r.active ?? true,
     isSuperAdmin: r.is_super_admin ?? false, permissions: r.permissions ?? {},
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapAdminRole(r: any): AdminRole {
+  return {
+    id: r.id, name: r.name, description: r.description ?? "",
+    permissions: r.permissions ?? {}, isSystem: r.is_system ?? false,
   }
 }
 
@@ -364,14 +371,20 @@ class SupabaseDatabaseService {
     return (data ?? []).map(mapAdmin)
   }
   async createAdmin(input: Omit<AdminStaff, "id">): Promise<AdminStaff> {
-    const row = {
+    const row: Record<string, unknown> = {
       id: genId("adm"),
       name: input.name, email: input.email, password: input.password,
       username: input.name.toLowerCase().replace(/\s+/g, "."),
-      role: input.role, active: input.active ?? true,
+      role: input.role, job_title: input.jobTitle || null, active: input.active ?? true,
       is_super_admin: false, permissions: input.permissions,
     }
-    const { data, error } = await db().from("admin_staff").insert(row).select().single()
+    let { data, error } = await db().from("admin_staff").insert(row).select().single()
+    // Retry without job_title if that migration hasn't been run yet.
+    if (error && (error.code === "PGRST204" || /job_title/.test(error.message ?? ""))) {
+      const { job_title: _jt, ...rest } = row
+      void _jt
+      ;({ data, error } = await db().from("admin_staff").insert(rest).select().single())
+    }
     if (error) throw error
     return mapAdmin(data)
   }
@@ -381,9 +394,15 @@ class SupabaseDatabaseService {
     if (input.email)       row.email       = input.email
     if (input.password)    row.password    = input.password
     if (input.role)        row.role        = input.role
+    if (input.jobTitle !== undefined) row.job_title = input.jobTitle
     if (input.permissions) row.permissions = input.permissions
     if (input.active !== undefined) row.active = input.active
-    const { data, error } = await db().from("admin_staff").update(row).eq("id", id).select().single()
+    let { data, error } = await db().from("admin_staff").update(row).eq("id", id).select().single()
+    if (error && (error.code === "PGRST204" || /job_title/.test(error.message ?? "")) && "job_title" in row) {
+      const { job_title: _jt, ...rest } = row
+      void _jt
+      ;({ data, error } = await db().from("admin_staff").update(rest).eq("id", id).select().single())
+    }
     if (error) { console.error("updateAdmin", error); return null }
     return mapAdmin(data)
   }
@@ -394,6 +413,23 @@ class SupabaseDatabaseService {
   async toggleAdminActive(id: string, active: boolean): Promise<boolean> {
     const { error } = await db().from("admin_staff").update({ active }).eq("id", id)
     return !error
+  }
+
+  // ── ADMIN ROLES (permission templates) ───────────────────────────
+  async getAdminRoles(): Promise<AdminRole[]> {
+    const { data, error } = await db().from("admin_roles").select("*").order("name")
+    if (error) { console.error("getAdminRoles", error); return [] }
+    return (data ?? []).map(mapAdminRole)
+  }
+
+  // ── AUDIT LOG ─────────────────────────────────────────────────────
+  // Reuses the activity_log table (same one the dashboard's "Recent
+  // Activity" feed reads from) so staff/permission/customer changes are
+  // visible in one place without a separate audit table.
+  async logActivity(actorName: string, action: string): Promise<void> {
+    const row = { id: genId("act"), customer_name: actorName, action, timestamp: new Date().toISOString().slice(0, 16).replace("T", " ") }
+    const { error } = await db().from("activity_log").insert(row)
+    if (error) console.error("logActivity", error)
   }
 }
 

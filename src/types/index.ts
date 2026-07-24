@@ -13,6 +13,33 @@ export interface PermissionSet {
   stats: boolean
   admins: boolean
   products: boolean
+  // Granular action-level flags — module flags above control page/nav
+  // visibility, these control specific dangerous or role-restricted actions
+  // within a page. Optional + defaulted to false so existing admin rows
+  // (created before these existed) don't silently gain new abilities.
+  customersCreate?: boolean
+  customersDelete?: boolean
+  invoicesDelete?: boolean
+  paymentsRecord?: boolean
+  paymentsDelete?: boolean
+  paymentsAllocate?: boolean
+  buyingPricesEdit?: boolean
+  creditNotesIssue?: boolean
+  applicationsManage?: boolean
+  usersManage?: boolean
+}
+
+/** A named, reusable permission template an admin account can be based on
+    (e.g. "Salesperson", "Cashier"). Selecting one in the UI fills the
+    permission grid with its defaults — the admin can still customise further,
+    since the source of truth for enforcement is always the permissions
+    stored on the admin_staff row, not the template itself. */
+export interface AdminRole {
+  id: string
+  name: string
+  description: string
+  permissions: PermissionSet
+  isSystem: boolean
 }
 
 export interface User {
@@ -141,6 +168,7 @@ export interface AdminStaff {
   email: string
   password: string
   role: string
+  jobTitle?: string
   active: boolean
   isSuperAdmin?: boolean
   permissions: PermissionSet

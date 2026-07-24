@@ -1,28 +1,22 @@
-﻿import { useState } from "react"
+﻿import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import type { AdminStaff, PermissionSet } from "../../types"
+import type { AdminRole, AdminStaff, PermissionSet } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
+import { EMPTY_PERMISSIONS, FALLBACK_ROLE_TEMPLATES } from "../../lib/permissions"
 
-const ALL_PERMISSIONS = [
-  "customers","prices","stock","orders","enquiries",
-  "tickets","payments","complaints","extracts","stats","admins","products",
-] as const
+const ALL_PERMISSIONS = Object.keys(EMPTY_PERMISSIONS) as (keyof PermissionSet)[]
 
-const basePermissions: PermissionSet = {
-  customers: false, prices: false, stock: false, orders: false,
-  enquiries: false, tickets: false, payments: false, complaints: false,
-  extracts: false, stats: false, admins: false, products: false,
-}
+const basePermissions: PermissionSet = { ...EMPTY_PERMISSIONS }
 
 /* Grouped by function so the permission picker reads like a real access
    policy rather than a flat checkbox dump. */
 const PERM_GROUPS: { label: string; keys: (keyof PermissionSet)[] }[] = [
-  { label: "Trading",  keys: ["customers", "orders", "stock", "products", "prices"] },
-  { label: "Finance",  keys: ["payments", "extracts"] },
-  { label: "Support",  keys: ["tickets", "complaints", "enquiries"] },
-  { label: "Insights & Admin", keys: ["stats", "admins"] },
+  { label: "Trading",  keys: ["customers", "customersCreate", "customersDelete", "orders", "stock", "products", "prices"] },
+  { label: "Finance",  keys: ["payments", "paymentsRecord", "paymentsAllocate", "paymentsDelete", "invoicesDelete", "buyingPricesEdit", "creditNotesIssue", "extracts"] },
+  { label: "Support",  keys: ["tickets", "complaints", "enquiries", "applicationsManage"] },
+  { label: "Insights & Admin", keys: ["stats", "admins", "usersManage"] },
 ]
 
 function PermGrid({ perms, onChange }: { perms: PermissionSet; onChange: (p: PermissionSet) => void }) {
@@ -71,12 +65,14 @@ export function AdminsPage({
   onUpdate,
   onDelete,
   onToggleActive,
+  loadRoles,
 }: {
   admins: AdminStaff[]
-  onCreate: (name: string, email: string, password: string, role: string, permissions: PermissionSet) => Promise<void>
+  onCreate: (name: string, email: string, password: string, role: string, jobTitle: string, permissions: PermissionSet) => Promise<void>
   onUpdate?: (id: string, data: Partial<AdminStaff>) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onToggleActive?: (id: string, active: boolean) => Promise<void>
+  loadRoles?: () => Promise<AdminRole[]>
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing]       = useState<AdminStaff | null>(null)
@@ -84,22 +80,45 @@ export function AdminsPage({
   const [email, setEmail]           = useState("")
   const [password, setPassword]     = useState("")
   const [phone, setPhone]           = useState("")
+  const [jobTitle, setJobTitle]     = useState("")
   const [role, setRole]             = useState("Staff")
   const [perms, setPerms]           = useState<PermissionSet>(basePermissions)
+  const [roleTemplates, setRoleTemplates] = useState<AdminRole[]>(FALLBACK_ROLE_TEMPLATES)
+  const [formError, setFormError]   = useState("")
+
+  useEffect(() => {
+    loadRoles?.().then(setRoleTemplates).catch(() => setRoleTemplates(FALLBACK_ROLE_TEMPLATES))
+  }, [loadRoles])
 
   const resetForm = () => {
-    setName(""); setEmail(""); setPassword(""); setPhone(""); setRole("Staff"); setPerms(basePermissions)
+    setName(""); setEmail(""); setPassword(""); setPhone(""); setJobTitle(""); setRole("Staff"); setPerms(basePermissions); setFormError("")
+  }
+
+  const applyTemplate = (templateId: string, target: "create" | "edit") => {
+    const template = roleTemplates.find(t => t.id === templateId)
+    if (!template) return
+    if (target === "create") {
+      setRole(template.name)
+      setPerms({ ...basePermissions, ...template.permissions })
+    } else if (editing) {
+      setEditing({ ...editing, role: template.name, permissions: { ...basePermissions, ...template.permissions } })
+    }
   }
 
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
-    await onCreate(name, email, password, role, perms)
+    setFormError("")
+    if (!name.trim() || !email.trim() || !password.trim()) { setFormError("Name, email and password are required."); return }
+    if (password.trim().length < 8) { setFormError("Password must be at least 8 characters."); return }
+    if (admins.some(a => a.email.toLowerCase() === email.trim().toLowerCase())) { setFormError("An admin with that email already exists."); return }
+    await onCreate(name.trim(), email.trim(), password, role, jobTitle.trim(), perms)
     resetForm(); setShowCreate(false)
   }
 
   const submitEdit = async (e: FormEvent) => {
     e.preventDefault()
     if (!editing || !onUpdate) return
+    if (!editing.name.trim() || !editing.email.trim()) return
     await onUpdate(editing.id, editing)
     setEditing(null)
   }
@@ -137,6 +156,7 @@ export function AdminsPage({
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
+                  <th>Job Title</th>
                   <th>Role</th>
                   <th>Permissions</th>
                   <th>Status</th>
@@ -163,15 +183,16 @@ export function AdminsPage({
                         </div>
                       </td>
                       <td style={{ color: "#6b7280" }}>{admin.email}</td>
+                      <td style={{ color: "#6b7280" }}>{admin.jobTitle || "—"}</td>
                       <td>
                         <span className="badge badge-blue">{admin.role}</span>
                       </td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <div className="adm-perm-bar">
-                            <div className="adm-perm-fill" style={{ width: `${(permCount/12)*100}%` }} />
+                            <div className="adm-perm-fill" style={{ width: `${(permCount/ALL_PERMISSIONS.length)*100}%` }} />
                           </div>
-                          <span style={{ fontSize: 12, color: "#6b7280" }}>{permCount}/12</span>
+                          <span style={{ fontSize: 12, color: "#6b7280" }}>{permCount}/{ALL_PERMISSIONS.length}</span>
                         </div>
                       </td>
                       <td>
@@ -224,8 +245,19 @@ export function AdminsPage({
           <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabexoticfoods.com" required />
           <Input label="Username / Login" value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. warehouse1" />
           <Input label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimum 8 characters" required />
+          <Input label="Job Title" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Sales Executive" />
           <Select label="Role" options={["Staff", "Manager", "Supervisor", "Owner"]} value={role} onChange={setRole} />
+          <div className="wide">
+            <label className="form-control">
+              <span>Apply Role Template (optional — fills permissions below, still editable)</span>
+              <select onChange={e => e.target.value && applyTemplate(e.target.value, "create")} defaultValue="">
+                <option value="" disabled>Select a template…</option>
+                {roleTemplates.map(t => <option key={t.id} value={t.id}>{t.name} — {t.description}</option>)}
+              </select>
+            </label>
+          </div>
           <PermGrid perms={perms} onChange={setPerms} />
+          {formError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{formError}</p>}
           <div className="wide actions-row">
             <Button type="submit">Create Admin</Button>
             <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
@@ -240,7 +272,17 @@ export function AdminsPage({
             <Input label="Full Name" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} required />
             <Input label="Email" type="email" value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })} required />
             <Input label="New Password" type="password" value={editing.password} onChange={e => setEditing({ ...editing, password: e.target.value })} placeholder="Leave blank to keep current" />
+            <Input label="Job Title" value={editing.jobTitle ?? ""} onChange={e => setEditing({ ...editing, jobTitle: e.target.value })} placeholder="e.g. Sales Executive" />
             <Select label="Role" options={["Staff", "Manager", "Supervisor", "Owner"]} value={editing.role} onChange={v => setEditing({ ...editing, role: v })} />
+            <div className="wide">
+              <label className="form-control">
+                <span>Apply Role Template (optional — fills permissions below, still editable)</span>
+                <select onChange={e => e.target.value && applyTemplate(e.target.value, "edit")} defaultValue="">
+                  <option value="" disabled>Select a template…</option>
+                  {roleTemplates.map(t => <option key={t.id} value={t.id}>{t.name} — {t.description}</option>)}
+                </select>
+              </label>
+            </div>
             <PermGrid perms={editing.permissions} onChange={p => setEditing({ ...editing, permissions: p })} />
             <div className="wide actions-row">
               <Button type="submit">Save Changes</Button>
