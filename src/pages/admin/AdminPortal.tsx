@@ -334,6 +334,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <SuppliersPage
           suppliers={suppliers}
+          prices={buyingPrices}
           canManage={user.isSuperAdmin || Boolean(user.permissions?.buyingPricesEdit)}
           onCreate={async (input) => {
             await createSupplier(input)
