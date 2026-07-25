@@ -67,6 +67,11 @@ export function BuyingDeskPage({
   const session = sessions.find(s => s.date === date) ?? null
   const sessionPrices = useMemo(() => prices.filter(p => p.date === date), [prices, date])
   const unconfirmed = useMemo(() => [...sessionPrices.filter(p => !p.confirmed)].sort((a, b) => a.product.localeCompare(b.product)), [sessionPrices])
+  const unconfirmedByProduct = useMemo(() => {
+    const map = new Map<string, typeof unconfirmed>()
+    for (const p of unconfirmed) { if (!map.has(p.product)) map.set(p.product, []); map.get(p.product)!.push(p) }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [unconfirmed])
   const confirmed = sessionPrices.filter(p => p.confirmed)
 
   // ── Add Prices — browse & select products already created in the Products
@@ -293,38 +298,39 @@ export function BuyingDeskPage({
                 )}
               </div>
               <div className="ps-table-wrap">
-                <table className="ps-table">
-                  <thead><tr>
-                    <th>Product</th><th>Supplier</th><th>Brand</th><th>Size</th>
-                    <th>Price</th><th>Notes</th><th>Actions</th>
-                  </tr></thead>
-                  <tbody>
-                    {unconfirmed.map(p => (
-                      <tr key={p.id} className="ps-row">
-                        <td><strong>{p.product}</strong></td>
-                        <td>{p.supplier}</td>
-                        <td>{p.brand || "—"}</td>
-                        <td>{p.size || "—"}</td>
-                        <td>
-                          {canEdit ? (
-                            <input type="number" min="0.01" step="0.01" defaultValue={p.price}
-                              style={{ width: 80 }}
-                              onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && v !== p.price) onUpdatePrice(p.id, { price: v }) }} />
-                          ) : `£${p.price.toFixed(2)}`}
-                        </td>
-                        <td style={{ color: "#6b7280" }}>{p.notes || "—"}</td>
-                        <td>
-                          {canEdit && (
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <Button className="btn-sm" onClick={() => onConfirm(p)}>Confirm Order</Button>
-                              <Button variant="danger" className="btn-sm" onClick={() => onDeletePrice(p.id)}>Remove</Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {unconfirmedByProduct.map(([productName, rows]) => (
+                  <table key={productName} className="ps-table" style={{ marginBottom: 4 }}>
+                    <thead><tr><th colSpan={6} style={{ background: "#f0fdf4", color: "#14532d" }}>{productName}</th></tr></thead>
+                    <tbody>
+                      {rows.map(p => {
+                        const isBest = bestByProduct.find(b => b.product.toLowerCase() === p.product.toLowerCase())?.best.id === p.id
+                        return (
+                          <tr key={p.id} className="ps-row">
+                            <td>{p.supplier} {isBest && <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d", marginLeft: 6 }}>Best</span>}</td>
+                            <td>{p.brand || "—"}</td>
+                            <td>{p.size || "—"}</td>
+                            <td>
+                              {canEdit ? (
+                                <input type="number" min="0.01" step="0.01" defaultValue={p.price}
+                                  style={{ width: 80 }}
+                                  onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && v !== p.price) onUpdatePrice(p.id, { price: v }) }} />
+                              ) : `£${p.price.toFixed(2)}`}
+                            </td>
+                            <td style={{ color: "#6b7280" }}>{p.notes || "—"}</td>
+                            <td>
+                              {canEdit && (
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <Button className="btn-sm" onClick={() => onConfirm(p)}>Confirm Order</Button>
+                                  <Button variant="danger" className="btn-sm" onClick={() => onDeletePrice(p.id)}>Remove</Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                ))}
                 {unconfirmed.length === 0 && (
                   <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
                     No unconfirmed quotations — add supplier prices above.

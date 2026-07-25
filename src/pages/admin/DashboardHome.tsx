@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus } from "../../types"
+import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus, Invoice } from "../../types"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { CountUp } from "../../components/CountUp"
@@ -71,9 +71,10 @@ type HomeTab = "overview" | "orders" | "customers"
 type CustFilter = "all" | "active" | "inactive"
 
 export function DashboardHome({
-  customers, products, orders, stock = [], activity = [], onNavigate,
+  customers, products, orders, stock = [], activity = [], invoices = [], onNavigate,
 }: {
   customers: Customer[]; products: Product[]; orders: Order[]; stock?: StockItem[]; activity?: ActivityLog[]
+  invoices?: Invoice[]
   onNavigate?: (page: string) => void
 }) {
   const [tab, setTab]               = useState<HomeTab>("overview")
@@ -92,6 +93,11 @@ export function DashboardHome({
   const pendingOrders = orders.filter(o => o.status === "Pending").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
   const avgOrder      = orders.length ? orderRevenue / orders.length : 0
+
+  const totalBusiness = invoices.reduce((s, i) => s + i.amount, 0)
+  const totalPaid     = invoices.reduce((s, i) => s + (i.amountPaid ?? (i.status === "Paid" ? i.amount : 0)), 0)
+  const totalOutstanding = Math.max(0, totalBusiness - totalPaid)
+  const paidPct = totalBusiness > 0 ? Math.round((totalPaid / totalBusiness) * 100) : 0
 
   /* per-day series for the overview charts */
   const byDay: Record<string, { n: number; rev: number }> = {}
@@ -291,6 +297,24 @@ export function DashboardHome({
             <HoStat label="New Sales" value={<CountUp value={pendingOrders} />} delta="+2.2%" up />
             <HoStat label="Active Sales" value={<CountUp value={activeOrders} />} delta="+1.5%" up />
             <HoStat label="Avg Order" value={<CountUp value={avgOrder} prefix="£" />} delta="+0.9%" up />
+          </div>
+
+          <div className="ho-card" style={{ marginBottom: 18 }}>
+            <div className="ho-card-head">
+              <span className="ho-card-title">Total Business Done</span>
+              <button className="db-section-btn" onClick={() => onNavigate?.("invoices")}>View Invoices →</button>
+            </div>
+            <div className="ho-card-big"><CountUp value={totalBusiness} prefix="£" decimals={2} /></div>
+            <div className="ho-seg">
+              {totalBusiness > 0 ? (<>
+                <span style={{ width: `${paidPct}%`, background: "#22c55e" }} />
+                <span style={{ width: `${100 - paidPct}%`, background: "#f59e0b" }} />
+              </>) : <span style={{ width: "100%", background: "#e5e7eb" }} />}
+            </div>
+            <div className="ho-legend">
+              <span><i style={{ background: "#22c55e" }} /> £{totalPaid.toFixed(2)} Paid ({paidPct}%)</span>
+              <span><i style={{ background: "#f59e0b" }} /> £{totalOutstanding.toFixed(2)} Outstanding</span>
+            </div>
           </div>
 
           <div className="ho-grid">

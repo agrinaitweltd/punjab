@@ -48,6 +48,8 @@ import {
   createNotificationLog,
   getSuppliers,
   createSupplier,
+  updateSupplier,
+  deleteSupplier,
   getDayTrades,
   createDayTrade,
 } from '../../api/miscApi'
@@ -95,6 +97,7 @@ import { PaymentsPage } from './PaymentsPage'
 import { ProductsPage } from './ProductsPage'
 import { FilesPage } from './FilesPage'
 import { BuyingDeskPage } from './BuyingDeskPage'
+import { SuppliersPage } from './SuppliersPage'
 import { PaymentRemindersPage } from './PaymentRemindersPage'
 import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
@@ -254,6 +257,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           orders={orders}
           stock={stock}
           activity={activity}
+          invoices={invoices}
           onNavigate={navigate}
         />
       )
@@ -316,6 +320,30 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       )
     }
 
+    if (current === 'suppliers') {
+      return (
+        <SuppliersPage
+          suppliers={suppliers}
+          canManage={user.isSuperAdmin || Boolean(user.permissions?.buyingPricesEdit)}
+          onCreate={async (input) => {
+            await createSupplier(input)
+            void logActivity(user.displayName, `added supplier ${input.name}`)
+            await load()
+          }}
+          onUpdate={async (id, input) => {
+            await updateSupplier(id, input)
+            await load()
+          }}
+          onDelete={async (id) => {
+            const target = suppliers.find(s => s.id === id)
+            await deleteSupplier(id)
+            void logActivity(user.displayName, `deleted supplier${target ? ` ${target.name}` : ""}`)
+            await load()
+          }}
+        />
+      )
+    }
+
     if (current === 'files') {
       return <FilesPage customers={customers} />
     }
@@ -357,12 +385,22 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <ProductsPage
           products={products}
           stock={stock}
-          onCreate={async (input) => {
-            await createProduct(input)
+          onCreate={async (input, sellingPrice) => {
+            const product = await createProduct(input)
+            if (sellingPrice > 0) {
+              const freshStock = await getStock()
+              const stockRow = freshStock.find(s => s.productId === product.id)
+              if (stockRow) await updateStock(stockRow.id, { price: sellingPrice, status: stockRow.availableQuantity > 0 ? "available" : stockRow.status })
+            }
             await load()
           }}
           onUpdate={async (id, input) => {
             await updateProduct(id, input)
+            await load()
+          }}
+          onUpdatePrice={async (productId, price) => {
+            const stockRow = stock.find(s => s.productId === productId)
+            if (stockRow) await updateStock(stockRow.id, { price })
             await load()
           }}
           onDelete={async (id) => {

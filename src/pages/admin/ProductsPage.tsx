@@ -20,7 +20,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const initialForm = {
-  productName: "", category: "", variety: "", size: "", sku: "", boxesPerPallet: "0", costPrice: "0",
+  productName: "", category: "", variety: "", size: "", sku: "", boxesPerPallet: "0", costPrice: "0", sellingPrice: "0",
 }
 
 export function ProductsPage({
@@ -29,12 +29,16 @@ export function ProductsPage({
   onCreate,
   onUpdate,
   onDelete,
+  onUpdatePrice,
 }: {
   products: Product[]
   stock: StockItem[]
-  onCreate: (input: Omit<Product, "id">) => Promise<void>
+  onCreate: (input: Omit<Product, "id">, sellingPrice: number) => Promise<void>
   onUpdate: (id: string, input: Partial<Product>) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  /** Sets the selling price directly from the Products page — most products
+      otherwise only get a price once they pass through the Buying Desk. */
+  onUpdatePrice: (productId: string, price: number) => Promise<void>
 }) {
   const [query, setQuery]           = useState("")
   const [selected, setSelected]     = useState<Set<string>>(new Set())
@@ -86,9 +90,11 @@ export function ProductsPage({
     )
   }
 
+  const [editPrice, setEditPrice] = useState("0")
+
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
-    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: Number(form.costPrice) || 0, productImage: "" })
+    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: Number(form.costPrice) || 0, productImage: "" }, Number(form.sellingPrice) || 0)
     setForm(initialForm)
     setShowAdd(false)
   }
@@ -97,6 +103,7 @@ export function ProductsPage({
     e.preventDefault()
     if (!editTarget) return
     await onUpdate(editTarget.id, editTarget)
+    await onUpdatePrice(editTarget.id, Number(editPrice) || 0)
     setEditTarget(null)
   }
 
@@ -113,7 +120,7 @@ export function ProductsPage({
       return
     }
     const product = products.find(p => p.id === [...selected][0])
-    if (product) setEditTarget(product)
+    if (product) { setEditTarget(product); setEditPrice(String(stockMap[product.id]?.price ?? 0)) }
   }
 
   const bulkDelete = async () => {
@@ -262,7 +269,7 @@ export function ProductsPage({
                     <td>{product.category}</td>
                     <td>
                       <div className="ps-row-actions">
-                        <button className="ps-action-btn" onClick={() => setEditTarget(product)} title="Edit">
+                        <button className="ps-action-btn" onClick={() => { setEditTarget(product); setEditPrice(String(s?.price ?? 0)) }} title="Edit">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
                         <button className="ps-action-btn ps-action-danger" onClick={() => onDelete(product.id)} title="Delete">
@@ -340,6 +347,7 @@ export function ProductsPage({
           <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. RED-CAP-5KG" required />
           <Input label="Boxes Per Pallet" type="number" value={form.boxesPerPallet} onChange={(e) => setForm({ ...form, boxesPerPallet: e.target.value })} required />
           <Input label="Cost Price (£ per unit)" type="number" min="0" step="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
+          <Input label="Selling Price (£ per unit)" type="number" min="0" step="0.01" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} />
           <div className="wide actions-row">
             <Button type="submit">Create Product</Button>
             <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
@@ -358,6 +366,7 @@ export function ProductsPage({
             <Input label="SKU" value={editTarget.sku} onChange={(e) => setEditTarget({ ...editTarget, sku: e.target.value })} />
             <Input label="Boxes Per Pallet" type="number" value={String(editTarget.boxesPerPallet)} onChange={(e) => setEditTarget({ ...editTarget, boxesPerPallet: Number(e.target.value) })} />
             <Input label="Cost Price (£ per unit)" type="number" min="0" step="0.01" value={String(editTarget.costPrice ?? 0)} onChange={(e) => setEditTarget({ ...editTarget, costPrice: Number(e.target.value) })} />
+            <Input label="Selling Price (£ per unit)" type="number" min="0" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
             <div className="wide actions-row">
               <Button type="submit">Save Changes</Button>
               <Button type="button" variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>

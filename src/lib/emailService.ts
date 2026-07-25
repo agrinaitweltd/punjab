@@ -199,7 +199,7 @@ export function overdueEmailHtml(
   const rows = overdueInvoices.map(inv => `
     <tr>
       <td style="padding:8px 0;border-bottom:1px solid #eef1ee;color:#374151"><strong>${inv.invoiceNumber}</strong></td>
-      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:center;color:#b91c1c">${inv.daysOverdue} day${inv.daysOverdue !== 1 ? "s" : ""} overdue</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:center;color:#b91c1c">${inv.daysOverdue === 0 ? "Credit days reached today" : `${inv.daysOverdue} day${inv.daysOverdue !== 1 ? "s" : ""} overdue`}</td>
       <td style="padding:8px 0;border-bottom:1px solid #eef1ee;text-align:right;color:#111827;font-weight:600">£${inv.amount.toFixed(2)}</td>
     </tr>`).join("")
   const overdueTotal = overdueInvoices.reduce((s, i) => s + i.amount, 0)

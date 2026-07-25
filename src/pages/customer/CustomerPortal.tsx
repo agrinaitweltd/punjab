@@ -984,7 +984,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                   ))}
                   {invAllocations.map(a => {
                     const note = myCreditNotes.find(c => c.id === a.creditNoteId)
-                    return <div key={a.id} style={{ fontSize: 12.5, color: "#1d4ed8", padding: "4px 0" }}>· {a.date} — Credit applied {note?.creditNumber ?? ""} £{a.amount.toFixed(2)}</div>
+                    return <div key={a.id} style={{ fontSize: 12.5, color: "#1d4ed8", padding: "4px 0" }}>· {a.date} — This invoice has been credited by Credit Note {note?.creditNumber ?? ""} (£{a.amount.toFixed(2)})</div>
                   })}
                 </div>
               )

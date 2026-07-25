@@ -6,10 +6,14 @@ import { invoiceOutstanding } from "../../lib/creditNotes"
 
 type LedgerEntry = {
   date: string
-  type: "Invoice" | "Payment" | "Credit Applied"
+  type: "Invoice" | "Payment" | "Credit Note"
   ref: string
-  debit: number
-  credit: number
+  note?: string
+  /** Signed — invoices are positive, payments and credit notes are negative,
+      matching how a real statement reads (e.g. "Invoice 1056 +£420",
+      "Credit Note CN-000015 -£60"). Credits are never treated as payments —
+      they're their own transaction type, just like an invoice or a payment. */
+  amount: number
 }
 
 export function CustomerStatementModal({
@@ -35,15 +39,18 @@ export function CustomerStatementModal({
 
   const ledger = useMemo(() => {
     const entries: LedgerEntry[] = []
-    for (const inv of myInvoices) entries.push({ date: inv.date || inv.dueDate, type: "Invoice", ref: inv.invoiceNumber, debit: inv.amount, credit: 0 })
-    for (const p of myPayments) entries.push({ date: p.date, type: "Payment", ref: p.paymentReference, debit: 0, credit: p.amount })
+    for (const inv of myInvoices) entries.push({ date: inv.date || inv.dueDate, type: "Invoice", ref: inv.invoiceNumber, amount: inv.amount })
+    for (const p of myPayments) entries.push({ date: p.date, type: "Payment", ref: p.paymentReference, amount: -p.amount })
     for (const a of myAllocations) {
       const note = myCreditNotes.find(c => c.id === a.creditNoteId)
-      entries.push({ date: a.date, type: "Credit Applied", ref: `${note?.creditNumber ?? a.creditNoteId} → ${invoiceNumber(a.invoiceId)}`, debit: 0, credit: a.amount })
+      entries.push({
+        date: a.date, type: "Credit Note", ref: note?.creditNumber ?? a.creditNoteId,
+        note: `Credited against Invoice ${invoiceNumber(a.invoiceId)}`, amount: -a.amount,
+      })
     }
     entries.sort((a, b) => a.date.localeCompare(b.date))
     let running = 0
-    return entries.map(e => { running += e.debit - e.credit; return { ...e, balance: running } })
+    return entries.map(e => { running += e.amount; return { ...e, balance: running } })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myInvoices, myPayments, myAllocations, myCreditNotes])
 
@@ -57,9 +64,8 @@ export function CustomerStatementModal({
     if (!w) return
     const rows = ledger.map(e => `
       <tr>
-        <td>${e.date}</td><td>${e.type}</td><td>${e.ref}</td>
-        <td style="text-align:right">${e.debit ? "£" + e.debit.toFixed(2) : ""}</td>
-        <td style="text-align:right">${e.credit ? "£" + e.credit.toFixed(2) : ""}</td>
+        <td>${e.date}</td><td>${e.type}</td><td>${e.ref}${e.note ? `<br><span style="color:#9ca3af;font-size:11px">${e.note}</span>` : ""}</td>
+        <td style="text-align:right;color:${e.amount < 0 ? "#15803d" : "#111827"}">${e.amount >= 0 ? "+" : "-"}£${Math.abs(e.amount).toFixed(2)}</td>
         <td style="text-align:right">£${e.balance.toFixed(2)}</td>
       </tr>`).join("")
     w.document.write(`
@@ -74,7 +80,7 @@ export function CustomerStatementModal({
         <h1>Punjab Exotic Foods — Customer Statement</h1>
         <p class="muted">Gate 9, Stand 1B–1D, New Spitalfields Market, Sherrin Road, London E10 5SQ</p>
         <p class="muted">Customer: <strong>${customer.companyName}</strong> · ${customer.customerNumber}</p>
-        <table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead>
+        <table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style="text-align:right">Amount</th><th style="text-align:right">Balance</th></tr></thead>
         <tbody>${rows}</tbody></table>
         <div class="summary">
           <p><strong>Outstanding Balance</strong> £${outstandingBalance.toFixed(2)}</p>
@@ -102,7 +108,7 @@ export function CustomerStatementModal({
           </p>
           <div className="ps-table-wrap">
             <table className="ps-table">
-              <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Credit</th><th style={{ textAlign: "right" }}>Balance</th></tr></thead>
+              <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style={{ textAlign: "right" }}>Amount</th><th style={{ textAlign: "right" }}>Balance</th></tr></thead>
               <tbody>
                 {ledger.map((e, i) => (
                   <tr key={i}>
@@ -114,9 +120,13 @@ export function CustomerStatementModal({
                         : { background: "#dbeafe", color: "#1d4ed8" }
                       }>{e.type}</span>
                     </td>
-                    <td>{e.ref}</td>
-                    <td style={{ textAlign: "right" }}>{e.debit ? `£${e.debit.toFixed(2)}` : ""}</td>
-                    <td style={{ textAlign: "right", color: "#15803d" }}>{e.credit ? `£${e.credit.toFixed(2)}` : ""}</td>
+                    <td>
+                      {e.ref}
+                      {e.note && <div style={{ fontSize: 11.5, color: "#9ca3af" }}>{e.note}</div>}
+                    </td>
+                    <td style={{ textAlign: "right", fontWeight: 600, color: e.amount < 0 ? "#15803d" : "#111827" }}>
+                      {e.amount >= 0 ? "+" : "-"}£{Math.abs(e.amount).toFixed(2)}
+                    </td>
                     <td style={{ textAlign: "right", fontWeight: 700 }}>£{e.balance.toFixed(2)}</td>
                   </tr>
                 ))}
@@ -147,7 +157,14 @@ export function CustomerStatementModal({
                   {(invPayments.length > 0 || invAllocations.length > 0) && (
                     <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
                       {invPayments.map(p => <div key={p.id}>· {p.date} — Payment {p.paymentReference} £{p.amount.toFixed(2)}</div>)}
-                      {invAllocations.map(a => <div key={a.id}>· {a.date} — Credit applied £{a.amount.toFixed(2)}</div>)}
+                      {invAllocations.map(a => {
+                        const note = myCreditNotes.find(c => c.id === a.creditNoteId)
+                        return (
+                          <div key={a.id} style={{ color: "#1d4ed8" }}>
+                            · {a.date} — This invoice has been credited by Credit Note {note?.creditNumber ?? a.creditNoteId} (£{a.amount.toFixed(2)})
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

@@ -95,6 +95,7 @@ create table if not exists customers (
   notes             text,
   salesman_id       text,
   salesman_name     text,
+  archived        boolean default false,
   last_activity   timestamptz default now(),
   created_at      timestamptz default now()
 );
@@ -108,6 +109,7 @@ create table if not exists customers (
 -- alter table customers add column if not exists salesman_id text;
 -- alter table customers add column if not exists salesman_name text;
 -- alter table customers add column if not exists notes text;
+-- alter table customers add column if not exists archived boolean default false;
 
 -- PRODUCTS
 create table if not exists products (

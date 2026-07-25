@@ -35,7 +35,10 @@ const initialFullForm = {
   address: '', // delivery address
   vatNumber: '',
   creditLimit: '0',
+  creditDays: '14',
   notes: '',
+  salesmanId: '',
+  salesmanName: '',
 }
 
 export function CustomersPage({
@@ -56,7 +59,7 @@ export function CustomersPage({
   payments?: Payment[]
   creditNotes?: CreditNote[]
   creditNoteAllocations?: CreditNoteAllocation[]
-  onCreate: (input: typeof initialForm & Partial<Pick<Customer, 'registeredAddress' | 'vatNumber' | 'creditLimit' | 'notes'>>) => Promise<void>
+  onCreate: (input: typeof initialForm & Partial<Pick<Customer, 'registeredAddress' | 'vatNumber' | 'creditLimit' | 'creditDays' | 'notes' | 'salesmanId' | 'salesmanName'>>) => Promise<void>
   onUpdate: (id: string, input: Partial<Customer>) => Promise<void>
   onDelete: (id: string) => Promise<void>
   /** Gates the Delete button — Salesperson/Cashier-type roles can view and
@@ -74,6 +77,7 @@ export function CustomersPage({
   const [addMode, setAddMode] = useState<'invite' | 'full'>('invite')
   const [fullForm, setFullForm] = useState(initialFullForm)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [statementTarget, setStatementTarget] = useState<Customer | null>(null)
   // One-time statement import
   const [importTarget, setImportTarget] = useState<Customer | null>(null)
@@ -87,11 +91,13 @@ export function CustomersPage({
   const filtered = useMemo(
     () =>
       customers.filter((item) => {
+        if (Boolean(item.archived) !== showArchived) return false
         const source = `${item.companyName} ${item.contactPerson} ${item.email} ${item.customerNumber}`.toLowerCase()
         return source.includes(query.toLowerCase())
       }),
-    [customers, query],
+    [customers, query, showArchived],
   )
+  const archivedCount = useMemo(() => customers.filter(c => c.archived).length, [customers])
 
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault()
@@ -147,7 +153,10 @@ export function CustomersPage({
         registeredAddress: fullForm.registeredAddress.trim(),
         vatNumber: fullForm.vatNumber.trim() || undefined,
         creditLimit: parseFloat(fullForm.creditLimit) || 0,
+        creditDays: parseInt(fullForm.creditDays) || 14,
         notes: fullForm.notes.trim() || undefined,
+        salesmanId: fullForm.salesmanId || undefined,
+        salesmanName: fullForm.salesmanName || undefined,
       })
       setFullForm(initialFullForm)
       setShowAdd(false)
@@ -175,8 +184,19 @@ export function CustomersPage({
     setSavingEdit(false)
   }
 
+  const archiveCustomer = async (customer: Customer) => {
+    if (!window.confirm(`Archive ${customer.companyName}? They'll be hidden from the customer list but can be restored at any time.`)) return
+    setDeletingId(customer.id)
+    try { await onUpdate(customer.id, { archived: true }) } finally { setDeletingId(null) }
+  }
+
+  const restoreCustomer = async (customer: Customer) => {
+    setDeletingId(customer.id)
+    try { await onUpdate(customer.id, { archived: false }) } finally { setDeletingId(null) }
+  }
+
   const confirmDelete = async (customer: Customer) => {
-    if (!window.confirm(`Delete ${customer.companyName}? This removes their login and cannot be undone.`)) return
+    if (!window.confirm(`Permanently delete ${customer.companyName}? This removes their login and cannot be undone.`)) return
     setDeletingId(customer.id)
     try { await onDelete(customer.id) } finally { setDeletingId(null) }
   }
@@ -232,7 +252,12 @@ export function CustomersPage({
             Manage customer login accounts, delivery areas and payment types.
           </p>
         </div>
-        <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invite'); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button variant="secondary" onClick={() => setShowArchived(a => !a)}>
+            {showArchived ? '← Back to Customers' : `Archived Customers${archivedCount > 0 ? ` (${archivedCount})` : ''}`}
+          </Button>
+          {!showArchived && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invite'); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
+        </div>
       </div>
 
       <Modal open={showAdd} title={addMode === 'invite' ? 'Invite New Customer' : 'Create Customer Account'} onClose={() => setShowAdd(false)} wide={addMode === 'full'}>
@@ -279,6 +304,13 @@ export function CustomersPage({
             <div className="wide"><Input label="Registered Company Address" value={fullForm.registeredAddress} onChange={(e) => setFullForm({ ...fullForm, registeredAddress: e.target.value })} /></div>
             <div className="wide"><Input label="Delivery Address" value={fullForm.address} onChange={(e) => setFullForm({ ...fullForm, address: e.target.value })} /></div>
             <Input label="Credit Limit (£)" type="number" min="0" step="0.01" value={fullForm.creditLimit} onChange={(e) => setFullForm({ ...fullForm, creditLimit: e.target.value })} />
+            <Input label="Credit Days" type="number" min="1" step="1" value={fullForm.creditDays} onChange={(e) => setFullForm({ ...fullForm, creditDays: e.target.value })} />
+            <Select label="Salesman" options={['Unassigned', ...SALESMEN.map(s => s.name)]}
+              value={fullForm.salesmanName || 'Unassigned'}
+              onChange={(value) => {
+                const sm = SALESMEN.find(s => s.name === value)
+                setFullForm({ ...fullForm, salesmanId: sm?.id ?? '', salesmanName: sm?.name ?? '' })
+              }} />
             <div className="wide">
               <label className="form-control">
                 <span>Notes</span>
@@ -321,20 +353,40 @@ export function CustomersPage({
               </td>
               <td>
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
-                  <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
-                  <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Statement</Button>
-                  <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
-                  {canDelete && (
-                    <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => confirmDelete(customer)}>
-                      {deletingId === customer.id ? 'Deleting…' : 'Delete'}
-                    </Button>
+                  {showArchived ? (
+                    canDelete && (
+                      <>
+                        <Button variant="secondary" className="btn-sm" disabled={deletingId === customer.id} onClick={() => restoreCustomer(customer)}>
+                          {deletingId === customer.id ? 'Restoring…' : 'Restore'}
+                        </Button>
+                        <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => confirmDelete(customer)}>
+                          Delete Permanently
+                        </Button>
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
+                      <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Statement</Button>
+                      <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
+                      {canDelete && (
+                        <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => archiveCustomer(customer)}>
+                          {deletingId === customer.id ? 'Archiving…' : 'Archive'}
+                        </Button>
+                      )}
+                    </>
                   )}
                 </div>
               </td>
             </tr>
           ))}
         </DataTable>
-        {filtered.length === 0 && <EmptyState title="No customers yet" description="Create your first customer login above." />}
+        {filtered.length === 0 && (
+          <EmptyState
+            title={showArchived ? "No archived customers" : "No customers yet"}
+            description={showArchived ? "Customers you archive will appear here for restoring later." : "Create your first customer login above."}
+          />
+        )}
       </Card>
 
       <Modal open={Boolean(editing)} title={editing ? `Edit ${editing.companyName || 'Customer'}` : 'Edit Customer'} onClose={() => setEditing(null)}>

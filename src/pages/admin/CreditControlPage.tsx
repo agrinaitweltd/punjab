@@ -161,7 +161,9 @@ export function CreditControlPage({ customers, invoices, onSendReminder, onToggl
                     <div key={inv.id} className="ord-item-row">
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13.5, color: "#111827" }}>{inv.invoiceNumber}</div>
-                        <div style={{ fontSize: 12, color: "#b91c1c" }}>{inv.daysOverdue} day{inv.daysOverdue !== 1 ? "s" : ""} overdue</div>
+                        <div style={{ fontSize: 12, color: "#b91c1c" }}>
+                          {inv.daysOverdue === 0 ? "Credit days reached today" : `${inv.daysOverdue} day${inv.daysOverdue !== 1 ? "s" : ""} overdue`}
+                        </div>
                       </div>
                       <strong>£{inv.amount.toFixed(2)}</strong>
                     </div>

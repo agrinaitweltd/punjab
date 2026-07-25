@@ -24,6 +24,7 @@ function mapCustomer(r: any): Customer {
     vatNumber: r.vat_number ?? undefined, registeredAddress: r.registered_address ?? undefined,
     notes: r.notes ?? undefined,
     salesmanId: r.salesman_id ?? undefined, salesmanName: r.salesman_name ?? undefined,
+    archived: r.archived ?? false,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -175,6 +176,7 @@ function toCustomerRow(input: any) {
   if (input.notes !== undefined) row.notes = input.notes
   if (input.salesmanId !== undefined) row.salesman_id = input.salesmanId
   if (input.salesmanName !== undefined) row.salesman_name = input.salesmanName
+  if (input.archived !== undefined) row.archived = input.archived
   return row
 }
 
@@ -191,6 +193,14 @@ function withoutCreditColumns(row: Record<string, unknown>) {
 function withoutCustomerProfileColumns(row: Record<string, unknown>) {
   const { vat_number: _vn, registered_address: _ra, notes: _n, salesman_id: _si, salesman_name: _sn, ...rest } = row
   void _vn; void _ra; void _n; void _si; void _sn
+  return rest
+}
+
+/** Strips `archived` so a write can be retried against a DB where that
+    migration hasn't run yet. */
+function withoutArchivedColumn(row: Record<string, unknown>) {
+  const { archived: _a, ...rest } = row
+  void _a
   return rest
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -221,6 +231,9 @@ class SupabaseDatabaseService {
     if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
       ;({ data, error } = await db().from("customers").insert({ ...withoutCreditColumns(withoutCustomerProfileColumns(row)), id: row.id }).select().single())
     }
+    if (error && (error.code === "PGRST204" || /archived/.test(error.message ?? ""))) {
+      ;({ data, error } = await db().from("customers").insert({ ...withoutArchivedColumn(withoutCreditColumns(withoutCustomerProfileColumns(row))), id: row.id }).select().single())
+    }
     if (error) throw error
     return mapCustomer(data)
   }
@@ -241,6 +254,11 @@ class SupabaseDatabaseService {
         console.warn("updateCustomer: credit-control columns not migrated yet — skipped, run schema.sql's alter table statements")
         return null
       }
+      ;({ data, error } = await db().from("customers").update(fallbackRow).eq("id", id).select().single())
+    }
+    if (error && (error.code === "PGRST204" || /archived/.test(error.message ?? ""))) {
+      const fallbackRow = withoutArchivedColumn(withoutCreditColumns(withoutCustomerProfileColumns(row)))
+      if (Object.keys(fallbackRow).length === 0) { console.warn("updateCustomer: archived column not migrated yet — skipped"); return null }
       ;({ data, error } = await db().from("customers").update(fallbackRow).eq("id", id).select().single())
     }
     if (error) { console.error("updateCustomer", error); return null }

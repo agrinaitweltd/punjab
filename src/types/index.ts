@@ -75,6 +75,8 @@ export interface Customer {
   notes?: string
   salesmanId?: string
   salesmanName?: string
+  /** Soft-deleted customers are hidden from the main list but kept for restore. */
+  archived?: boolean
 }
 
 export interface Product {

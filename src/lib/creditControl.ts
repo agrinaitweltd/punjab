@@ -40,12 +40,15 @@ export function getCreditStatus(customer: Customer, invoices: Invoice[], now = n
 
   const outstanding = unpaid.reduce((s, i) => s + i.amount, 0)
 
+  // An invoice that has REACHED its agreed credit days (age >= creditDays,
+  // not just past it) must be paid — e.g. 14-day terms and an invoice that's
+  // exactly 14 days old today already requires payment, not just on day 15.
   const overdueInvoices: OverdueInvoice[] = unpaid
     .map(i => {
       const age = daysPast(i.date || i.dueDate, now)
       return { id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount, daysOverdue: age - creditDays }
     })
-    .filter(i => i.daysOverdue > 0)
+    .filter(i => i.daysOverdue >= 0)
 
   const overLimitBy = creditLimit > 0 ? Math.max(0, outstanding - creditLimit) : 0
 
