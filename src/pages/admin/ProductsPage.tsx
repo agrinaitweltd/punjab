@@ -20,7 +20,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const initialForm = {
-  productName: "", category: "", variety: "", size: "", sku: "", boxesPerPallet: "0",
+  productName: "", category: "", variety: "", size: "", sku: "", boxesPerPallet: "0", costPrice: "0",
 }
 
 export function ProductsPage({
@@ -88,7 +88,7 @@ export function ProductsPage({
 
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
-    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), productImage: "" })
+    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: Number(form.costPrice) || 0, productImage: "" })
     setForm(initialForm)
     setShowAdd(false)
   }
@@ -339,6 +339,7 @@ export function ProductsPage({
           <Input label="Size" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="e.g. 5kg box" required />
           <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. RED-CAP-5KG" required />
           <Input label="Boxes Per Pallet" type="number" value={form.boxesPerPallet} onChange={(e) => setForm({ ...form, boxesPerPallet: e.target.value })} required />
+          <Input label="Cost Price (£ per unit)" type="number" min="0" step="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
           <div className="wide actions-row">
             <Button type="submit">Create Product</Button>
             <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
@@ -356,6 +357,7 @@ export function ProductsPage({
             <Input label="Size" value={editTarget.size} onChange={(e) => setEditTarget({ ...editTarget, size: e.target.value })} />
             <Input label="SKU" value={editTarget.sku} onChange={(e) => setEditTarget({ ...editTarget, sku: e.target.value })} />
             <Input label="Boxes Per Pallet" type="number" value={String(editTarget.boxesPerPallet)} onChange={(e) => setEditTarget({ ...editTarget, boxesPerPallet: Number(e.target.value) })} />
+            <Input label="Cost Price (£ per unit)" type="number" min="0" step="0.01" value={String(editTarget.costPrice ?? 0)} onChange={(e) => setEditTarget({ ...editTarget, costPrice: Number(e.target.value) })} />
             <div className="wide actions-row">
               <Button type="submit">Save Changes</Button>
               <Button type="button" variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>

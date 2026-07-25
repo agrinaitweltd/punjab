@@ -73,6 +73,8 @@ export interface Customer {
   vatNumber?: string
   registeredAddress?: string
   notes?: string
+  salesmanId?: string
+  salesmanName?: string
 }
 
 export interface Product {
@@ -84,6 +86,9 @@ export interface Product {
   sku: string
   boxesPerPallet: number
   productImage: string
+  /** What we pay per unit — used to compute profit throughout Analytics.
+      Defaults to 0 (profit = revenue) until an admin sets it. */
+  costPrice?: number
 }
 
 export interface StockItem {
@@ -122,6 +127,30 @@ export interface Order {
   items: OrderItem[]
   fulfilment?: 'Delivery' | 'Collection'
   deliveryAddress?: string
+  /** The company's official invoice number, entered by staff at end of day
+      via the Invoice Numbers page — separate from the billing Invoice record. */
+  officialInvoiceNumber?: string
+  salesmanId?: string
+  salesmanName?: string
+}
+
+/** Hardcoded for now (see lib/salesmen.ts) — a real salesperson directory
+    can replace this later without changing how orders/customers reference it. */
+export interface Salesman {
+  id: string
+  number: string
+  name: string
+  code: string
+}
+
+export interface DayTrade {
+  id: string
+  date: string
+  totalSales: number
+  totalProfit: number
+  saleCount: number
+  closedAt: string
+  closedBy: string
 }
 
 export interface Invoice {

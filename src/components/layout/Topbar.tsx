@@ -1,13 +1,14 @@
 import type { User } from "../../types"
 
 const PAGE_LABELS: Record<string, string> = {
-  dashboard: "Overview", products: "Product", orders: "Order", customers: "Customer",
+  dashboard: "Overview", products: "Product", orders: "Sale", customers: "Customer",
   tickets: "Message", stock: "Stock", payments: "Payments", stats: "Analytics",
   "delivery-areas": "Deliveries", enquiries: "Enquiries", complaints: "Complaints",
   "credit-control": "Credit Control", "payment-proofs": "Payment Proofs", "credit-notes": "Credit Notes",
   "customer-applications": "Customer Applications", "payment-reminders": "Payment Reminders",
   admins: "Admin Users", "data-extract": "Data Extract", files: "Files",
   session: "Produce Buying Desk", "place-order": "Place Order",
+  "invoice-numbers": "Invoice Numbers", "day-trade": "Day Trade",
 }
 
 export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBellClick }: {

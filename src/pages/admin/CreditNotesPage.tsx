@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { CreditNote, CreditNoteAllocation, Customer, Invoice, SupportTicket } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
@@ -8,7 +8,7 @@ import { invoiceOutstanding } from "../../lib/creditNotes"
 type IssueMode = "invoice" | "account"
 
 export function CreditNotesPage({
-  creditNotes, allocations, customers, invoices, tickets, onIssue, onEdit, onVoid, onApply, canManage = true,
+  creditNotes, allocations, customers, invoices, tickets, onIssue, onEdit, onVoid, onApply, canManage = true, openCreditNoteId,
 }: {
   creditNotes: CreditNote[]
   allocations: CreditNoteAllocation[]
@@ -22,6 +22,9 @@ export function CreditNotesPage({
   /** Gates Issue / Edit / Void / Apply — view + print stay available to
       everyone who can reach this page. */
   canManage?: boolean
+  /** Set (e.g. from an invoice's "credited by CN-xxx" link) to auto-open that
+      credit note's detail modal when this page mounts. */
+  openCreditNoteId?: string | null
 }) {
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Void">("All")
@@ -108,6 +111,13 @@ export function CreditNotesPage({
     setDetail(note); setEditReason(note.reason); setEditAmount(String(note.amount))
     setEditError(""); setApplyError(""); setApplyInvoiceId(""); setApplyAmount(String(note.remainingBalance))
   }
+
+  useEffect(() => {
+    if (!openCreditNoteId) return
+    const note = creditNotes.find(c => c.id === openCreditNoteId)
+    if (note) openDetail(note)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openCreditNoteId, creditNotes])
 
   const saveEdit = async () => {
     if (!detail) return

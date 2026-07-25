@@ -48,6 +48,8 @@ import {
   createNotificationLog,
   getSuppliers,
   createSupplier,
+  getDayTrades,
+  createDayTrade,
 } from '../../api/miscApi'
 import { computeCreditApplication } from '../../lib/creditNotes'
 import type {
@@ -56,6 +58,7 @@ import type {
   BuyingPrice,
   BuyingSession,
   Customer,
+  DayTrade,
   NotificationLog,
   Supplier,
   CreditNote,
@@ -80,6 +83,13 @@ import { CustomersPage } from './CustomersPage'
 import { DashboardHome } from './DashboardHome'
 import { DeliveryAreasPage } from './DeliveryAreasPage'
 import { InvoicesPage } from './InvoicesPage'
+import { InvoiceNumbersPage } from './InvoiceNumbersPage'
+import { SalesLoginPage } from './SalesLoginPage'
+import { AnalyticsPage } from './AnalyticsPage'
+import { DayTradePage } from './DayTradePage'
+import { totalSales, totalProfit, toProductsById, completedSales } from '../../lib/analytics'
+import { loadSalesLogin, saveSalesLogin } from '../../lib/salesmen'
+import type { Salesman } from '../../types'
 import { OrdersPage } from './OrdersPage'
 import { PaymentsPage } from './PaymentsPage'
 import { ProductsPage } from './ProductsPage'
@@ -111,6 +121,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [buyingPrices, setBuyingPrices] = useState<BuyingPrice[]>([])
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [openCreditNoteId, setOpenCreditNoteId] = useState<string | null>(null)
+  const [salesLogin, setSalesLogin] = useState<Salesman | null>(() => loadSalesLogin())
+  const [dayTrades, setDayTrades] = useState<DayTrade[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -132,6 +145,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       buyingPricesData,
       notificationLogsData,
       suppliersData,
+      dayTradesData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -151,6 +165,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getBuyingPrices(),
       getNotificationLogs(),
       getSuppliers(),
+      getDayTrades(),
     ])
 
     setCustomers(customersData)
@@ -171,6 +186,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setBuyingPrices(buyingPricesData)
     setNotificationLogs(notificationLogsData)
     setSuppliers(suppliersData)
+    setDayTrades(dayTradesData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -193,6 +209,32 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setCurrent(key)
     if (key === 'orders') markOrdersSeen()
     if (key === 'tickets') markTicketsSeen()
+  }
+
+  const dayEnd = async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    if (dayTrades.some(dt => dt.date === today)) {
+      window.alert(`${today} has already been closed as a Day Trade.`)
+      return
+    }
+    const todaysSales = completedSales(orders).filter(o => o.date === today)
+    if (!window.confirm(`Close trading for ${today}? This archives ${todaysSales.length} sale(s) as a permanent Day Trade record and cannot be undone.`)) return
+    const productsById = toProductsById(products)
+    try {
+      await createDayTrade({
+        date: today,
+        totalSales: totalSales(todaysSales),
+        totalProfit: totalProfit(todaysSales, productsById),
+        saleCount: todaysSales.length,
+        closedAt: new Date().toISOString(),
+        closedBy: user.displayName,
+      })
+      void logActivity(user.displayName, `closed trading day ${today} (${todaysSales.length} sales)`)
+      await load()
+      navigate('day-trade')
+    } catch {
+      window.alert("Couldn't close the trading day — please try again. If this keeps happening, the day_trades database migration in src/lib/schema.sql may not have been run yet.")
+    }
   }
 
   // The bell represents ALL notifications, not just one page's — clear
@@ -346,6 +388,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'orders') {
+      if (!salesLogin) {
+        return <SalesLoginPage onLogin={(s) => { saveSalesLogin(s); setSalesLogin(s) }} />
+      }
       return (
         <OrdersPage
           orders={orders}
@@ -415,7 +460,31 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'invoices') {
-      return <InvoicesPage invoices={invoices} />
+      return (
+        <InvoicesPage
+          invoices={invoices}
+          creditNotes={creditNotes}
+          allocations={creditNoteAllocations}
+          onOpenCreditNote={(id) => { setOpenCreditNoteId(id); navigate('credit-notes') }}
+        />
+      )
+    }
+
+    if (current === 'day-trade') {
+      return <DayTradePage dayTrades={dayTrades} orders={orders} products={products} />
+    }
+
+    if (current === 'invoice-numbers') {
+      return (
+        <InvoiceNumbersPage
+          orders={orders}
+          onSave={async (orderId, officialInvoiceNumber) => {
+            await updateOrder(orderId, { officialInvoiceNumber })
+            void logActivity(user.displayName, `set invoice number ${officialInvoiceNumber} for sale ${orders.find(o => o.id === orderId)?.orderNumber ?? orderId}`)
+            await load()
+          }}
+        />
+      )
     }
 
     if (current === 'payment-proofs') {
@@ -496,6 +565,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           invoices={invoices}
           tickets={tickets}
           canManage={user.isSuperAdmin || Boolean(user.permissions?.creditNotesIssue)}
+          openCreditNoteId={openCreditNoteId}
           onIssue={async (input, mode) => {
             const note = await createCreditNote({
               customerId: input.customerId, amount: input.amount, reason: input.reason,
@@ -721,7 +791,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'stats') {
-      return <SimpleModulePage title="Stats & Analytics" text="Business performance stats including sales volume, top customers, product popularity and revenue trends." />
+      return <AnalyticsPage orders={orders} products={products} />
     }
 
     return <SettingsPage />
@@ -733,6 +803,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       badges={{ orders: newOrders, tickets: newTickets, 'payment-proofs': pendingProofsCount }}
       notifCount={newOrders + newTickets + pendingProofsCount}
       onBellClick={openNotifications}
+      onDayEnd={dayEnd}
     >
       {page()}
       <ToastStack toasts={toasts} onDismiss={dismiss} />

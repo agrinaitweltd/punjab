@@ -16,7 +16,7 @@ const CAT_COLORS: Record<string, string> = {
 export const catColor = (c: string) => CAT_COLORS[c] ?? "#1f7a3a"
 
 export function PlaceOrderModal({
-  open, onClose, products, stock, customerId, customerName, customerEmail, onPlaced, initialSearch,
+  open, onClose, products, stock, customerId, customerName, customerEmail, salesmanId, salesmanName, onPlaced, initialSearch,
 }: {
   open: boolean
   onClose: () => void
@@ -25,6 +25,9 @@ export function PlaceOrderModal({
   customerId: string
   customerName: string
   customerEmail?: string
+  /** Inherited automatically from the customer's assigned salesman. */
+  salesmanId?: string
+  salesmanName?: string
   onPlaced: () => void
   initialSearch?: string
 }) {
@@ -133,6 +136,7 @@ export function PlaceOrderModal({
         items: cartLines.map(l => ({ productId: l.product.id, quantity: l.qty, unitPrice: l.stock.price })),
         fulfilment,
         deliveryAddress: fulfilment === "Delivery" ? fullDeliveryAddress : "",
+        salesmanId, salesmanName,
       })
       setPlacedNumber(order.orderNumber)
       setStep("done")

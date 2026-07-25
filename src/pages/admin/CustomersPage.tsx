@@ -10,6 +10,8 @@ import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { CustomerStatementModal } from './CustomerStatementModal'
+import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
+import { SALESMEN } from '../../lib/salesmen'
 
 const initialForm = {
   companyName: '',
@@ -303,13 +305,19 @@ export function CustomersPage({
               <td>{customer.deliveryArea || '—'}</td>
               <td>{customer.paymentTerms}</td>
               <td>
-                {customer.blocked ? (
-                  <span className="ps-badge" style={{ background: '#111827', color: '#fff' }}>Blocked</span>
-                ) : customer.status === 'inactive' ? (
-                  <span className="ps-badge ps-badge-gray">Inactive</span>
-                ) : (
-                  <span className="ps-badge ps-badge-green">Active</span>
-                )}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {customer.blocked ? (
+                    <span className="ps-badge" style={{ background: '#111827', color: '#fff' }}>Blocked</span>
+                  ) : customer.status === 'inactive' ? (
+                    <span className="ps-badge ps-badge-gray">Inactive</span>
+                  ) : (
+                    <span className="ps-badge ps-badge-green">Active</span>
+                  )}
+                  {(() => {
+                    const label = creditWarningLabel(getCreditStatus(customer, invoices))
+                    return label ? <span className="ps-badge ps-badge-red" title={label}>{label}</span> : null
+                  })()}
+                </div>
               </td>
               <td>
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
@@ -350,6 +358,12 @@ export function CustomersPage({
               value={editing.deliveryArea} onChange={(value) => setEditing({ ...editing, deliveryArea: value })} />
             <Select label="Account Status" options={['active', 'inactive']} value={editing.status}
               onChange={(value) => setEditing({ ...editing, status: value as Customer['status'] })} />
+            <Select label="Salesman" options={['Unassigned', ...SALESMEN.map(s => s.name)]}
+              value={editing.salesmanName || 'Unassigned'}
+              onChange={(value) => {
+                const sm = SALESMEN.find(s => s.name === value)
+                setEditing({ ...editing, salesmanId: sm?.id, salesmanName: sm?.name })
+              }} />
 
             <p className="wide" style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7a70', textTransform: 'uppercase', letterSpacing: 0.5, margin: '10px 0 -6px' }}>
               Credit Control

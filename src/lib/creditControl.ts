@@ -75,6 +75,25 @@ export function getCreditStatus(customer: Customer, invoices: Invoice[], now = n
   }
 }
 
+/** Which condition tripped, for clear warning messaging — "whichever is
+    reached first" per the credit-terms spec: days overdue, over limit, or both. */
+export function creditWarningReason(status: CreditStatus): "days" | "limit" | "both" | null {
+  const daysExceeded = status.overdueInvoices.length > 0
+  const limitExceeded = status.overLimitBy > 0
+  if (daysExceeded && limitExceeded) return "both"
+  if (daysExceeded) return "days"
+  if (limitExceeded) return "limit"
+  return null
+}
+
+export function creditWarningLabel(status: CreditStatus): string | null {
+  const reason = creditWarningReason(status)
+  if (reason === "both") return "Credit days exceeded & over credit limit"
+  if (reason === "days") return "Credit days exceeded"
+  if (reason === "limit") return "Over credit limit"
+  return null
+}
+
 export function getOverdueCustomers(customers: Customer[], invoices: Invoice[], now = new Date()): CreditStatus[] {
   return customers
     .map(c => getCreditStatus(c, invoices, now))

@@ -31,12 +31,14 @@ export function computeCreditApplication(creditNote: CreditNote, invoice: Invoic
   }
 }
 
-/** CN-YYYY-NNN, sequential per year — same scheme as invoice/payment numbers. */
+/** CN-000001, sequential and unique across all credit notes ever issued —
+    every credit note keeps its number forever, matching a real financial
+    document rather than resetting each year. */
 export function nextCreditNumber(existing: { creditNumber: string }[]): string {
-  const year = new Date().getFullYear()
   const max = existing.reduce((m, c) => {
-    const n = c.creditNumber.startsWith(`CN-${year}-`) ? parseInt(c.creditNumber.split("-").pop() ?? "0") || 0 : 0
+    const match = /^CN-(\d+)$/.exec(c.creditNumber)
+    const n = match ? parseInt(match[1], 10) || 0 : 0
     return n > m ? n : m
   }, 0)
-  return `CN-${year}-${String(max + 1).padStart(3, "0")}`
+  return `CN-${String(max + 1).padStart(6, "0")}`
 }

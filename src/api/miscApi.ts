@@ -8,6 +8,7 @@ import { getCustomerApplications, createCustomerApplication, updateCustomerAppli
 import { getBuyingSessions, getOrCreateBuyingSession, updateBuyingSession, getBuyingPrices, createBuyingPrice, updateBuyingPrice, deleteBuyingPrice } from '../services/buyingDeskService'
 import { getNotificationLogs, createNotificationLog, updateNotificationLog } from '../services/notificationService'
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../services/supplierService'
+import { getDayTrades, createDayTrade } from '../services/dayTradeService'
 
 export { getActivity, getInvoices, getPayments, createInvoice, createPayment, updateInvoice, importStatementInvoices }
 export { getTickets, createTicket, updateTicketStatus }
@@ -18,6 +19,7 @@ export { getCustomerApplications, createCustomerApplication, updateCustomerAppli
 export { getBuyingSessions, getOrCreateBuyingSession, updateBuyingSession, getBuyingPrices, createBuyingPrice, updateBuyingPrice, deleteBuyingPrice }
 export { getNotificationLogs, createNotificationLog, updateNotificationLog }
 export { getSuppliers, createSupplier, updateSupplier, deleteSupplier }
+export { getDayTrades, createDayTrade }
 
 export function createTicketForCustomer(subject: string, message: string, customerId: string) {
   return createTicket('customer', customerId, subject, message)

@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<OrderStatus, { bg: string; color: string }> = {
 /* Orders move forward through a fixed workflow — no free-form status
    editing. Delivered and Cancelled are terminal. */
 const NEXT_STEP: Partial<Record<OrderStatus, { status: OrderStatus; label: string }>> = {
-  Pending:   { status: "Confirmed", label: "Confirm Order" },
+  Pending:   { status: "Confirmed", label: "Confirm Sale" },
   Confirmed: { status: "Preparing", label: "Start Preparing" },
   Preparing: { status: "Delivered", label: "Mark as Delivered" },
 }
@@ -60,7 +60,7 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
   }
 
   const cancel = async (order: Order) => {
-    if (!window.confirm(`Cancel order ${order.orderNumber}? This cannot be undone.`)) return
+    if (!window.confirm(`Cancel sale ${order.orderNumber}? This cannot be undone.`)) return
     setBusy(true)
     await onUpdateOrder(order.id, { status: "Cancelled" })
     setDetail(d => d && d.id === order.id ? { ...d, status: "Cancelled" } : d)
@@ -78,18 +78,18 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
     <div className="stack">
       <div>
         <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
-        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Orders</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Sales</h2>
         <p style={{ fontSize: 13.5, color: "#6b7a70", marginTop: 3 }}>
-          Orders move forward through a fixed workflow — confirm, prepare, deliver, or cancel. Once delivered or cancelled, an order is final.
+          Sales move forward through a fixed workflow — confirm, prepare, deliver, or cancel. Once delivered or cancelled, a sale is final.
         </p>
       </div>
 
       <div className="hr-found-row">
-        <span className="hr-found">{filtered.length} order{filtered.length !== 1 ? "s" : ""} found</span>
+        <span className="hr-found">{filtered.length} sale{filtered.length !== 1 ? "s" : ""} found</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div className="ps-search-wrap" style={{ padding: "7px 12px" }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input className="ps-search" placeholder="Search orders or customers…" value={query} onChange={e => setQuery(e.target.value)} />
+            <input className="ps-search" placeholder="Search sales or customers…" value={query} onChange={e => setQuery(e.target.value)} />
           </div>
           <button className={"ps-tool-btn" + (statusFilter !== "All" ? " ps-tool-active" : "")} onClick={cycleStatus} title="Cycle status filter">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -102,7 +102,7 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
         <div className="ps-table-wrap">
           <table className="ps-table">
             <thead><tr>
-              <th>Order</th>
+              <th>Sale</th>
               <th>Customer</th>
               <th>Date</th>
               <th>Items</th>
@@ -118,7 +118,10 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
                 const isFinal = !step
                 return (
                   <tr key={order.id} className="ps-row cd-row-clickable" onClick={() => setDetail(order)}>
-                    <td><strong>{order.orderNumber}</strong></td>
+                    <td>
+                      <strong>{order.orderNumber}</strong>
+                      {order.officialInvoiceNumber && <div style={{ fontSize: 11, color: "#6b7280" }}>{order.officialInvoiceNumber}</div>}
+                    </td>
                     <td>
                       <div className="ps-product-cell">
                         <div className="ps-product-avatar" style={{ background: "#e8f8ec", color: "#1a5c2d" }}>
@@ -152,15 +155,15 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
           {filtered.length === 0 && (
             <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: "#374151" }}>No orders found</div>
-              <div style={{ fontSize: 13 }}>Orders placed by customers will appear here.</div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: "#374151" }}>No sales found</div>
+              <div style={{ fontSize: 13 }}>Sales placed by customers will appear here.</div>
             </div>
           )}
         </div>
       </div>
 
       {/* Order detail + confirmable workflow */}
-      <Modal open={Boolean(detail)} title={detail ? `Order ${detail.orderNumber}` : "Order"} onClose={() => setDetail(null)}>
+      <Modal open={Boolean(detail)} title={detail ? `Sale ${detail.orderNumber}` : "Sale"} onClose={() => setDetail(null)}>
         {detail && (() => {
           const o = detail
           const sc = STATUS_COLORS[o.status]
@@ -218,7 +221,7 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
               {o.status === "Cancelled" && (
                 <div className="ord-cancelled-note">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                  This order was cancelled and cannot be modified.
+                  This sale was cancelled and cannot be modified.
                 </div>
               )}
 
@@ -243,7 +246,7 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
                   <Button onClick={() => markPaid(o)} disabled={marking}>{marking ? "Marking paid…" : "Mark as Paid"}</Button>
                 )}
                 {CAN_CANCEL.includes(o.status) && (
-                  <Button variant="danger" onClick={() => cancel(o)} disabled={busy}>Cancel Order</Button>
+                  <Button variant="danger" onClick={() => cancel(o)} disabled={busy}>Cancel Sale</Button>
                 )}
                 <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
               </div>

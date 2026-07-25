@@ -93,6 +93,8 @@ create table if not exists customers (
   vat_number        text,
   registered_address text,
   notes             text,
+  salesman_id       text,
+  salesman_name     text,
   last_activity   timestamptz default now(),
   created_at      timestamptz default now()
 );
@@ -103,6 +105,8 @@ create table if not exists customers (
 -- alter table customers add column if not exists blocked boolean default false;
 -- alter table customers add column if not exists vat_number text;
 -- alter table customers add column if not exists registered_address text;
+-- alter table customers add column if not exists salesman_id text;
+-- alter table customers add column if not exists salesman_name text;
 -- alter table customers add column if not exists notes text;
 
 -- PRODUCTS
@@ -115,8 +119,12 @@ create table if not exists products (
   sku              text unique not null,
   boxes_per_pallet integer default 0,
   product_image    text,
+  cost_price       numeric(10,2) default 0,
   created_at       timestamptz default now()
 );
+
+-- If products already existed before this column was added, run:
+-- alter table products add column if not exists cost_price numeric(10,2) default 0;
 
 -- STOCK ITEMS
 create table if not exists stock_items (
@@ -142,12 +150,18 @@ create table if not exists orders (
   items         jsonb default '[]'::jsonb,
   fulfilment    text default 'Delivery' check (fulfilment in ('Delivery', 'Collection')),
   delivery_address text,
+  official_invoice_number text,
+  salesman_id   text,
+  salesman_name text,
   created_at    timestamptz default now()
 );
 
 -- If the orders table already existed before these columns were added, run:
 -- alter table orders add column if not exists fulfilment text default 'Delivery' check (fulfilment in ('Delivery', 'Collection'));
 -- alter table orders add column if not exists delivery_address text;
+-- alter table orders add column if not exists official_invoice_number text;
+-- alter table orders add column if not exists salesman_id text;
+-- alter table orders add column if not exists salesman_name text;
 
 -- INVOICES
 create table if not exists invoices (
@@ -287,6 +301,18 @@ create table if not exists notification_logs (
   created_at     timestamptz default now()
 );
 alter table notification_logs disable row level security;
+
+-- DAY TRADE — permanent end-of-day archive, one row per closed trading day.
+create table if not exists day_trades (
+  id           text primary key default gen_random_uuid()::text,
+  date         date unique not null,
+  total_sales  numeric(10,2) default 0,
+  total_profit numeric(10,2) default 0,
+  sale_count   integer default 0,
+  closed_at    timestamptz default now(),
+  closed_by    text
+);
+alter table day_trades disable row level security;
 
 -- SUPPORT TICKETS
 create table if not exists support_tickets (

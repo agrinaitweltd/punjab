@@ -145,7 +145,7 @@ export function DashboardHome({
   const exportOrders = () => {
     exportToCsv(
       "orders",
-      ["Order Number", "Customer", "Status", "Items", "Order Value", "Date"],
+      ["Sale Number", "Customer", "Status", "Items", "Sale Value", "Date"],
       filtered.map(o => [o.orderNumber, o.customerName, o.status, o.items.length, o.amount.toFixed(2), o.date]),
     )
   }
@@ -201,7 +201,7 @@ export function DashboardHome({
             </button>
             <button className="hr-btn" onClick={() => onNavigate?.("orders")}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Orders
+              Sales
             </button>
           </div>
           <div className={"hr-card-note " + (customer.status === "active" ? "ok" : "warn")}>
@@ -235,7 +235,7 @@ export function DashboardHome({
             <button className="hd-badge" onClick={() => onNavigate?.("settings")} title="Portal settings">
               <span className="hd-dot ok" /> Active
             </button>
-            <button className="hd-badge" onClick={() => setTab("orders")} title="View orders">
+            <button className="hd-badge" onClick={() => setTab("orders")} title="View sales">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#e07c24" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               {activeOrders} of {orders.length || 0} Orders
             </button>
@@ -251,7 +251,7 @@ export function DashboardHome({
           </button>
           <button className={"hd-tab" + (tab === "orders" ? " on" : "")} onClick={() => setTab("orders")}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-            Orders {orders.length > 0 && <span className="hd-tab-count">{orders.length}</span>}
+            Sales {orders.length > 0 && <span className="hd-tab-count">{orders.length}</span>}
           </button>
           <button className={"hd-tab" + (tab === "customers" ? " on" : "")} onClick={() => setTab("customers")}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
@@ -288,8 +288,8 @@ export function DashboardHome({
         <>
           <div className="ho-stats">
             <HoStat label="Total Revenue" value={<CountUp value={orderRevenue} prefix="£" decimals={0} />} delta="+3.4%" up />
-            <HoStat label="New Orders" value={<CountUp value={pendingOrders} />} delta="+2.2%" up />
-            <HoStat label="Active Orders" value={<CountUp value={activeOrders} />} delta="+1.5%" up />
+            <HoStat label="New Sales" value={<CountUp value={pendingOrders} />} delta="+2.2%" up />
+            <HoStat label="Active Sales" value={<CountUp value={activeOrders} />} delta="+1.5%" up />
             <HoStat label="Avg Order" value={<CountUp value={avgOrder} prefix="£" />} delta="+0.9%" up />
           </div>
 
@@ -298,7 +298,7 @@ export function DashboardHome({
               <div className="ho-charts">
                 <div className="ho-card">
                   <div className="ho-card-head">
-                    <span className="ho-card-title">Orders</span>
+                    <span className="ho-card-title">Sales</span>
                     <span className="ho-card-sub">Last {days.length || 0} days</span>
                   </div>
                   <div className="ho-card-big"><CountUp value={orders.length} /></div>
@@ -429,7 +429,7 @@ export function DashboardHome({
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div className="ps-search-wrap" style={{ padding: "7px 12px" }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input className="ps-search" placeholder="Search orders…" value={query} onChange={e => { setQuery(e.target.value); setPage(1) }} />
+                <input className="ps-search" placeholder="Search sales…" value={query} onChange={e => { setQuery(e.target.value); setPage(1) }} />
               </div>
               <button className={"ps-tool-btn" + (statusFilter !== "All" ? " ps-tool-active" : "")} onClick={cycleStatus} title="Cycle status filter">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -443,7 +443,7 @@ export function DashboardHome({
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                 {dense ? "Compact" : "Comfortable"}
               </button>
-              <button className="ps-tool-btn" onClick={exportOrders} title="Download orders as CSV">
+              <button className="ps-tool-btn" onClick={exportOrders} title="Download sales as CSV">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Export
               </button>
@@ -462,7 +462,7 @@ export function DashboardHome({
                     <th>Status</th>
                     <th>About</th>
                     <th>Team</th>
-                    <th>Order Value</th>
+                    <th>Sale Value</th>
                     <th>Fulfilment</th>
                     <th className="ps-th-plus">+</th>
                   </tr>

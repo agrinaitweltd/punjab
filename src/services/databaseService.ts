@@ -1,6 +1,6 @@
 ﻿import { supabase as _sb } from "../lib/supabase"
 import type {
-  ActivityLog, AdminRole, AdminStaff, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication, DeliveryArea,
+  ActivityLog, AdminRole, AdminStaff, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication, DayTrade, DeliveryArea,
   Invoice, NotificationLog, Order, Payment, Product, StockItem, Supplier, SupportTicket,
 } from "../types"
 
@@ -23,6 +23,7 @@ function mapCustomer(r: any): Customer {
     blocked: r.blocked ?? false,
     vatNumber: r.vat_number ?? undefined, registeredAddress: r.registered_address ?? undefined,
     notes: r.notes ?? undefined,
+    salesmanId: r.salesman_id ?? undefined, salesmanName: r.salesman_name ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,6 +32,7 @@ function mapProduct(r: any): Product {
     id: r.id, productName: r.product_name, category: r.category ?? "",
     variety: r.variety ?? "", size: r.size ?? "", sku: r.sku,
     boxesPerPallet: r.boxes_per_pallet ?? 0, productImage: r.product_image ?? "",
+    costPrice: r.cost_price ?? 0,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,6 +51,8 @@ function mapOrder(r: any): Order {
     amount: r.amount ?? 0, status: r.status ?? "Pending", items: r.items ?? [],
     fulfilment: r.fulfilment === "Collection" ? "Collection" : "Delivery",
     deliveryAddress: r.delivery_address ?? "",
+    officialInvoiceNumber: r.official_invoice_number ?? undefined,
+    salesmanId: r.salesman_id ?? undefined, salesmanName: r.salesman_name ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,6 +106,13 @@ function mapNotificationLog(r: any): NotificationLog {
     id: r.id, invoiceId: r.invoice_id, customerId: r.customer_id, channel: r.channel ?? "email",
     status: r.status ?? "Sent", scheduledFor: r.scheduled_for ?? undefined, sentAt: r.sent_at ?? undefined,
     error: r.error ?? undefined,
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapDayTrade(r: any): DayTrade {
+  return {
+    id: r.id, date: r.date, totalSales: r.total_sales ?? 0, totalProfit: r.total_profit ?? 0,
+    saleCount: r.sale_count ?? 0, closedAt: r.closed_at ?? "", closedBy: r.closed_by ?? "",
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -162,6 +173,8 @@ function toCustomerRow(input: any) {
   if (input.vatNumber !== undefined) row.vat_number = input.vatNumber
   if (input.registeredAddress !== undefined) row.registered_address = input.registeredAddress
   if (input.notes !== undefined) row.notes = input.notes
+  if (input.salesmanId !== undefined) row.salesman_id = input.salesmanId
+  if (input.salesmanName !== undefined) row.salesman_name = input.salesmanName
   return row
 }
 
@@ -173,20 +186,22 @@ function withoutCreditColumns(row: Record<string, unknown>) {
   return rest
 }
 
-/** Strips vat_number/registered_address/notes so a write can be retried
-    against a DB where that migration hasn't run yet. */
+/** Strips vat_number/registered_address/notes/salesman_* so a write can be
+    retried against a DB where that migration hasn't run yet. */
 function withoutCustomerProfileColumns(row: Record<string, unknown>) {
-  const { vat_number: _vn, registered_address: _ra, notes: _n, ...rest } = row
-  void _vn; void _ra; void _n
+  const { vat_number: _vn, registered_address: _ra, notes: _n, salesman_id: _si, salesman_name: _sn, ...rest } = row
+  void _vn; void _ra; void _n; void _si; void _sn
   return rest
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toProductRow(input: any) {
-  return {
+  const row: Record<string, unknown> = {
     product_name: input.productName, category: input.category, variety: input.variety,
     size: input.size, sku: input.sku, boxes_per_pallet: input.boxesPerPallet,
     product_image: input.productImage ?? "",
   }
+  if (input.costPrice !== undefined) row.cost_price = input.costPrice
+  return row
 }
 
 class SupabaseDatabaseService {
@@ -200,7 +215,7 @@ class SupabaseDatabaseService {
   async createCustomer(input: Omit<Customer, "id" | "lastActivity" | "status" | "balance">): Promise<Customer> {
     const row = { id: genId("c"), ...toCustomerRow(input), last_activity: new Date().toISOString(), status: "active", balance: 0 }
     let { data, error } = await db().from("customers").insert(row).select().single()
-    if (error && (error.code === "PGRST204" || /vat_number|registered_address|notes/.test(error.message ?? ""))) {
+    if (error && (error.code === "PGRST204" || /vat_number|registered_address|notes|salesman/.test(error.message ?? ""))) {
       ;({ data, error } = await db().from("customers").insert({ ...withoutCustomerProfileColumns(row), id: row.id }).select().single())
     }
     if (error && (error.code === "PGRST204" || /credit_limit|credit_days|blocked/.test(error.message ?? ""))) {
@@ -212,7 +227,7 @@ class SupabaseDatabaseService {
   async updateCustomer(id: string, input: Partial<Customer>): Promise<Customer | null> {
     const row = toCustomerRow(input)
     let { data, error } = await db().from("customers").update(row).eq("id", id).select().single()
-    if (error && (error.code === "PGRST204" || /vat_number|registered_address|notes/.test(error.message ?? ""))) {
+    if (error && (error.code === "PGRST204" || /vat_number|registered_address|notes|salesman/.test(error.message ?? ""))) {
       const fallbackRow = withoutCustomerProfileColumns(row)
       if (Object.keys(fallbackRow).length === 0) { console.warn("updateCustomer: profile columns not migrated yet — skipped"); return null }
       ;({ data, error } = await db().from("customers").update(fallbackRow).eq("id", id).select().single())
@@ -243,8 +258,13 @@ class SupabaseDatabaseService {
     return (data ?? []).map(mapProduct)
   }
   async createProduct(input: Omit<Product, "id">): Promise<Product> {
-    const row = { id: genId("p"), ...toProductRow(input) }
-    const { data, error } = await db().from("products").insert(row).select().single()
+    const row: Record<string, unknown> = { id: genId("p"), ...toProductRow(input) }
+    let { data, error } = await db().from("products").insert(row).select().single()
+    if (error && (error.code === "PGRST204" || /cost_price/.test(error.message ?? ""))) {
+      const { cost_price: _cp, ...fallbackRow } = row
+      void _cp
+      ;({ data, error } = await db().from("products").insert(fallbackRow).select().single())
+    }
     if (error) throw error
     // Every product needs a stock row so it appears on the Stock page for pricing.
     const stockRow = { id: genId("s"), product_id: row.id, available_quantity: 0, price: 0, status: "out", last_updated: new Date().toLocaleString() }
@@ -254,7 +274,12 @@ class SupabaseDatabaseService {
   }
   async updateProduct(id: string, input: Partial<Product>): Promise<Product | null> {
     const row = toProductRow(input)
-    const { data, error } = await db().from("products").update(row).eq("id", id).select().single()
+    let { data, error } = await db().from("products").update(row).eq("id", id).select().single()
+    if (error && (error.code === "PGRST204" || /cost_price/.test(error.message ?? ""))) {
+      const { cost_price: _cp, ...fallbackRow } = row
+      void _cp
+      ;({ data, error } = await db().from("products").update(fallbackRow).eq("id", id).select().single())
+    }
     if (error) { console.error("updateProduct", error); return null }
     return mapProduct(data)
   }
@@ -306,21 +331,34 @@ class SupabaseDatabaseService {
       items: input.items,
       fulfilment: input.fulfilment ?? "Delivery",
       delivery_address: input.deliveryAddress ?? null,
+      salesman_id: input.salesmanId ?? null,
+      salesman_name: input.salesmanName ?? null,
     }
     let { data, error } = await db().from("orders").insert(row).select().single()
-    // The "fulfilment"/"delivery_address" columns may not exist yet if the schema
-    // migration hasn't been run — retry without them so checkout still works
-    // rather than hard-failing the order.
-    if (error && (error.message?.includes("fulfilment") || error.message?.includes("delivery_address") || error.code === "PGRST204")) {
-      const { fulfilment: _f, delivery_address: _d, ...rowWithoutExtras } = row
-      void _f; void _d
+    // The "fulfilment"/"delivery_address"/"salesman_*" columns may not exist yet
+    // if the schema migration hasn't been run — retry without them so checkout
+    // still works rather than hard-failing the order.
+    if (error && (error.message?.includes("fulfilment") || error.message?.includes("delivery_address") || error.message?.includes("salesman") || error.code === "PGRST204")) {
+      const { fulfilment: _f, delivery_address: _d, salesman_id: _si, salesman_name: _sn, ...rowWithoutExtras } = row
+      void _f; void _d; void _si; void _sn
       ;({ data, error } = await db().from("orders").insert(rowWithoutExtras).select().single())
     }
     if (error) throw error
     return mapOrder(data)
   }
   async updateOrder(id: string, input: Partial<Order>): Promise<Order | null> {
-    const { data, error } = await db().from("orders").update({ status: input.status }).eq("id", id).select().single()
+    const row: Record<string, unknown> = {}
+    if (input.status !== undefined) row.status = input.status
+    if (input.officialInvoiceNumber !== undefined) row.official_invoice_number = input.officialInvoiceNumber
+    if (input.salesmanId !== undefined) row.salesman_id = input.salesmanId
+    if (input.salesmanName !== undefined) row.salesman_name = input.salesmanName
+    let { data, error } = await db().from("orders").update(row).eq("id", id).select().single()
+    if (error && (error.code === "PGRST204" || /official_invoice_number|salesman/.test(error.message ?? ""))) {
+      const { official_invoice_number: _oin, salesman_id: _si, salesman_name: _sn, ...fallbackRow } = row
+      void _oin; void _si; void _sn
+      if (Object.keys(fallbackRow).length === 0) { console.warn("updateOrder: columns not migrated yet — skipped"); return null }
+      ;({ data, error } = await db().from("orders").update(fallbackRow).eq("id", id).select().single())
+    }
     if (error) { console.error("updateOrder", error); return null }
     return mapOrder(data)
   }
@@ -652,6 +690,22 @@ class SupabaseDatabaseService {
   async deleteSupplier(id: string): Promise<boolean> {
     const { error } = await db().from("suppliers").delete().eq("id", id)
     return !error
+  }
+
+  // ── DAY TRADE (end-of-day archive) ──────────────────────────────────
+  async getDayTrades(): Promise<DayTrade[]> {
+    const { data, error } = await db().from("day_trades").select("*").order("date", { ascending: false })
+    if (error) { console.error("getDayTrades", error); return [] }
+    return (data ?? []).map(mapDayTrade)
+  }
+  async createDayTrade(input: Omit<DayTrade, "id">): Promise<DayTrade> {
+    const row = {
+      id: genId("dt"), date: input.date, total_sales: input.totalSales, total_profit: input.totalProfit,
+      sale_count: input.saleCount, closed_at: input.closedAt, closed_by: input.closedBy,
+    }
+    const { data, error } = await db().from("day_trades").insert(row).select().single()
+    if (error) throw error
+    return mapDayTrade(data)
   }
 
   // ── PAYMENT REMINDER NOTIFICATIONS ──────────────────────────────────

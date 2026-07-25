@@ -17,7 +17,7 @@ const adminMain = [
   { key: "dashboard",  label: "Dashboard", d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
   { key: "session",    label: "Buying Desk", d: "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zM12 6v6l4 2" },
   { key: "products",   label: "Product",   d: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" },
-  { key: "orders",     label: "Order",     d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" },
+  { key: "orders",     label: "Sale",     d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" },
   { key: "customers",  label: "Customer",  d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },
   { key: "tickets",    label: "Message",   d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
 ]
@@ -28,6 +28,8 @@ const adminTools = [
   { key: "credit-notes", label: "Credit Notes", d: "M9 14l2 2 4-4M7 21h10a2 2 0 0 0 2-2V7l-5-5H7a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2z", badge: undefined },
   { key: "customer-applications", label: "Customer Applications", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 8v6M23 11h-6", badge: undefined },
   { key: "payment-reminders", label: "Payment Reminders", d: "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0", badge: undefined },
+  { key: "invoice-numbers", label: "Invoice Numbers", d: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2-3 2z", badge: undefined },
+  { key: "day-trade", label: "Day Trade", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", badge: undefined },
   { key: "stats",         label: "Analytics",   d: "M18 20V10M12 20V4M6 20v-6", badge: undefined },
   { key: "stock",         label: "Stock",       d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", badge: undefined },
   { key: "files",         label: "Files",       d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", badge: undefined },
@@ -75,10 +77,12 @@ function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
   )
 }
 
-export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, mobileOpen, badges }: {
+export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, mobileOpen, badges, onDayEnd }: {
   role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
   permissions?: PermissionSet; mobileOpen?: boolean
   badges?: Record<string, number>
+  /** Closes the trading day and archives it to Day Trade. */
+  onDayEnd?: () => void
 }) {
   const [query, setQuery] = useState("")
   const [collapsed, setCollapsed] = useState(false)
@@ -201,6 +205,12 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
             <NavItem key={item.key} label={item.label} d={item.d}
               active={current === item.key} onClick={() => onNavigate(item.key)} />
           ))}
+          {onDayEnd && (!q || "day end".includes(q)) && (
+            <button className="sb-item" type="button" onClick={onDayEnd} style={{ color: "#b91c1c" }}>
+              <Icon d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+              <span className="sb-label">Day End</span>
+            </button>
+          )}
           <div className="sb-upgrade" onClick={() => onNavigate("admins")}>
             <div className="sb-upgrade-icon">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>

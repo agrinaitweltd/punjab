@@ -15,6 +15,7 @@ export function AppLayout({
   badges,
   notifCount,
   onBellClick,
+  onDayEnd,
 }: {
   role: UserRole
   user: User
@@ -25,6 +26,7 @@ export function AppLayout({
   badges?: Record<string, number>
   notifCount?: number
   onBellClick?: () => void
+  onDayEnd?: () => void
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -45,6 +47,7 @@ export function AppLayout({
         permissions={user.permissions}
         mobileOpen={mobileOpen}
         badges={badges}
+        onDayEnd={role === 'admin' ? onDayEnd : undefined}
       />
       <div className="main-layout">
         <Topbar user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} onBellClick={onBellClick} />

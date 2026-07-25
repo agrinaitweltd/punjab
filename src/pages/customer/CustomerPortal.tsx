@@ -833,6 +833,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         customerId={user.id}
         customerName={user.displayName}
         customerEmail={user.email}
+        salesmanId={me?.salesmanId}
+        salesmanName={me?.salesmanName}
         onPlaced={load}
         initialSearch={quickSearch}
       />

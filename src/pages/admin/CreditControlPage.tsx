@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import type { Customer, Invoice } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
-import { getCreditStatus, type CreditStatus } from "../../lib/creditControl"
+import { getCreditStatus, creditWarningLabel, type CreditStatus } from "../../lib/creditControl"
 
 export function CreditControlPage({ customers, invoices, onSendReminder, onToggleBlock }: {
   customers: Customer[]
@@ -103,7 +103,7 @@ export function CreditControlPage({ customers, invoices, onSendReminder, onToggl
                     {s.customer.blocked
                       ? <span className="ps-badge" style={{ background: "#111827", color: "#fff" }}>Blocked</span>
                       : s.isOverdue
-                        ? <span className="ps-badge ps-badge-red">Overdue</span>
+                        ? <span className="ps-badge ps-badge-red" title={creditWarningLabel(s) ?? undefined}>{creditWarningLabel(s)}</span>
                         : <span className="ps-badge ps-badge-green">In Terms</span>}
                   </td>
                   <td onClick={e => e.stopPropagation()}>
@@ -137,6 +137,11 @@ export function CreditControlPage({ customers, invoices, onSendReminder, onToggl
       <Modal open={Boolean(detail)} title={detail ? `${detail.customer.companyName} — Credit Detail` : ""} onClose={() => setDetail(null)}>
         {detail && (
           <div>
+            {creditWarningLabel(detail) && (
+              <div style={{ background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 10, padding: "10px 14px", marginBottom: 14, color: "#b91c1c", fontWeight: 700, fontSize: 13.5 }}>
+                ⚠ {creditWarningLabel(detail)}
+              </div>
+            )}
             <div className="ord-review">
               <div className="ord-row"><span>Outstanding balance</span><strong>£{detail.outstanding.toFixed(2)}</strong></div>
               <div className="ord-row"><span>Credit limit</span><strong>{(detail.customer.creditLimit ?? 0) > 0 ? `£${(detail.customer.creditLimit ?? 0).toFixed(2)}` : "No limit set"}</strong></div>
