@@ -1,8 +1,7 @@
-import { Component, useEffect, useState } from 'react'
+import { Component, useState } from 'react'
 import type { ReactNode } from 'react'
 import './App.css'
-import { loginUser, loginWithGoogleEmail, logoutUser } from './api/authApi'
-import { supabase } from './lib/supabase'
+import { loginUser, logoutUser } from './api/authApi'
 import { LoginPage } from './pages/LoginPage'
 import { QuickUnlock } from './pages/QuickUnlock'
 import { AdminPortal } from './pages/admin/AdminPortal'
@@ -71,38 +70,6 @@ function App() {
   } | null>(null)
 
   const deviceAccount = !showSwitcher ? getDeviceAccount() : null
-
-  // Complete "Continue with Google": after the OAuth redirect Supabase holds
-  // the Google session — match its verified email to an account (or create a
-  // customer account) and go straight to the dashboard.
-  useEffect(() => {
-    if (!supabase) return
-    let cancelled = false
-    const completeGoogle = async (email?: string | null, name?: string) => {
-      if (!email || cancelled) return
-      const loggedIn = await loginWithGoogleEmail(email, name)
-      if (loggedIn && !cancelled) {
-        setUser(loggedIn)
-        try { localStorage.setItem(SESSION_KEY, JSON.stringify(loggedIn)) } catch { /* ignore */ }
-        // The Google identity has served its purpose — clear it so logout is clean.
-        void supabase?.auth.signOut()
-      }
-    }
-    // Handles the fresh redirect back from Google
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN') {
-        void completeGoogle(session?.user?.email, (session?.user?.user_metadata?.full_name as string) || undefined)
-      }
-    })
-    // Handles a session already present on load
-    if (!user) {
-      supabase.auth.getSession().then(({ data }) => {
-        void completeGoogle(data.session?.user?.email, (data.session?.user?.user_metadata?.full_name as string) || undefined)
-      })
-    }
-    return () => { cancelled = true; sub.subscription.unsubscribe() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const handleLogin = async (
     role: 'admin' | 'customer',

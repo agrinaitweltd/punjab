@@ -111,15 +111,36 @@ tbody tr:hover td { background: #fafbfc; }
   transition: transform 0.25s ease;
 }
 
+/* Mobile — the sidebar becomes a horizontally-scrolling strip pinned above
+   the topbar instead of an off-canvas vertical drawer, so every section is
+   one swipe away rather than a long scroll. */
 @media (max-width: 768px) {
+  .app-layout { flex-direction: column; }
   .sidebar {
-    transform: translateX(-100%);
-    box-shadow: none;
+    position: relative; top: auto; left: auto; transform: none !important;
+    width: 100% !important; height: auto; max-height: none;
+    flex-direction: row; align-items: stretch;
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    border-right: none; border-bottom: 1px solid #eaecf0;
+    box-shadow: none !important; z-index: 30;
   }
-  .sidebar.sidebar-mobile-open {
-    transform: translateX(0);
-    box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+  .sidebar::-webkit-scrollbar { display: none; }
+  .sidebar-overlay, .tb-hamburger { display: none !important; }
+  .sb-brand, .sb-search-wrap, .sb-spacer, .sb-upgrade { display: none !important; }
+  .sb-section { padding: 6px 3px; flex-shrink: 0; }
+  .sb-section-label { display: none; }
+  .sidebar nav { display: flex; flex-direction: row; gap: 3px; }
+  .sb-bottom { flex-shrink: 0; display: flex; flex-direction: row; align-items: center; border-top: none; padding: 6px 6px 6px 3px; gap: 3px; }
+  .sb-item {
+    flex-direction: column; gap: 4px; width: auto; min-width: 58px;
+    padding: 8px 10px; white-space: nowrap; font-size: 10.5px; border-radius: 12px;
+    text-align: center;
   }
+  .sb-item .sb-label { flex: none; }
+  .sb-item.active::before { display: none; }
+  .sb-item.active { background: #e8f8ec; }
+  .sb-item:hover svg { transform: none; }
 }
 .sb-brand {
   display: flex; align-items: center; gap: 9px;
@@ -2300,6 +2321,26 @@ tbody tr:hover td { background: #fafbfc; }
 .sh-stats > *:nth-child(2), .ho-stats > *:nth-child(2) { animation-delay: 0.07s; }
 .sh-stats > *:nth-child(3), .ho-stats > *:nth-child(3) { animation-delay: 0.12s; }
 .sh-stats > *:nth-child(4), .ho-stats > *:nth-child(4) { animation-delay: 0.17s; }
+
+/* Dashboard entrance choreography — banner, cards and quick actions ease in
+   in sequence rather than popping in all at once. */
+.stk-banner { animation: po-card-in 0.4s ease both; }
+.ho-grid { animation: po-card-in 0.4s ease 0.05s both; }
+.ho-charts > *:nth-child(1) { animation: po-card-in 0.4s ease 0.1s both; }
+.ho-charts > *:nth-child(2) { animation: po-card-in 0.4s ease 0.16s both; }
+.ho-side > *:nth-child(1) { animation: po-card-in 0.4s ease 0.14s both; }
+.ho-side > *:nth-child(2) { animation: po-card-in 0.4s ease 0.2s both; }
+.qa-row { animation: po-card-in 0.4s ease 0.08s both; }
+.qa-btn { transition: transform 0.16s ease, box-shadow 0.16s ease; }
+.qa-btn:hover .qa-ico { transform: scale(1.1) rotate(-4deg); }
+.qa-ico { transition: transform 0.18s ease; }
+.stk-banner.due .stk-banner-ico { animation: stkPulse 1.8s ease-in-out infinite; }
+@keyframes stkPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.12); }
+}
+.ho-seg span { animation: hoSegGrow 0.6s ease both; }
+@keyframes hoSegGrow { from { transform: scaleX(0); transform-origin: left; } to { transform: scaleX(1); transform-origin: left; } }
 
 /* ══ Quick Unlock (remembered device) ══ */
 .qu-avatar {
