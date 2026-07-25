@@ -27,7 +27,7 @@ export function Modal({
       <div className={"modal" + (wide ? " modal-wide" : "")} onClick={(event) => event.stopPropagation()}>
         <header className="modal-header">
           <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose}>
+          <button type="button" className="modal-close" onClick={onClose}>
             ✕
           </button>
         </header>
