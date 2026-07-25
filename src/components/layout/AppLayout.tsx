@@ -45,6 +45,7 @@ export function AppLayout({
         userName={user.displayName}
         isSuperAdmin={user.isSuperAdmin}
         permissions={user.permissions}
+        subAccountPermissions={user.subAccount?.permissions}
         mobileOpen={mobileOpen}
         badges={badges}
         onDayEnd={role === 'admin' ? onDayEnd : undefined}

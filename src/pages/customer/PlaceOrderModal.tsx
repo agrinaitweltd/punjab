@@ -3,7 +3,7 @@ import type { Product, StockItem } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { createOrder } from "../../api/ordersApi"
-import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS } from "../../lib/emailService"
+import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS, ADMIN_NOTIFY_EMAIL } from "../../lib/emailService"
 import { lookupPostcode, matchDeliveryArea, buildAddressCandidates, lookupFullAddresses } from "../../lib/postcode"
 import { mockDeliveryAreas } from "../../data/mockData"
 
@@ -152,6 +152,10 @@ export function PlaceOrderModal({
             cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment,
             fulfilment === "Delivery" ? fullDeliveryAddress : undefined))
       }
+      void sendEmail(ADMIN_NOTIFY_EMAIL, `New order ${order.orderNumber} — ${customerName} (£${cartTotal.toFixed(2)})`,
+        orderReceivedEmailHtml(order.orderNumber, customerName,
+          cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment,
+          fulfilment === "Delivery" ? fullDeliveryAddress : undefined))
     } catch {
       setError("We couldn't place your order — please try again or contact support.")
     }

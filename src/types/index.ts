@@ -51,6 +51,10 @@ export interface User {
   customerNumber?: string
   isSuperAdmin?: boolean
   permissions?: PermissionSet
+  /** Set when this session is a customer's sub-account rather than the main
+      login — `id` above is still the parent customer's id (so all data
+      loads scoped to them), this just narrows what the portal shows. */
+  subAccount?: { id: string; name: string; permissions: SubAccountPermissions }
 }
 
 export interface Customer {
@@ -136,13 +140,54 @@ export interface Order {
   salesmanName?: string
 }
 
-/** Hardcoded for now (see lib/salesmen.ts) — a real salesperson directory
-    can replace this later without changing how orders/customers reference it. */
+/** A sales login account — logs into the Sales module with number + username
+    + code (not a full admin account). One or more of these can be linked to
+    an admin (AdminStaff.salesmanIds) so that admin reviews their orders. */
 export interface Salesman {
   id: string
   number: string
+  username: string
   name: string
   code: string
+}
+
+/** A task an admin assigns to another admin — emails the assignee and shows
+    up in their Assign Task list until marked done. */
+export interface AssignedTask {
+  id: string
+  title: string
+  description: string
+  assignedToId: string
+  assignedToName: string
+  assignedByName: string
+  status: 'Open' | 'Done'
+  createdAt: string
+}
+
+/** What a customer's sub-account (an employee login) is allowed to do in the
+    portal — the main customer login always has all of these. */
+export interface SubAccountPermissions {
+  placeOrders: boolean
+  viewOrders: boolean
+  viewInvoicesBalance: boolean
+  raiseTickets: boolean
+  viewDocuments: boolean
+}
+
+/** An employee login a customer has invited onto their account. Needs
+    super-admin approval before it can log in. Logging in with one loads the
+    same customer's data (customerId), scoped by `permissions`. */
+export interface CustomerSubAccount {
+  id: string
+  customerId: string
+  customerName: string
+  name: string
+  email: string
+  password: string
+  permissions: SubAccountPermissions
+  status: 'Pending' | 'Approved' | 'Rejected'
+  active: boolean
+  createdAt: string
 }
 
 export interface DayTrade {
@@ -296,4 +341,8 @@ export interface AdminStaff {
   active: boolean
   isSuperAdmin?: boolean
   permissions: PermissionSet
+  /** Whether this admin also has one or more Sales Users login accounts
+      linked to them (for reviewing that salesman's orders). */
+  isSalesman?: boolean
+  salesmanIds?: string[]
 }

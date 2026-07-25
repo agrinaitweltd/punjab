@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
 import { getOrders } from "../../api/ordersApi"
-import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, getCreditNoteAllocations, getDayTrades } from "../../api/miscApi"
+import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, getCreditNoteAllocations, getDayTrades, getCustomerSubAccounts, createCustomerSubAccount } from "../../api/miscApi"
 import { currentTradingDate } from "../../lib/tradingDate"
 import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
@@ -10,7 +10,7 @@ import { getCreditStatus } from "../../lib/creditControl"
 import { invoiceOutstanding } from "../../lib/creditNotes"
 import { sendEmail, URGENT_SUPPORT_PHONE, ADMIN_NOTIFY_EMAIL, paymentProofSubmittedEmailHtml, paymentProofAdminAlertEmailHtml } from "../../lib/emailService"
 import { uploadPaymentProof, listPaymentProofsForCustomer, MAX_PROOF_BYTES, type PaymentProof } from "../../lib/paymentProofService"
-import type { Customer, CreditNote, CreditNoteAllocation, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
+import type { Customer, CreditNote, CreditNoteAllocation, CustomerSubAccount, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
@@ -88,17 +88,23 @@ function RevenueLine({ points }: { points: number[] }) {
   )
 }
 
-const TABS = ["overview", "stock", "orders", "tickets", "balance", "documents"] as const
+const TABS = ["overview", "stock", "orders", "tickets", "balance", "documents", "team"] as const
 type Tab = typeof TABS[number]
 
 /* Sidebar nav keys ↔ portal tabs, so the side navigation really navigates */
 const NAV_TO_TAB: Record<string, Tab> = {
   dashboard: "overview", stock: "stock", "place-order": "stock",
   orders: "orders", payments: "balance", tickets: "tickets", complaints: "tickets",
-  documents: "documents",
+  documents: "documents", team: "team",
 }
 const TAB_TO_NAV: Record<Tab, string> = {
-  overview: "dashboard", stock: "stock", orders: "orders", tickets: "tickets", balance: "payments", documents: "documents",
+  overview: "dashboard", stock: "stock", orders: "orders", tickets: "tickets", balance: "payments", documents: "documents", team: "team",
+}
+
+const EMPTY_SUB_PERMS = { placeOrders: true, viewOrders: true, viewInvoicesBalance: false, raiseTickets: true, viewDocuments: false }
+const SUB_PERM_LABELS: Record<keyof typeof EMPTY_SUB_PERMS, string> = {
+  placeOrders: "Place Orders", viewOrders: "View Orders",
+  viewInvoicesBalance: "View Invoices & Balance", raiseTickets: "Raise Support Tickets", viewDocuments: "View Documents",
 }
 
 export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -138,14 +144,20 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [proofBusy, setProofBusy]       = useState(false)
   const [proofError, setProofError]     = useState("")
   const [tradingDate, setTradingDate]   = useState(() => new Date().toISOString().slice(0, 10))
+  const [mySubAccounts, setMySubAccounts] = useState<CustomerSubAccount[]>([])
+  const [showAddSubAccount, setShowAddSubAccount] = useState(false)
+  const [subForm, setSubForm] = useState({ name: "", email: "", password: "", permissions: { ...EMPTY_SUB_PERMS } })
+  const [subError, setSubError] = useState("")
+  const [subBusy, setSubBusy] = useState(false)
 
   const load = async () => {
-    const [p, s, o, inv, pay, tix, custs, cn, cna, dt] = await Promise.all([
+    const [p, s, o, inv, pay, tix, custs, cn, cna, dt, subs] = await Promise.all([
       getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets(), getCustomers(),
-      getCreditNotes(), getCreditNoteAllocations(), getDayTrades(),
+      getCreditNotes(), getCreditNoteAllocations(), getDayTrades(), getCustomerSubAccounts(),
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
     setCreditNotes(cn); setCreditNoteAllocations(cna)
+    setMySubAccounts(subs.filter(a => a.customerId === user.id))
     setTradingDate(currentTradingDate(dt))
     setMe(custs.find(c => c.id === user.id) ?? null)
     setFilesLoading(true)
@@ -161,6 +173,28 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
   const openProofUpload = () => {
     setProofFile(null); setProofNote(""); setProofError(""); setShowProofModal(true)
+  }
+
+  const submitAddSubAccount = async () => {
+    setSubError("")
+    if (!subForm.name.trim()) { setSubError("Enter their name."); return }
+    if (!subForm.email.trim() || !subForm.email.includes("@")) { setSubError("Enter a valid email address."); return }
+    if (!subForm.password || subForm.password.length < 6) { setSubError("Password must be at least 6 characters."); return }
+    setSubBusy(true)
+    try {
+      await createCustomerSubAccount({
+        customerId: user.id, customerName: user.displayName,
+        name: subForm.name.trim(), email: subForm.email.trim().toLowerCase(),
+        password: subForm.password, permissions: subForm.permissions,
+      })
+      void sendEmail(ADMIN_NOTIFY_EMAIL, `Team account approval needed — ${user.displayName}`,
+        `<p><strong>${user.displayName}</strong> has requested a team login for <strong>${subForm.name.trim()}</strong> (${subForm.email.trim()}).</p>
+         <p>Review and approve it from Sub-Account Approvals.</p>`)
+      setSubForm({ name: "", email: "", password: "", permissions: { ...EMPTY_SUB_PERMS } })
+      setShowAddSubAccount(false)
+      await load()
+    } catch { setSubError("Couldn't send that request — please try again.") }
+    setSubBusy(false)
   }
 
   // Customer pays by bank transfer themselves, then uploads a screenshot of
@@ -755,6 +789,81 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           </div>
         </div>
       )
+
+      // ── TEAM ───────────────────────────────────────────────
+      case "team": return (
+        <div className="cd-content">
+          {user.subAccount ? (
+            <div className="cd-table-card" style={{ padding: "36px 24px", textAlign: "center", color: "#9ca3af" }}>
+              Only the main account can manage team logins.
+            </div>
+          ) : (
+            <>
+              <div className="cd-table-card" style={{ marginBottom: 16 }}>
+                <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>Team Logins</span>
+                    <span style={{ marginLeft: 8, fontSize: 12.5, color: "#9ca3af" }}>Employee accounts — need super-admin approval before they can sign in</span>
+                  </div>
+                  <Button className="btn-sm" onClick={() => setShowAddSubAccount(true)}>+ Invite Team Member</Button>
+                </div>
+                <div className="cd-table-scroll">
+                  <table className="cd-table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Permissions</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {mySubAccounts.map(a => (
+                        <tr key={a.id} className="cd-row">
+                          <td><strong>{a.name}</strong></td>
+                          <td>{a.email}</td>
+                          <td style={{ fontSize: 12, color: "#6b7280" }}>
+                            {(Object.keys(a.permissions) as (keyof typeof EMPTY_SUB_PERMS)[]).filter(k => a.permissions[k]).map(k => SUB_PERM_LABELS[k]).join(", ") || "—"}
+                          </td>
+                          <td>
+                            <span className="cd-status-badge" style={
+                              a.status === "Approved" ? { background: "#dcfce7", color: "#15803d" } :
+                              a.status === "Rejected" ? { background: "#fee2e2", color: "#b91c1c" } :
+                              { background: "#fef9c3", color: "#a16207" }
+                            }>{a.status}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {mySubAccounts.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No team logins yet — invite an employee above.</div>}
+              </div>
+            </>
+          )}
+
+          <Modal open={showAddSubAccount} title="Invite Team Member" onClose={() => setShowAddSubAccount(false)}>
+            <div className="form-grid">
+              <Input label="Name" value={subForm.name} onChange={e => setSubForm({ ...subForm, name: e.target.value })} required autoFocus />
+              <Input label="Email" type="email" value={subForm.email} onChange={e => setSubForm({ ...subForm, email: e.target.value })} required />
+              <Input label="Password" type="password" value={subForm.password} onChange={e => setSubForm({ ...subForm, password: e.target.value })} placeholder="At least 6 characters" required />
+              <div className="wide">
+                <label className="form-control"><span>What can they do?</span></label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {(Object.keys(EMPTY_SUB_PERMS) as (keyof typeof EMPTY_SUB_PERMS)[]).map(key => {
+                    const on = subForm.permissions[key]
+                    return (
+                      <button key={key} type="button" className={"adm-perm-chip" + (on ? " on" : "")}
+                        onClick={() => setSubForm({ ...subForm, permissions: { ...subForm.permissions, [key]: !on } })}>
+                        {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                        {SUB_PERM_LABELS[key]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              {subError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{subError}</p>}
+              <div className="wide actions-row">
+                <Button onClick={submitAddSubAccount} disabled={subBusy}>{subBusy ? "Sending…" : "Send for Approval"}</Button>
+                <Button variant="secondary" onClick={() => setShowAddSubAccount(false)}>Cancel</Button>
+              </div>
+            </div>
+          </Modal>
+        </div>
+      )
     }
   }
 
@@ -882,6 +991,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         <form className="form-grid" onSubmit={async e => {
           e.preventDefault()
           await createTicket('customer', user.id, ticketSubject, ticketMsg)
+          void sendEmail(ADMIN_NOTIFY_EMAIL, `New support ticket — ${user.displayName}: ${ticketSubject}`,
+            `<p><strong>${user.displayName}</strong> raised a support ticket:</p><p style="font-weight:700">${ticketSubject}</p><p style="color:#4b5563">${ticketMsg}</p>`)
           setTicketSubject(""); setTicketMsg(""); setShowTicket(false); load()
         }}>
           <Input label="Subject" value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} className="wide" required />

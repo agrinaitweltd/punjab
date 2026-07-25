@@ -1,7 +1,7 @@
 ﻿import { supabase as _sb } from "../lib/supabase"
 import type {
-  ActivityLog, AdminRole, AdminStaff, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication, DayTrade, DeliveryArea,
-  Invoice, NotificationLog, Order, Payment, Product, StockItem, Supplier, SupportTicket,
+  ActivityLog, AdminRole, AdminStaff, AssignedTask, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication,
+  CustomerSubAccount, DayTrade, DeliveryArea, Invoice, NotificationLog, Order, Payment, Product, Salesman, StockItem, Supplier, SupportTicket,
 } from "../types"
 
 function genId(prefix: string) { return `${prefix}-${Date.now()}` }
@@ -117,6 +117,27 @@ function mapDayTrade(r: any): DayTrade {
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapSalesman(r: any): Salesman {
+  return { id: r.id, number: r.number, username: r.username, name: r.name, code: r.code }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapAssignedTask(r: any): AssignedTask {
+  return {
+    id: r.id, title: r.title, description: r.description ?? "",
+    assignedToId: r.assigned_to_id ?? "", assignedToName: r.assigned_to_name ?? "",
+    assignedByName: r.assigned_by_name ?? "", status: r.status ?? "Open", createdAt: r.created_at ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCustomerSubAccount(r: any): CustomerSubAccount {
+  return {
+    id: r.id, customerId: r.customer_id, customerName: r.customer_name ?? "",
+    name: r.name, email: r.email, password: r.password ?? "",
+    permissions: r.permissions ?? {}, status: r.status ?? "Pending",
+    active: r.active ?? true, createdAt: r.created_at ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapCustomerApplication(r: any): CustomerApplication {
   return {
     id: r.id, companyName: r.company_name, contactName: r.contact_name, email: r.email,
@@ -146,6 +167,7 @@ function mapAdmin(r: any): AdminStaff {
     id: r.id, name: r.name, email: r.email, password: r.password ?? "",
     role: r.role ?? "Staff", jobTitle: r.job_title ?? "", active: r.active ?? true,
     isSuperAdmin: r.is_super_admin ?? false, permissions: r.permissions ?? {},
+    isSalesman: r.is_salesman ?? false, salesmanIds: r.salesman_ids ?? [],
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -519,12 +541,18 @@ class SupabaseDatabaseService {
       username: input.name.toLowerCase().replace(/\s+/g, "."),
       role: input.role, job_title: input.jobTitle || null, active: input.active ?? true,
       is_super_admin: false, permissions: input.permissions,
+      is_salesman: input.isSalesman ?? false, salesman_ids: input.salesmanIds ?? [],
     }
     let { data, error } = await db().from("admin_staff").insert(row).select().single()
     // Retry without job_title if that migration hasn't been run yet.
     if (error && (error.code === "PGRST204" || /job_title/.test(error.message ?? ""))) {
       const { job_title: _jt, ...rest } = row
       void _jt
+      ;({ data, error } = await db().from("admin_staff").insert(rest).select().single())
+    }
+    if (error && (error.code === "PGRST204" || /is_salesman|salesman_ids/.test(error.message ?? ""))) {
+      const { is_salesman: _is, salesman_ids: _si, job_title: _jt2, ...rest } = row
+      void _is; void _si; void _jt2
       ;({ data, error } = await db().from("admin_staff").insert(rest).select().single())
     }
     if (error) throw error
@@ -539,10 +567,18 @@ class SupabaseDatabaseService {
     if (input.jobTitle !== undefined) row.job_title = input.jobTitle
     if (input.permissions) row.permissions = input.permissions
     if (input.active !== undefined) row.active = input.active
+    if (input.isSalesman !== undefined) row.is_salesman = input.isSalesman
+    if (input.salesmanIds !== undefined) row.salesman_ids = input.salesmanIds
     let { data, error } = await db().from("admin_staff").update(row).eq("id", id).select().single()
     if (error && (error.code === "PGRST204" || /job_title/.test(error.message ?? "")) && "job_title" in row) {
       const { job_title: _jt, ...rest } = row
       void _jt
+      ;({ data, error } = await db().from("admin_staff").update(rest).eq("id", id).select().single())
+    }
+    if (error && (error.code === "PGRST204" || /is_salesman|salesman_ids/.test(error.message ?? ""))) {
+      const { is_salesman: _is, salesman_ids: _si, ...rest } = row
+      void _is; void _si
+      if (Object.keys(rest).length === 0) { console.warn("updateAdmin: salesman columns not migrated yet — skipped"); return null }
       ;({ data, error } = await db().from("admin_staff").update(rest).eq("id", id).select().single())
     }
     if (error) { console.error("updateAdmin", error); return null }
@@ -724,6 +760,86 @@ class SupabaseDatabaseService {
     const { data, error } = await db().from("day_trades").insert(row).select().single()
     if (error) throw error
     return mapDayTrade(data)
+  }
+
+  // ── SALES USERS (salesmen) ──────────────────────────────────────────
+  async getSalesmen(): Promise<Salesman[]> {
+    const { data, error } = await db().from("salesmen").select("*").order("number")
+    if (error) { console.error("getSalesmen", error); return [] }
+    return (data ?? []).map(mapSalesman)
+  }
+  async createSalesman(input: Omit<Salesman, "id">): Promise<Salesman> {
+    const row = { id: genId("sm"), number: input.number, username: input.username, name: input.name, code: input.code }
+    const { data, error } = await db().from("salesmen").insert(row).select().single()
+    if (error) throw error
+    return mapSalesman(data)
+  }
+  async updateSalesman(id: string, input: Partial<Salesman>): Promise<Salesman | null> {
+    const row: Record<string, unknown> = {}
+    if (input.number !== undefined) row.number = input.number
+    if (input.username !== undefined) row.username = input.username
+    if (input.name !== undefined) row.name = input.name
+    if (input.code !== undefined) row.code = input.code
+    const { data, error } = await db().from("salesmen").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateSalesman", error); return null }
+    return mapSalesman(data)
+  }
+  async deleteSalesman(id: string): Promise<boolean> {
+    const { error } = await db().from("salesmen").delete().eq("id", id)
+    return !error
+  }
+
+  // ── ASSIGN TASK ───────────────────────────────────────────────────────
+  async getAssignedTasks(): Promise<AssignedTask[]> {
+    const { data, error } = await db().from("assigned_tasks").select("*").order("created_at", { ascending: false })
+    if (error) { console.error("getAssignedTasks", error); return [] }
+    return (data ?? []).map(mapAssignedTask)
+  }
+  async createAssignedTask(input: Omit<AssignedTask, "id" | "createdAt" | "status">): Promise<AssignedTask> {
+    const row = {
+      id: genId("task"), title: input.title, description: input.description,
+      assigned_to_id: input.assignedToId, assigned_to_name: input.assignedToName,
+      assigned_by_name: input.assignedByName, status: "Open",
+    }
+    const { data, error } = await db().from("assigned_tasks").insert(row).select().single()
+    if (error) throw error
+    return mapAssignedTask(data)
+  }
+  async updateAssignedTaskStatus(id: string, status: AssignedTask["status"]): Promise<boolean> {
+    const { error } = await db().from("assigned_tasks").update({ status }).eq("id", id)
+    return !error
+  }
+
+  // ── CUSTOMER SUB-ACCOUNTS ─────────────────────────────────────────────
+  async getCustomerSubAccounts(): Promise<CustomerSubAccount[]> {
+    const { data, error } = await db().from("customer_sub_accounts").select("*").order("created_at", { ascending: false })
+    if (error) { console.error("getCustomerSubAccounts", error); return [] }
+    return (data ?? []).map(mapCustomerSubAccount)
+  }
+  async createCustomerSubAccount(input: Omit<CustomerSubAccount, "id" | "createdAt" | "status" | "active">): Promise<CustomerSubAccount> {
+    const row = {
+      id: genId("sub"), customer_id: input.customerId, customer_name: input.customerName,
+      name: input.name, email: input.email, password: input.password,
+      permissions: input.permissions, status: "Pending", active: true,
+    }
+    const { data, error } = await db().from("customer_sub_accounts").insert(row).select().single()
+    if (error) throw error
+    return mapCustomerSubAccount(data)
+  }
+  async updateCustomerSubAccount(id: string, input: Partial<CustomerSubAccount>): Promise<CustomerSubAccount | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status !== undefined) row.status = input.status
+    if (input.active !== undefined) row.active = input.active
+    if (input.permissions !== undefined) row.permissions = input.permissions
+    if (input.name !== undefined) row.name = input.name
+    if (input.password !== undefined) row.password = input.password
+    const { data, error } = await db().from("customer_sub_accounts").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateCustomerSubAccount", error); return null }
+    return mapCustomerSubAccount(data)
+  }
+  async deleteCustomerSubAccount(id: string): Promise<boolean> {
+    const { error } = await db().from("customer_sub_accounts").delete().eq("id", id)
+    return !error
   }
 
   // ── PAYMENT REMINDER NOTIFICATIONS ──────────────────────────────────

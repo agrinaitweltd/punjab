@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import type { AdminRole, AdminStaff, PermissionSet } from "../../types"
+import type { AdminRole, AdminStaff, PermissionSet, Salesman } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
@@ -59,8 +59,48 @@ function PermGrid({ perms, onChange }: { perms: PermissionSet; onChange: (p: Per
   )
 }
 
+function SalesmanLinker({ salesmen, isSalesman, salesmanIds, onChange }: {
+  salesmen: Salesman[]; isSalesman: boolean; salesmanIds: string[]
+  onChange: (isSalesman: boolean, salesmanIds: string[]) => void
+}) {
+  return (
+    <div className="wide">
+      <label className="form-control">
+        <span>Is this admin also a salesman?</span>
+      </label>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button type="button" onClick={() => onChange(true, salesmanIds)}
+          style={{ flex: 1, padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: isSalesman ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: isSalesman ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: isSalesman ? "#14532d" : "#374151" }}>
+          Yes
+        </button>
+        <button type="button" onClick={() => onChange(false, [])}
+          style={{ flex: 1, padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: !isSalesman ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: !isSalesman ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: !isSalesman ? "#14532d" : "#374151" }}>
+          No
+        </button>
+      </div>
+      {isSalesman && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {salesmen.length === 0 && <p style={{ fontSize: 12.5, color: "#9ca3af", margin: 0 }}>No Sales Users yet — add one from the Sales Users page first.</p>}
+          {salesmen.map(s => {
+            const on = salesmanIds.includes(s.id)
+            return (
+              <button key={s.id} type="button"
+                onClick={() => onChange(true, on ? salesmanIds.filter(id => id !== s.id) : [...salesmanIds, s.id])}
+                className={"adm-perm-chip" + (on ? " on" : "")}>
+                {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                #{s.number} {s.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AdminsPage({
   admins,
+  salesmen = [],
   onCreate,
   onUpdate,
   onDelete,
@@ -68,7 +108,8 @@ export function AdminsPage({
   loadRoles,
 }: {
   admins: AdminStaff[]
-  onCreate: (name: string, email: string, password: string, role: string, jobTitle: string, permissions: PermissionSet) => Promise<void>
+  salesmen?: Salesman[]
+  onCreate: (name: string, email: string, password: string, role: string, jobTitle: string, permissions: PermissionSet, isSalesman: boolean, salesmanIds: string[]) => Promise<void>
   onUpdate?: (id: string, data: Partial<AdminStaff>) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onToggleActive?: (id: string, active: boolean) => Promise<void>
@@ -83,6 +124,8 @@ export function AdminsPage({
   const [jobTitle, setJobTitle]     = useState("")
   const [role, setRole]             = useState("Staff")
   const [perms, setPerms]           = useState<PermissionSet>(basePermissions)
+  const [isSalesman, setIsSalesman] = useState(false)
+  const [salesmanIds, setSalesmanIds] = useState<string[]>([])
   const [roleTemplates, setRoleTemplates] = useState<AdminRole[]>(FALLBACK_ROLE_TEMPLATES)
   const [formError, setFormError]   = useState("")
 
@@ -91,7 +134,8 @@ export function AdminsPage({
   }, [loadRoles])
 
   const resetForm = () => {
-    setName(""); setEmail(""); setPassword(""); setPhone(""); setJobTitle(""); setRole("Staff"); setPerms(basePermissions); setFormError("")
+    setName(""); setEmail(""); setPassword(""); setPhone(""); setJobTitle(""); setRole("Staff"); setPerms(basePermissions)
+    setIsSalesman(false); setSalesmanIds([]); setFormError("")
   }
 
   const applyTemplate = (templateId: string, target: "create" | "edit") => {
@@ -111,7 +155,7 @@ export function AdminsPage({
     if (!name.trim() || !email.trim() || !password.trim()) { setFormError("Name, email and password are required."); return }
     if (password.trim().length < 8) { setFormError("Password must be at least 8 characters."); return }
     if (admins.some(a => a.email.toLowerCase() === email.trim().toLowerCase())) { setFormError("An admin with that email already exists."); return }
-    await onCreate(name.trim(), email.trim(), password, role, jobTitle.trim(), perms)
+    await onCreate(name.trim(), email.trim(), password, role, jobTitle.trim(), perms, isSalesman, salesmanIds)
     resetForm(); setShowCreate(false)
   }
 
@@ -165,7 +209,10 @@ export function AdminsPage({
               </thead>
               <tbody>
                 {admins.map(admin => {
-                  const permCount = ALL_PERMISSIONS.filter(k => admin.permissions[k]).length
+                  // Super admins bypass the granular permission checks entirely
+                  // (see lib/permissions.ts can()) — always show 22/22 for them
+                  // rather than whatever happens to be stored on the row.
+                  const permCount = admin.isSuperAdmin ? ALL_PERMISSIONS.length : ALL_PERMISSIONS.filter(k => admin.permissions[k]).length
                   return (
                     <tr key={admin.id}>
                       <td>
@@ -241,6 +288,8 @@ export function AdminsPage({
       {/* Create modal */}
       <Modal open={showCreate} title="Create Admin Account" onClose={() => setShowCreate(false)}>
         <form className="form-grid" onSubmit={submitCreate}>
+          <SalesmanLinker salesmen={salesmen} isSalesman={isSalesman} salesmanIds={salesmanIds}
+            onChange={(v, ids) => { setIsSalesman(v); setSalesmanIds(ids) }} />
           <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Warehouse Manager" required />
           <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabexoticfoods.com" required />
           <Input label="Username / Login" value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. warehouse1" />
@@ -269,6 +318,8 @@ export function AdminsPage({
       <Modal open={Boolean(editing)} title="Edit Admin Account" onClose={() => setEditing(null)}>
         {editing && (
           <form className="form-grid" onSubmit={submitEdit}>
+            <SalesmanLinker salesmen={salesmen} isSalesman={editing.isSalesman ?? false} salesmanIds={editing.salesmanIds ?? []}
+              onChange={(v, ids) => setEditing({ ...editing, isSalesman: v, salesmanIds: ids })} />
             <Input label="Full Name" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} required />
             <Input label="Email" type="email" value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })} required />
             <Input label="New Password" type="password" value={editing.password} onChange={e => setEditing({ ...editing, password: e.target.value })} placeholder="Leave blank to keep current" />

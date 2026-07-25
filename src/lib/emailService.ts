@@ -17,7 +17,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
 }
 
 export const URGENT_SUPPORT_PHONE = "07364 219332"
-export const ADMIN_NOTIFY_EMAIL = "info@punjabexoticfoods.com"
+export const ADMIN_NOTIFY_EMAIL = "contact@punjabexoticfoods.co.uk"
 export const COLLECTION_ADDRESS = {
   line1: "Punjab Exotic Foods",
   line2: "Gate 9, Stand 1B–1D",

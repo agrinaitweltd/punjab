@@ -9,6 +9,9 @@ import { getBuyingSessions, getOrCreateBuyingSession, updateBuyingSession, getBu
 import { getNotificationLogs, createNotificationLog, updateNotificationLog } from '../services/notificationService'
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../services/supplierService'
 import { getDayTrades, createDayTrade } from '../services/dayTradeService'
+import { getSalesmen, createSalesman, updateSalesman, deleteSalesman } from '../services/salesmanService'
+import { getAssignedTasks, createAssignedTask, updateAssignedTaskStatus } from '../services/assignedTaskService'
+import { getCustomerSubAccounts, createCustomerSubAccount, updateCustomerSubAccount, deleteCustomerSubAccount } from '../services/customerSubAccountService'
 
 export { getActivity, getInvoices, getPayments, createInvoice, createPayment, updateInvoice, importStatementInvoices }
 export { getTickets, createTicket, updateTicketStatus }
@@ -20,6 +23,9 @@ export { getBuyingSessions, getOrCreateBuyingSession, updateBuyingSession, getBu
 export { getNotificationLogs, createNotificationLog, updateNotificationLog }
 export { getSuppliers, createSupplier, updateSupplier, deleteSupplier }
 export { getDayTrades, createDayTrade }
+export { getSalesmen, createSalesman, updateSalesman, deleteSalesman }
+export { getAssignedTasks, createAssignedTask, updateAssignedTaskStatus }
+export { getCustomerSubAccounts, createCustomerSubAccount, updateCustomerSubAccount, deleteCustomerSubAccount }
 
 export function createTicketForCustomer(subject: string, message: string, customerId: string) {
   return createTicket('customer', customerId, subject, message)

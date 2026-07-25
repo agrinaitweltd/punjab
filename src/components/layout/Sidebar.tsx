@@ -1,5 +1,13 @@
 ﻿import { useState, useEffect } from "react"
-import type { PermissionSet, UserRole } from "../../types"
+import type { PermissionSet, SubAccountPermissions, UserRole } from "../../types"
+
+/* Maps a customer nav item's key to the sub-account permission flag that
+   gates it — items not listed (Dashboard, Support pointer) stay visible to
+   every sub-account. The main customer login always sees everything. */
+const CUSTOMER_NAV_PERMISSION_KEY: Partial<Record<string, keyof SubAccountPermissions>> = {
+  "place-order": "placeOrders", orders: "viewOrders", payments: "viewInvoicesBalance",
+  documents: "viewDocuments", tickets: "raiseTickets", complaints: "raiseTickets",
+}
 
 /* Maps a nav item's key to the permission flag that gates it for non-super
    admins. Items not listed here (Dashboard, Daily Session, Deliveries,
@@ -52,6 +60,7 @@ const customerMain = [
   { key: "orders",      label: "My Orders",  d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z", badge: undefined },
   { key: "payments",    label: "Balance",    d: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", badge: undefined },
   { key: "documents",   label: "Documents",  d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", badge: undefined },
+  { key: "team",        label: "Team",       d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75", badge: undefined },
   { key: "tickets",     label: "Support",    d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: undefined },
   { key: "complaints",  label: "Complaints", d: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01", badge: undefined },
 ]
@@ -79,9 +88,12 @@ function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
   )
 }
 
-export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, mobileOpen, badges, onDayEnd }: {
+export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, subAccountPermissions, mobileOpen, badges, onDayEnd }: {
   role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
   permissions?: PermissionSet; mobileOpen?: boolean
+  /** Set when the logged-in customer is a team sub-account, not the main
+      login — narrows which customer nav items show. */
+  subAccountPermissions?: SubAccountPermissions
   badges?: Record<string, number>
   /** Closes the trading day and archives it to Day Trade. */
   onDayEnd?: () => void
@@ -99,10 +111,19 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
       return !permKey || Boolean(permissions?.[permKey])
     })
 
+  // Sub-accounts never manage the team, and otherwise only see what their
+  // granted permissions allow — the main customer login always sees everything.
+  const forSubAccount = <T extends { key: string }>(items: T[]) =>
+    !subAccountPermissions ? items : items.filter(i => {
+      if (i.key === "team") return false
+      const permKey = CUSTOMER_NAV_PERMISSION_KEY[i.key]
+      return !permKey || Boolean(subAccountPermissions[permKey])
+    })
+
   const q = query.trim().toLowerCase()
   const matches = <T extends { label: string }>(items: T[]) =>
     q ? items.filter(i => i.label.toLowerCase().includes(q)) : items
-  const mainItems      = matches(allowed(isAdmin ? adminMain : customerMain))
+  const mainItems      = matches(isAdmin ? allowed(adminMain) : forSubAccount(customerMain))
   const toolItems      = matches(allowed(adminTools))
   const workspaceItems = matches(allowed(adminWorkspace))
   const bottomItems    = matches(adminBottom)
@@ -173,7 +194,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
             </nav>
           </div>
         )}
-        {(workspaceItems.length > 0 || ((isSuperAdmin || permissions?.usersManage) && (!q || "admin users".includes(q)))) && (
+        {(workspaceItems.length > 0 || ((isSuperAdmin || permissions?.usersManage) && (!q || "admin users sales users".includes(q)))) && (
           <div className="sb-section">
             <p className="sb-section-label">Workspace</p>
             <nav>
@@ -188,6 +209,30 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
                   d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
                   active={current === "admins"}
                   onClick={() => onNavigate("admins")}
+                />
+              )}
+              {(isSuperAdmin || permissions?.usersManage) && (!q || "sales users".includes(q)) && (
+                <NavItem
+                  label="Sales Users"
+                  d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
+                  active={current === "sales-users"}
+                  onClick={() => onNavigate("sales-users")}
+                />
+              )}
+              {(isSuperAdmin || permissions?.usersManage) && (!q || "assign task".includes(q)) && (
+                <NavItem
+                  label="Assign Task"
+                  d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                  active={current === "assign-task"}
+                  onClick={() => onNavigate("assign-task")}
+                />
+              )}
+              {(isSuperAdmin) && (!q || "sub account approvals".includes(q)) && (
+                <NavItem
+                  label="Sub-Account Approvals"
+                  d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                  active={current === "sub-accounts"}
+                  onClick={() => onNavigate("sub-accounts")}
                 />
               )}
             </nav>

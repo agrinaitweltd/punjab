@@ -379,6 +379,60 @@ create table if not exists activity_log (
   created_at    timestamptz default now()
 );
 
+-- If admin_staff already existed before these columns were added, run:
+-- alter table admin_staff add column if not exists is_salesman boolean default false;
+-- alter table admin_staff add column if not exists salesman_ids jsonb default '[]'::jsonb;
+alter table admin_staff add column if not exists is_salesman boolean default false;
+alter table admin_staff add column if not exists salesman_ids jsonb default '[]'::jsonb;
+
+-- SALES USERS — login accounts for the Sales module (number + username + code),
+-- separate from admin_staff. One or more can be linked to an admin via
+-- admin_staff.salesman_ids so that admin reviews their orders.
+create table if not exists salesmen (
+  id          text primary key default gen_random_uuid()::text,
+  number      text unique not null,
+  username    text unique not null,
+  name        text not null,
+  code        text not null,
+  created_at  timestamptz default now()
+);
+alter table salesmen disable row level security;
+
+insert into salesmen (id, number, username, name, code) values
+  ('sm-1', '1', 'mohsen', 'Mohsen', '0908')
+on conflict (id) do update set number = excluded.number, username = excluded.username, code = excluded.code;
+
+-- ASSIGN TASK — one admin assigns a to-do to another; the assignee is
+-- emailed and it shows up in their Assign Task list until marked done.
+create table if not exists assigned_tasks (
+  id               text primary key default gen_random_uuid()::text,
+  title            text not null,
+  description      text,
+  assigned_to_id   text,
+  assigned_to_name text,
+  assigned_by_name text,
+  status           text not null default 'Open' check (status in ('Open', 'Done')),
+  created_at       timestamptz default now()
+);
+alter table assigned_tasks disable row level security;
+
+-- CUSTOMER SUB-ACCOUNTS — employee logins a customer invites onto their own
+-- account, scoped to a chosen subset of portal permissions. Needs
+-- super-admin approval (status) before it can log in.
+create table if not exists customer_sub_accounts (
+  id            text primary key default gen_random_uuid()::text,
+  customer_id   text references customers(id) on delete cascade,
+  customer_name text,
+  name          text not null,
+  email         text not null,
+  password      text not null,
+  permissions   jsonb not null default '{}'::jsonb,
+  status        text not null default 'Pending' check (status in ('Pending', 'Approved', 'Rejected')),
+  active        boolean not null default true,
+  created_at    timestamptz default now()
+);
+alter table customer_sub_accounts disable row level security;
+
 -- DISABLE ROW LEVEL SECURITY (enable later when adding Supabase Auth)
 alter table admin_staff     disable row level security;
 alter table customers       disable row level security;

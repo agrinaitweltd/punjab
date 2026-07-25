@@ -3,7 +3,7 @@ import type { FormEvent } from "react"
 import type { UserRole } from "../types"
 import { getCustomers, updateCustomer } from "../api/customersApi"
 import { getAdmins, updateAdmin, createCustomerApplication } from "../api/miscApi"
-import { sendEmail, otpEmailHtml } from "../lib/emailService"
+import { sendEmail, otpEmailHtml, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
 
 /* "Continue with Google" — temporarily disabled on the live site (Google
    OAuth isn't verified/configured yet). Shown greyed-out with an "unavailable"
@@ -532,6 +532,12 @@ function ApplyFlow({ onBack }: { onBack: () => void }) {
         email: form.email.trim(), phone: form.phone.trim(), registeredAddress: form.registeredAddress.trim(),
         date: new Date().toISOString().slice(0, 10),
       })
+      void sendEmail(ADMIN_NOTIFY_EMAIL, `New customer application — ${form.companyName.trim()}`,
+        `<p>New account application:</p>
+         <p><strong>${form.companyName.trim()}</strong> — ${form.contactName.trim()}</p>
+         <p>${form.email.trim()} ${form.phone.trim() ? `· ${form.phone.trim()}` : ""}</p>
+         ${form.registeredAddress.trim() ? `<p>${form.registeredAddress.trim()}</p>` : ""}
+         <p style="margin-top:16px">Review it from Customer Applications.</p>`)
       setDone(true)
     } catch { setErr("Couldn't submit your application — please try again.") }
     setBusy(false)

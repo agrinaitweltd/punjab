@@ -51,6 +51,25 @@ class AuthService {
           }
           return this.currentUser
         }
+        // Not the main login — try a team sub-account (must be approved + active).
+        const subAccounts = await databaseService.getCustomerSubAccounts()
+        const sub = subAccounts.find(s =>
+          s.email.toLowerCase() === usernameOrEmail.trim().toLowerCase() && s.password === password &&
+          s.status === "Approved" && s.active
+        )
+        if (sub) {
+          const parent = data.find(c => c.id === sub.customerId)
+          this.currentUser = {
+            id: sub.customerId,
+            role: "customer",
+            username: parent?.customerNumber ?? sub.customerId,
+            email: sub.email,
+            displayName: parent?.companyName ?? sub.customerName,
+            customerNumber: parent?.customerNumber,
+            subAccount: { id: sub.id, name: sub.name, permissions: sub.permissions },
+          }
+          return this.currentUser
+        }
       } else {
         const customer = mockCustomers.find(c =>
           (c.customerNumber === usernameOrEmail || c.email === usernameOrEmail) && c.password === password

@@ -1,14 +1,17 @@
 import type { Salesman } from "../types"
 
-/** Hardcoded for now, per spec — a real salesperson directory can replace
-    this later without changing how orders/customers reference a salesman
-    (they store salesmanId/salesmanName, not this list itself). */
+/** Offline/dev fallback — a real "Sales Users" directory lives in the
+    database once Supabase is connected (see api/miscApi.ts getSalesmen). */
 export const SALESMEN: Salesman[] = [
-  { id: "sm-16", number: "16", name: "Mohsen", code: "0908" },
+  { id: "sm-1", number: "1", username: "mohsen", name: "Mohsen", code: "0908" },
 ]
 
-export function verifySalesLogin(number: string, code: string): Salesman | null {
-  return SALESMEN.find(s => s.number === number.trim() && s.code === code.trim()) ?? null
+export function verifySalesLogin(number: string, username: string, code: string, roster: Salesman[] = SALESMEN): Salesman | null {
+  return roster.find(s =>
+    s.number === number.trim() &&
+    s.username.toLowerCase() === username.trim().toLowerCase() &&
+    s.code === code.trim()
+  ) ?? null
 }
 
 const SESSION_KEY = "punjab-sales-login"

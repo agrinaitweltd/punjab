@@ -52,15 +52,26 @@ import {
   deleteSupplier,
   getDayTrades,
   createDayTrade,
+  getSalesmen,
+  createSalesman,
+  updateSalesman,
+  deleteSalesman,
+  getAssignedTasks,
+  createAssignedTask,
+  updateAssignedTaskStatus,
+  getCustomerSubAccounts,
+  updateCustomerSubAccount,
 } from '../../api/miscApi'
 import { computeCreditApplication } from '../../lib/creditNotes'
 import { currentTradingDate } from '../../lib/tradingDate'
 import type {
   ActivityLog,
   AdminStaff,
+  AssignedTask,
   BuyingPrice,
   BuyingSession,
   Customer,
+  CustomerSubAccount,
   DayTrade,
   NotificationLog,
   Supplier,
@@ -100,6 +111,9 @@ import { ProductsPage } from './ProductsPage'
 import { FilesPage } from './FilesPage'
 import { BuyingDeskPage } from './BuyingDeskPage'
 import { SuppliersPage } from './SuppliersPage'
+import { SalesUsersPage } from './SalesUsersPage'
+import { AssignTaskPage } from './AssignTaskPage'
+import { SubAccountApprovalsPage } from './SubAccountApprovalsPage'
 import { PaymentRemindersPage } from './PaymentRemindersPage'
 import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
@@ -129,6 +143,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [openCreditNoteId, setOpenCreditNoteId] = useState<string | null>(null)
   const [salesLogin, setSalesLogin] = useState<Salesman | null>(() => loadSalesLogin())
   const [dayTrades, setDayTrades] = useState<DayTrade[]>([])
+  const [salesmen, setSalesmen] = useState<Salesman[]>([])
+  const [assignedTasks, setAssignedTasks] = useState<AssignedTask[]>([])
+  const [subAccounts, setSubAccounts] = useState<CustomerSubAccount[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -151,6 +168,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       notificationLogsData,
       suppliersData,
       dayTradesData,
+      salesmenData,
+      assignedTasksData,
+      subAccountsData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -171,6 +191,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getNotificationLogs(),
       getSuppliers(),
       getDayTrades(),
+      getSalesmen(),
+      getAssignedTasks(),
+      getCustomerSubAccounts(),
     ])
 
     setCustomers(customersData)
@@ -192,6 +215,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setNotificationLogs(notificationLogsData)
     setSuppliers(suppliersData)
     setDayTrades(dayTradesData)
+    setSalesmen(salesmenData)
+    setAssignedTasks(assignedTasksData)
+    setSubAccounts(subAccountsData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -324,6 +350,78 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onCreateSupplier={async (input) => {
             await createSupplier(input)
             void logActivity(user.displayName, `added supplier ${input.name}`)
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'sales-users') {
+      return (
+        <SalesUsersPage
+          salesmen={salesmen}
+          onCreate={async (input) => {
+            await createSalesman(input)
+            void logActivity(user.displayName, `added sales user ${input.name} (#${input.number})`)
+            await load()
+          }}
+          onUpdate={async (id, input) => {
+            await updateSalesman(id, input)
+            await load()
+          }}
+          onDelete={async (id) => {
+            const target = salesmen.find(s => s.id === id)
+            await deleteSalesman(id)
+            void logActivity(user.displayName, `deleted sales user${target ? ` ${target.name}` : ""}`)
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'assign-task') {
+      return (
+        <AssignTaskPage
+          tasks={assignedTasks}
+          admins={admins}
+          currentAdminId={user.id}
+          onAssign={async (assignedToId, title, description) => {
+            const target = admins.find(a => a.id === assignedToId)
+            await createAssignedTask({
+              title, description, assignedToId, assignedToName: target?.name ?? "",
+              assignedByName: user.displayName,
+            })
+            if (target?.email) {
+              void sendEmail(target.email, `New task assigned: ${title}`,
+                `<p>Hi ${target.name},</p><p><strong>${user.displayName}</strong> assigned you a task:</p>
+                 <p style="font-size:16px;font-weight:700;margin:12px 0 4px">${title}</p>
+                 ${description ? `<p style="color:#4b5563">${description}</p>` : ""}
+                 <p style="margin-top:20px"><a href="${window.location.origin}" style="color:#1f7a3a;font-weight:700">Open Punjab Exotic Foods Portal →</a></p>`)
+            }
+            void logActivity(user.displayName, `assigned task "${title}" to ${target?.name ?? assignedToId}`)
+            await load()
+          }}
+          onMarkDone={async (id) => {
+            await updateAssignedTaskStatus(id, 'Done')
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'sub-accounts') {
+      return (
+        <SubAccountApprovalsPage
+          subAccounts={subAccounts}
+          onDecide={async (account, status) => {
+            await updateCustomerSubAccount(account.id, { status })
+            void sendEmail(account.email, status === 'Approved'
+              ? "Your Punjab Exotic Foods team account is approved"
+              : "Your Punjab Exotic Foods team account request",
+              status === 'Approved'
+                ? `<p>Hi ${account.name},</p><p>Your team login for <strong>${account.customerName}</strong> has been approved. You can now sign in with your email and password.</p>`
+                : `<p>Hi ${account.name},</p><p>Your request for a team login under <strong>${account.customerName}</strong> was not approved. Please contact ${account.customerName} for details.</p>`)
+            void logActivity(user.displayName, `${status === 'Approved' ? 'approved' : 'rejected'} sub-account ${account.name} (${account.customerName})`)
             await load()
           }}
         />
@@ -816,9 +914,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <AdminsPage
           admins={admins}
+          salesmen={salesmen}
           loadRoles={getAdminRoles}
-          onCreate={async (name, email, password, role, jobTitle, permissions) => {
-            await createAdmin({ name, email, password, role, jobTitle, active: true, isSuperAdmin: false, permissions })
+          onCreate={async (name, email, password, role, jobTitle, permissions, isSalesman, salesmanIds) => {
+            await createAdmin({ name, email, password, role, jobTitle, active: true, isSuperAdmin: false, permissions, isSalesman, salesmanIds })
             if (email) {
               void sendEmail(email, "Your Punjab Exotic Foods admin account",
                 welcomeEmailHtml(name, "admin", window.location.origin))

@@ -13,7 +13,7 @@ export const mockAdmins: AdminStaff[] = [
   {
     id: "adm-owner",
     name: "Punjab Exotic Foods",
-    email: "info@punjabexoticfoods.com",
+    email: "contact@punjabexoticfoods.co.uk",
     password: "admin123",
     role: "Owner",
     active: true,
@@ -22,6 +22,9 @@ export const mockAdmins: AdminStaff[] = [
       customers: true, prices: true, stock: true, orders: true, enquiries: true,
       tickets: true, payments: true, complaints: true, extracts: true,
       stats: true, admins: true, products: true,
+      customersCreate: true, customersDelete: true, invoicesDelete: true,
+      paymentsRecord: true, paymentsDelete: true, paymentsAllocate: true,
+      buyingPricesEdit: true, creditNotesIssue: true, applicationsManage: true, usersManage: true,
     },
   },
 ]
