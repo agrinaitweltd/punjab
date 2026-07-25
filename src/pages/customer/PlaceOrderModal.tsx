@@ -16,7 +16,7 @@ const CAT_COLORS: Record<string, string> = {
 export const catColor = (c: string) => CAT_COLORS[c] ?? "#1f7a3a"
 
 export function PlaceOrderModal({
-  open, onClose, products, stock, customerId, customerName, customerEmail, salesmanId, salesmanName, onPlaced, initialSearch,
+  open, onClose, products, stock, customerId, customerName, customerEmail, salesmanId, salesmanName, onPlaced, initialSearch, tradingDate,
 }: {
   open: boolean
   onClose: () => void
@@ -30,6 +30,10 @@ export function PlaceOrderModal({
   salesmanName?: string
   onPlaced: () => void
   initialSearch?: string
+  /** The date this order should be recorded against — the current trading
+      day, which moves forward once an admin closes trading via Day End,
+      independent of the real calendar date. */
+  tradingDate?: string
 }) {
   const [step, setStep] = useState<"browse" | "review" | "done">("browse")
   const [cart, setCart] = useState<Record<string, number>>({})
@@ -137,6 +141,7 @@ export function PlaceOrderModal({
         fulfilment,
         deliveryAddress: fulfilment === "Delivery" ? fullDeliveryAddress : "",
         salesmanId, salesmanName,
+        date: tradingDate,
       })
       setPlacedNumber(order.orderNumber)
       setStep("done")

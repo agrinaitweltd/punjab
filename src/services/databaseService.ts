@@ -337,13 +337,13 @@ class SupabaseDatabaseService {
     if (error) { console.error("getOrders", error); return [] }
     return (data ?? []).map(mapOrder)
   }
-  async createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status">): Promise<Order> {
+  async createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status"> & { date?: string }): Promise<Order> {
     const row = {
       id: genId("o"),
       order_number: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
       customer_id: input.customerId,
       customer_name: input.customerName,
-      date: new Date().toISOString().slice(0, 10),
+      date: input.date || new Date().toISOString().slice(0, 10),
       amount: input.amount,
       status: "Pending",
       items: input.items,

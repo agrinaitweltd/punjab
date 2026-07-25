@@ -54,6 +54,7 @@ import {
   createDayTrade,
 } from '../../api/miscApi'
 import { computeCreditApplication } from '../../lib/creditNotes'
+import { currentTradingDate } from '../../lib/tradingDate'
 import type {
   ActivityLog,
   AdminStaff,
@@ -89,6 +90,7 @@ import { InvoiceNumbersPage } from './InvoiceNumbersPage'
 import { SalesLoginPage } from './SalesLoginPage'
 import { AnalyticsPage } from './AnalyticsPage'
 import { DayTradePage } from './DayTradePage'
+import { DayCheckPage } from './DayCheckPage'
 import { totalSales, totalProfit, toProductsById, completedSales } from '../../lib/analytics'
 import { loadSalesLogin, saveSalesLogin } from '../../lib/salesmen'
 import type { Salesman } from '../../types'
@@ -208,6 +210,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const { toasts, dismiss } = useLiveToasts(orders, (prevById, o) =>
     prevById.has(o.id) ? null : { id: `order-${o.id}`, title: "New order received", body: `${o.orderNumber} — ${o.customerName} — £${o.amount.toFixed(2)}` })
 
+  const tradingDate = currentTradingDate(dayTrades)
+
   const navigate = (key: string) => {
     setCurrent(key)
     if (key === 'orders') markOrdersSeen()
@@ -215,24 +219,29 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   }
 
   const dayEnd = async () => {
-    const today = new Date().toISOString().slice(0, 10)
-    if (dayTrades.some(dt => dt.date === today)) {
-      window.alert(`${today} has already been closed as a Day Trade.`)
+    const closingDate = tradingDate
+    if (dayTrades.some(dt => dt.date === closingDate)) {
+      window.alert(`${closingDate} has already been closed as a Day Trade.`)
       return
     }
-    const todaysSales = completedSales(orders).filter(o => o.date === today)
-    if (!window.confirm(`Close trading for ${today}? This archives ${todaysSales.length} sale(s) as a permanent Day Trade record and cannot be undone.`)) return
+    const todaysSales = completedSales(orders).filter(o => o.date === closingDate)
+    if (!window.confirm(`Close trading for ${closingDate}? This archives ${todaysSales.length} sale(s) as a permanent Day Trade record, ends buying for that date, and moves new sales/buying to the next day. This cannot be undone.`)) return
     const productsById = toProductsById(products)
     try {
       await createDayTrade({
-        date: today,
+        date: closingDate,
         totalSales: totalSales(todaysSales),
         totalProfit: totalProfit(todaysSales, productsById),
         saleCount: todaysSales.length,
         closedAt: new Date().toISOString(),
         closedBy: user.displayName,
       })
-      void logActivity(user.displayName, `closed trading day ${today} (${todaysSales.length} sales)`)
+      // Close out that date's buying session too, if one was ever started.
+      const closingSession = buyingSessions.find(s => s.date === closingDate)
+      if (closingSession && closingSession.status === 'Open') {
+        await updateBuyingSession(closingSession.id, { status: 'Closed' })
+      }
+      void logActivity(user.displayName, `closed trading day ${closingDate} (${todaysSales.length} sales)`)
       await load()
       navigate('day-trade')
     } catch {
@@ -272,6 +281,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           products={products}
           suppliers={suppliers}
           canEdit={canEditBuying}
+          initialDate={tradingDate}
           onStartSession={async (date) => {
             await getOrCreateBuyingSession(date)
             await load()
@@ -512,6 +522,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return <DayTradePage dayTrades={dayTrades} orders={orders} products={products} />
     }
 
+    if (current === 'day-check') {
+      return <DayCheckPage orders={orders} products={products} buyingPrices={buyingPrices} />
+    }
+
     if (current === 'invoice-numbers') {
       return (
         <InvoiceNumbersPage
@@ -605,10 +619,22 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           canManage={user.isSuperAdmin || Boolean(user.permissions?.creditNotesIssue)}
           openCreditNoteId={openCreditNoteId}
           onIssue={async (input, mode) => {
+            // A credit note is still a normal support ticket on the customer's
+            // account — auto-create one (unless an existing ticket was picked)
+            // so it always shows up there, "credited against this ticket".
+            let linkedTicketId = input.linkedTicketId
+            if (!linkedTicketId) {
+              const ticket = await createTicket(
+                'admin', input.customerId,
+                `Credit Note — ${input.reason}`,
+                `A credit note for £${input.amount.toFixed(2)} was issued: ${input.reason}`,
+              )
+              linkedTicketId = ticket.id
+            }
             const note = await createCreditNote({
               customerId: input.customerId, amount: input.amount, reason: input.reason,
               date: new Date().toISOString().slice(0, 10),
-              linkedTicketId: input.linkedTicketId, linkedInvoiceId: input.linkedInvoiceId,
+              linkedTicketId, linkedInvoiceId: input.linkedInvoiceId,
               status: 'Active', remainingBalance: input.amount,
             })
             // Option A (against an invoice) applies immediately so the

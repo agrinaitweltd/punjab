@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { BuyingPrice, BuyingSession, Product, Supplier } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
@@ -36,7 +36,7 @@ function PriceLine({ points, color = "#1f7a3a", empty }: { points: number[]; col
 }
 
 export function BuyingDeskPage({
-  sessions, prices, products, suppliers, canEdit = true,
+  sessions, prices, products, suppliers, canEdit = true, initialDate,
   onStartSession, onAddPrice, onUpdatePrice, onDeletePrice, onConfirm, onEndDailyBuying, onCreateSupplier,
 }: {
   sessions: BuyingSession[]
@@ -48,6 +48,9 @@ export function BuyingDeskPage({
   suppliers: Supplier[]
   /** Gates Add/Edit/Delete/Confirm/End — history & analytics stay viewable to everyone. */
   canEdit?: boolean
+  /** The current trading date (moves forward once Day End is used) —
+      defaults the buying date picker here instead of always today. */
+  initialDate?: string
   onStartSession: (date: string) => Promise<void>
   onAddPrice: (input: Omit<BuyingPrice, "id" | "confirmed">) => Promise<void>
   onUpdatePrice: (id: string, input: Partial<BuyingPrice>) => Promise<void>
@@ -60,9 +63,19 @@ export function BuyingDeskPage({
   onCreateSupplier: (input: Omit<Supplier, "id">) => Promise<void>
 }) {
   const [tab, setTab] = useState<Tab>("current")
-  const [date, setDate] = useState(todayIso())
+  const [date, setDate] = useState(initialDate || todayIso())
   const [busy, setBusy] = useState(false)
   const [startError, setStartError] = useState("")
+
+  // Follow the trading date forward when Day End moves it — but only if the
+  // admin hasn't manually browsed to a different date already.
+  const prevInitialDate = useRef(initialDate)
+  useEffect(() => {
+    if (initialDate && initialDate !== prevInitialDate.current) {
+      setDate(current => current === prevInitialDate.current ? initialDate : current)
+      prevInitialDate.current = initialDate
+    }
+  }, [initialDate])
 
   const session = sessions.find(s => s.date === date) ?? null
   const sessionPrices = useMemo(() => prices.filter(p => p.date === date), [prices, date])
@@ -198,13 +211,25 @@ export function BuyingDeskPage({
     try { await onEndDailyBuying(session, confirmed) } finally { setBusy(false) }
   }
 
-  // ── Buying History ──
+  // ── Buying History — one row per date with a running total, drill down to
+  // see every item bought that day. ──
   const [historyQuery, setHistoryQuery] = useState("")
-  const filteredHistory = useMemo(() => {
+  const [historyDetailDate, setHistoryDetailDate] = useState<string | null>(null)
+  const historyByDate = useMemo(() => {
+    const map = new Map<string, BuyingPrice[]>()
+    for (const p of prices) { if (!map.has(p.date)) map.set(p.date, []); map.get(p.date)!.push(p) }
     const hq = historyQuery.trim().toLowerCase()
-    return prices.filter(p => !hq || `${p.supplier} ${p.product}`.toLowerCase().includes(hq))
-      .sort((a, b) => a.product.localeCompare(b.product) || b.date.localeCompare(a.date))
+    return [...map.entries()]
+      .map(([d, rows]) => ({
+        date: d, rows,
+        total: rows.reduce((s, r) => s + r.price, 0),
+        confirmedTotal: rows.filter(r => r.confirmed).reduce((s, r) => s + r.price, 0),
+        suppliers: new Set(rows.map(r => r.supplier)).size,
+      }))
+      .filter(g => !hq || g.rows.some(r => `${r.supplier} ${r.product}`.toLowerCase().includes(hq)))
+      .sort((a, b) => b.date.localeCompare(a.date))
   }, [prices, historyQuery])
+  const historyDetail = historyByDate.find(g => g.date === historyDetailDate) ?? null
 
   // ── Buying Analytics ──
   const [rangeFrom, setRangeFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10) })
@@ -235,16 +260,23 @@ export function BuyingDeskPage({
   const allSuppliers = useMemo(() => [...new Set(prices.map(p => p.supplier))].sort(), [prices])
   const allProducts = useMemo(() => [...new Set(prices.map(p => p.product))].sort(), [prices])
 
-  // ── Supplier Analytics ──
+  // ── Supplier Analytics — spend compared across suppliers within the same
+  // date range used for Buying Analytics, with a drill-down per supplier. ──
+  const [supplierDetail, setSupplierDetail] = useState<string | null>(null)
   const supplierStats = useMemo(() => {
     return suppliers.map(sup => {
       const rows = prices.filter(p => p.supplier === sup.name)
+      const rangeRows = rows.filter(p => p.date >= rangeFrom && p.date <= rangeTo)
       const confirmedRows = rows.filter(p => p.confirmed)
       const avg = rows.length ? rows.reduce((s, r) => s + r.price, 0) / rows.length : 0
       const bestWins = bestByProduct.filter(b => b.best.supplier === sup.name).length
-      return { supplier: sup, quotes: rows.length, confirmed: confirmedRows.length, avgPrice: avg, bestWins }
-    }).sort((a, b) => a.supplier.name.localeCompare(b.supplier.name))
-  }, [suppliers, prices, bestByProduct])
+      return {
+        supplier: sup, quotes: rows.length, confirmed: confirmedRows.length, avgPrice: avg, bestWins,
+        rangeRows, rangeSpend: rangeRows.reduce((s, r) => s + r.price, 0),
+      }
+    }).sort((a, b) => b.rangeSpend - a.rangeSpend)
+  }, [suppliers, prices, bestByProduct, rangeFrom, rangeTo])
+  const supplierDetailStats = supplierStats.find(s => s.supplier.name === supplierDetail) ?? null
 
   return (
     <div className="stack">
@@ -418,7 +450,7 @@ export function BuyingDeskPage({
             </div>
           )}
 
-          {/* ── Buying History ── */}
+          {/* ── Buying History — per date, drill down for the full breakdown ── */}
           {tab === "history" && (
             <div className="ps-table-card">
               <div className="ps-toolbar">
@@ -431,24 +463,22 @@ export function BuyingDeskPage({
               </div>
               <div className="ps-table-wrap">
                 <table className="ps-table">
-                  <thead><tr><th>Product</th><th>Date</th><th>Supplier</th><th>Price</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Date</th><th>Items</th><th>Suppliers</th><th>Total Buying</th><th>Confirmed</th><th></th></tr></thead>
                   <tbody>
-                    {filteredHistory.slice(0, 200).map(p => (
-                      <tr key={p.id} className="ps-row">
-                        <td><strong>{p.product}</strong></td>
-                        <td style={{ color: "#6b7280" }}>{p.date}</td>
-                        <td>{p.supplier}</td>
-                        <td>£{p.price.toFixed(2)}</td>
-                        <td>
-                          <span className="ps-badge" style={p.confirmed ? { background: "#dcfce7", color: "#15803d" } : { background: "#fef9c3", color: "#a16207" }}>
-                            {p.confirmed ? "Confirmed" : "Quoted"}
-                          </span>
-                        </td>
+                    {historyByDate.slice(0, 60).map(g => (
+                      <tr key={g.date} className="ps-row" style={{ cursor: "pointer" }}
+                        onClick={() => setHistoryDetailDate(g.date)} onDoubleClick={() => setHistoryDetailDate(g.date)}>
+                        <td><strong>{g.date}</strong></td>
+                        <td>{g.rows.length}</td>
+                        <td>{g.suppliers}</td>
+                        <td><strong>£{g.total.toFixed(2)}</strong></td>
+                        <td>£{g.confirmedTotal.toFixed(2)}</td>
+                        <td><Button variant="ghost" className="btn-sm" onClick={() => setHistoryDetailDate(g.date)}>View →</Button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {filteredHistory.length === 0 && <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>No buying history yet.</div>}
+                {historyByDate.length === 0 && <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>No buying history yet.</div>}
               </div>
             </div>
           )}
@@ -499,31 +529,48 @@ export function BuyingDeskPage({
             </div>
           )}
 
-          {/* ── Supplier Analytics ── */}
+          {/* ── Supplier Analytics — compare spend per supplier in the date range
+              from Buying Analytics; double-click a row to see what was bought. ── */}
           {tab === "suppliers" && (
-            <div className="ps-table-card">
-              <div className="ps-table-wrap">
-                <table className="ps-table">
-                  <thead><tr><th>Supplier</th><th>Country</th><th>Contact</th><th>Quotes</th><th>Confirmed</th><th>Avg Price</th><th>Best-Price Wins</th></tr></thead>
-                  <tbody>
-                    {supplierStats.map(s => (
-                      <tr key={s.supplier.id} className="ps-row">
-                        <td><strong>{s.supplier.name}</strong></td>
-                        <td>{s.supplier.country || "—"}</td>
-                        <td>{s.supplier.contact || "—"}</td>
-                        <td>{s.quotes}</td>
-                        <td>{s.confirmed}</td>
-                        <td>{s.quotes ? `£${s.avgPrice.toFixed(2)}` : "—"}</td>
-                        <td>{s.bestWins}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {supplierStats.length === 0 && (
-                  <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
-                    No suppliers yet — add one from the Current Buying Prices tab.
-                  </div>
-                )}
+            <div className="stack">
+              <div className="ps-table-card" style={{ padding: 16 }}>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <label className="form-control" style={{ marginBottom: 0 }}>
+                    <span>From</span>
+                    <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)} />
+                  </label>
+                  <label className="form-control" style={{ marginBottom: 0 }}>
+                    <span>To</span>
+                    <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)} />
+                  </label>
+                  <p style={{ fontSize: 12.5, color: "#6b7a70", alignSelf: "flex-end", margin: 0 }}>Double-click a supplier to see everything bought from them in this range.</p>
+                </div>
+              </div>
+              <div className="ps-table-card">
+                <div className="ps-table-wrap">
+                  <table className="ps-table">
+                    <thead><tr><th>Supplier</th><th>Country</th><th>Contact</th><th>Spend in Range</th><th>Items in Range</th><th>Avg Price (all time)</th><th>Best-Price Wins</th></tr></thead>
+                    <tbody>
+                      {supplierStats.map(s => (
+                        <tr key={s.supplier.id} className="ps-row" style={{ cursor: "pointer" }}
+                          onClick={() => setSupplierDetail(s.supplier.name)} onDoubleClick={() => setSupplierDetail(s.supplier.name)}>
+                          <td><strong>{s.supplier.name}</strong></td>
+                          <td>{s.supplier.country || "—"}</td>
+                          <td>{s.supplier.contact || "—"}</td>
+                          <td><strong>£{s.rangeSpend.toFixed(2)}</strong></td>
+                          <td>{s.rangeRows.length}</td>
+                          <td>{s.quotes ? `£${s.avgPrice.toFixed(2)}` : "—"}</td>
+                          <td>{s.bestWins}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {supplierStats.length === 0 && (
+                    <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
+                      No suppliers yet — add one from the Current Buying Prices tab.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -616,6 +663,75 @@ export function BuyingDeskPage({
             <div className="ss-foot">
               <Button variant="secondary" onClick={() => setAddStep("select")}>← Back</Button>
               <Button onClick={submitAdd} disabled={busy}>{busy ? "Saving…" : `Save ${draftItems.length} Price${draftItems.length !== 1 ? "s" : ""}`}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Buying History drill-down — everything bought on one date */}
+      <Modal open={Boolean(historyDetail)} title={historyDetail ? `Buying — ${historyDetail.date}` : "Buying"} onClose={() => setHistoryDetailDate(null)} wide>
+        {historyDetail && (
+          <div>
+            <div className="ps-stats-row" style={{ marginBottom: 14 }}>
+              <div className="ps-stat"><p className="ps-stat-label">Total Buying</p><p className="ps-stat-value">£{historyDetail.total.toFixed(2)}</p></div>
+              <div className="ps-stat"><p className="ps-stat-label">Items</p><p className="ps-stat-value">{historyDetail.rows.length}</p></div>
+              <div className="ps-stat"><p className="ps-stat-label">Suppliers</p><p className="ps-stat-value">{historyDetail.suppliers}</p></div>
+            </div>
+            <div className="ps-table-wrap">
+              <table className="ps-table">
+                <thead><tr><th>Product</th><th>Supplier</th><th>Brand</th><th>Price</th><th>Status</th></tr></thead>
+                <tbody>
+                  {[...historyDetail.rows].sort((a, b) => a.product.localeCompare(b.product)).map(p => (
+                    <tr key={p.id} className="ps-row">
+                      <td><strong>{p.product}</strong></td>
+                      <td>{p.supplier}</td>
+                      <td>{p.brand || "—"}</td>
+                      <td>£{p.price.toFixed(2)}</td>
+                      <td>
+                        <span className="ps-badge" style={p.confirmed ? { background: "#dcfce7", color: "#15803d" } : { background: "#fef9c3", color: "#a16207" }}>
+                          {p.confirmed ? "Confirmed" : "Quoted"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Supplier drill-down — everything bought from this supplier in the selected range */}
+      <Modal open={Boolean(supplierDetailStats)} title={supplierDetailStats ? `${supplierDetailStats.supplier.name} — ${rangeFrom} to ${rangeTo}` : "Supplier"} onClose={() => setSupplierDetail(null)} wide>
+        {supplierDetailStats && (
+          <div>
+            <div className="ps-stats-row" style={{ marginBottom: 14 }}>
+              <div className="ps-stat"><p className="ps-stat-label">Spend in Range</p><p className="ps-stat-value">£{supplierDetailStats.rangeSpend.toFixed(2)}</p></div>
+              <div className="ps-stat"><p className="ps-stat-label">Items</p><p className="ps-stat-value">{supplierDetailStats.rangeRows.length}</p></div>
+              <div className="ps-stat"><p className="ps-stat-label">Best-Price Wins</p><p className="ps-stat-value">{supplierDetailStats.bestWins}</p></div>
+            </div>
+            <div className="ps-table-wrap">
+              <table className="ps-table">
+                <thead><tr><th>Date</th><th>Product</th><th>Brand</th><th>Price</th><th>Status</th></tr></thead>
+                <tbody>
+                  {[...supplierDetailStats.rangeRows].sort((a, b) => b.date.localeCompare(a.date) || a.product.localeCompare(b.product)).map(p => (
+                    <tr key={p.id} className="ps-row">
+                      <td style={{ color: "#6b7280" }}>{p.date}</td>
+                      <td><strong>{p.product}</strong></td>
+                      <td>{p.brand || "—"}</td>
+                      <td>£{p.price.toFixed(2)}</td>
+                      <td>
+                        <span className="ps-badge" style={p.confirmed ? { background: "#dcfce7", color: "#15803d" } : { background: "#fef9c3", color: "#a16207" }}>
+                          {p.confirmed ? "Confirmed" : "Quoted"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {supplierDetailStats.rangeRows.length === 0 && (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>Nothing bought from this supplier in this range.</div>
+              )}
             </div>
           </div>
         )}

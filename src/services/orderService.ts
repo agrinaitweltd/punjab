@@ -19,14 +19,14 @@ export async function getOrders(): Promise<Order[]> {
   return [...orders].sort((a, b) => b.date.localeCompare(a.date))
 }
 
-export async function createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status">): Promise<Order> {
+export async function createOrder(input: Omit<Order, "id" | "orderNumber" | "date" | "status"> & { date?: string }): Promise<Order> {
   if (supabaseReady) return databaseService.createOrder(input)
   await new Promise(r => setTimeout(r, 150))
   const order: Order = {
     ...input,
     id: `o-${Date.now()}`,
     orderNumber: nextOrderNumber(),
-    date: new Date().toISOString().slice(0, 10),
+    date: input.date || new Date().toISOString().slice(0, 10),
     status: "Pending",
     items: input.items || [],
   }

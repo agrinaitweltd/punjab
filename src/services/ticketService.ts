@@ -25,6 +25,7 @@ export async function createTicket(
   subject: string,
   message: string
 ): Promise<SupportTicket> {
+  if (supabaseReady) return databaseService.createTicket({ createdByRole, customerId, subject, message })
   await new Promise(r => setTimeout(r, 150))
   const ticket: SupportTicket = {
     id: nextId(),

@@ -9,7 +9,7 @@ const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
   payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
   "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage",
   "payment-reminders": "payments",
-  stats: "stats", stock: "stock", "data-extract": "extracts",
+  stats: "stats", "day-check": "stats", stock: "stock", "data-extract": "extracts",
   enquiries: "enquiries", complaints: "complaints",
 }
 
@@ -31,6 +31,7 @@ const adminTools = [
   { key: "payment-reminders", label: "Payment Reminders", d: "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0", badge: undefined },
   { key: "invoice-numbers", label: "Invoice Numbers", d: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2-3 2z", badge: undefined },
   { key: "day-trade", label: "Day Trade", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", badge: undefined },
+  { key: "day-check", label: "Day Check", d: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", badge: undefined },
   { key: "stats",         label: "Analytics",   d: "M18 20V10M12 20V4M6 20v-6", badge: undefined },
   { key: "stock",         label: "Stock",       d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", badge: undefined },
   { key: "files",         label: "Files",       d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", badge: undefined },

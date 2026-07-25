@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
 import { getOrders } from "../../api/ordersApi"
-import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, getCreditNoteAllocations } from "../../api/miscApi"
+import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, getCreditNoteAllocations, getDayTrades } from "../../api/miscApi"
+import { currentTradingDate } from "../../lib/tradingDate"
 import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
 import { getCreditStatus } from "../../lib/creditControl"
@@ -136,14 +137,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [proofNote, setProofNote]       = useState("")
   const [proofBusy, setProofBusy]       = useState(false)
   const [proofError, setProofError]     = useState("")
+  const [tradingDate, setTradingDate]   = useState(() => new Date().toISOString().slice(0, 10))
 
   const load = async () => {
-    const [p, s, o, inv, pay, tix, custs, cn, cna] = await Promise.all([
+    const [p, s, o, inv, pay, tix, custs, cn, cna, dt] = await Promise.all([
       getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets(), getCustomers(),
-      getCreditNotes(), getCreditNoteAllocations(),
+      getCreditNotes(), getCreditNoteAllocations(), getDayTrades(),
     ])
     setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
     setCreditNotes(cn); setCreditNoteAllocations(cna)
+    setTradingDate(currentTradingDate(dt))
     setMe(custs.find(c => c.id === user.id) ?? null)
     setFilesLoading(true)
     listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
@@ -837,6 +840,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         salesmanName={me?.salesmanName}
         onPlaced={load}
         initialSearch={quickSearch}
+        tradingDate={tradingDate}
       />
 
       {/* Upload bank-transfer payment proof */}
