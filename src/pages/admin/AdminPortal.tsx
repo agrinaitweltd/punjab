@@ -61,7 +61,14 @@ import {
   updateAssignedTaskStatus,
   getCustomerSubAccounts,
   updateCustomerSubAccount,
+  getWhatsAppLogs,
+  getWhatsAppTemplates,
+  createWhatsAppTemplate,
+  updateWhatsAppTemplate,
 } from '../../api/miscApi'
+import { sendWhatsAppMessage, retryWhatsAppMessage, sendInvoiceMessage, sendPaymentReceived, sendOrderConfirmed, sendOrderPacked, sendOrderDelivered, sendAccountApproved, sendAccountSuspended, invalidateTemplateCache } from '../../lib/whatsapp'
+import { WhatsAppLogsPage } from './WhatsAppLogsPage'
+import { WhatsAppSendPage } from './WhatsAppSendPage'
 import { computeCreditApplication } from '../../lib/creditNotes'
 import { currentTradingDate } from '../../lib/tradingDate'
 import type {
@@ -86,6 +93,8 @@ import type {
   StockItem,
   SupportTicket,
   User,
+  WhatsAppLog,
+  WhatsAppTemplate,
 } from '../../types'
 import { AdminsPage } from './AdminsPage'
 import { ComplaintsPage } from './ComplaintsPage'
@@ -146,6 +155,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [salesmen, setSalesmen] = useState<Salesman[]>([])
   const [assignedTasks, setAssignedTasks] = useState<AssignedTask[]>([])
   const [subAccounts, setSubAccounts] = useState<CustomerSubAccount[]>([])
+  const [whatsappLogs, setWhatsappLogs] = useState<WhatsAppLog[]>([])
+  const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsAppTemplate[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -171,6 +182,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       salesmenData,
       assignedTasksData,
       subAccountsData,
+      whatsappLogsData,
+      whatsappTemplatesData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -194,6 +207,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getSalesmen(),
       getAssignedTasks(),
       getCustomerSubAccounts(),
+      getWhatsAppLogs(),
+      getWhatsAppTemplates(),
     ])
 
     setCustomers(customersData)
@@ -218,6 +233,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setSalesmen(salesmenData)
     setAssignedTasks(assignedTasksData)
     setSubAccounts(subAccountsData)
+    setWhatsappLogs(whatsappLogsData)
+    setWhatsappTemplates(whatsappTemplatesData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -428,6 +445,41 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       )
     }
 
+    if (current === 'whatsapp-logs') {
+      return (
+        <WhatsAppLogsPage
+          logs={whatsappLogs}
+          onRetry={async (log) => {
+            await retryWhatsAppMessage(log, user.displayName)
+            await load()
+          }}
+        />
+      )
+    }
+
+    if (current === 'whatsapp-send') {
+      return (
+        <WhatsAppSendPage
+          logs={whatsappLogs}
+          templates={whatsappTemplates}
+          onSend={async (phone, message) => {
+            await sendWhatsAppMessage(phone, message, { type: 'Custom', createdBy: user.displayName })
+            await load()
+          }}
+          onSaveTemplate={async (name, message) => {
+            await createWhatsAppTemplate({ name, type: 'Custom', message })
+            invalidateTemplateCache()
+            await load()
+          }}
+          onUpdateTemplate={async (id, message) => {
+            await updateWhatsAppTemplate(id, { message })
+            invalidateTemplateCache()
+            await load()
+          }}
+        />
+      )
+    }
+
     if (current === 'suppliers') {
       return (
         <SuppliersPage
@@ -485,6 +537,16 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await load()
           }}
           canDelete={user.isSuperAdmin || Boolean(user.permissions?.customersDelete)}
+          whatsappTemplates={whatsappTemplates}
+          onSendWhatsApp={async (phone, message, customer) => {
+            await sendWhatsAppMessage(phone, message, { type: 'Custom', customerId: customer.id, customerName: customer.companyName, createdBy: user.displayName })
+            await load()
+          }}
+          onSaveWhatsAppTemplate={async (name, message) => {
+            await createWhatsAppTemplate({ name, type: 'Custom', message })
+            invalidateTemplateCache()
+            await load()
+          }}
         />
       )
     }
@@ -560,7 +622,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                   (creditLimit > 0 && projectedOutstanding > creditLimit)
                 if (requiresPaymentNow) {
                   const today = new Date().toISOString().slice(0, 10)
-                  await createInvoice({
+                  const newInvoice = await createInvoice({
                     customerId: customer.id, invoiceNumber: `INV-${order.orderNumber}`,
                     amount: order.amount, date: today, dueDate: today, status: 'Unpaid',
                   })
@@ -569,10 +631,20 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                     void sendEmail(customer.email, `Payment needed — order ${order.orderNumber}`,
                       orderPaymentRequiredEmailHtml(customer.contactPerson || customer.companyName, order.orderNumber, order.amount, today))
                   }
+                  void sendInvoiceMessage(newInvoice, customer, user.displayName)
                 }
               }
             }
             await updateOrder(id, input)
+            if (input.status === 'Confirmed' || input.status === 'Preparing' || input.status === 'Delivered') {
+              const updatedOrder = order ? { ...order, ...input } : orders.find(o => o.id === id)
+              const customer = customers.find(c => c.id === updatedOrder?.customerId)
+              if (updatedOrder) {
+                if (input.status === 'Confirmed') void sendOrderConfirmed(updatedOrder, customer, user.displayName)
+                if (input.status === 'Preparing') void sendOrderPacked(updatedOrder, customer, user.displayName)
+                if (input.status === 'Delivered') void sendOrderDelivered(updatedOrder, customer, user.displayName)
+              }
+            }
             await load()
           }}
           onMarkPaid={!canRecordPayments ? undefined : async (order) => {
@@ -591,6 +663,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               void sendEmail(customer.email, `Payment received for order ${order.orderNumber}`,
                 paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today))
             }
+            if (customer && invoice) void sendPaymentReceived(invoice, customer, order.amount, user.displayName)
             // Once this invoice is paid, check whether the customer is still over
             // their limit or has other overdue invoices — if not, lift the freeze.
             if (customer?.blocked && invoice) {
@@ -652,6 +725,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               void sendEmail(customer.email, 'Payment confirmed — thank you',
                 paymentApprovedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount))
             }
+            const paidInvoice = invoices.find(i => proof.invoiceIds.includes(i.id))
+            if (customer && paidInvoice) void sendPaymentReceived(paidInvoice, customer, proof.amount, user.displayName)
             // Lift a payment-required freeze once the account is back within terms.
             if (customer?.blocked) {
               const updatedInvoices = invoices.map(i => proof.invoiceIds.includes(i.id) ? { ...i, status: 'Paid' as const } : i)
@@ -700,6 +775,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             const updated = await updateCustomer(customer.id, { blocked })
             if (!updated) {
               window.alert("Couldn't update the account — if this keeps happening, the credit-control database migration in src/lib/schema.sql may not have been run yet.")
+            } else {
+              void (blocked ? sendAccountSuspended(customer, user.displayName) : sendAccountApproved(customer, user.displayName))
             }
             await load()
           }}
@@ -790,7 +867,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           applications={applications}
           canManage={user.isSuperAdmin || Boolean(user.permissions?.applicationsManage)}
           onApprove={async (application) => {
-            await createCustomer({
+            const newCustomer = await createCustomer({
               companyName: application.companyName,
               contactPerson: application.contactName,
               email: application.email,
@@ -807,6 +884,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               void sendEmail(application.email, "Welcome to the Punjab Exotic Foods Portal",
                 welcomeEmailHtml(application.contactName || application.companyName, "customer", window.location.origin))
             }
+            void sendAccountApproved(newCustomer, user.displayName)
             void logActivity(user.displayName, `approved customer application for ${application.companyName}`)
             await load()
           }}

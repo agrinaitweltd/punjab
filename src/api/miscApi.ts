@@ -12,6 +12,7 @@ import { getDayTrades, createDayTrade } from '../services/dayTradeService'
 import { getSalesmen, createSalesman, updateSalesman, deleteSalesman } from '../services/salesmanService'
 import { getAssignedTasks, createAssignedTask, updateAssignedTaskStatus } from '../services/assignedTaskService'
 import { getCustomerSubAccounts, createCustomerSubAccount, updateCustomerSubAccount, deleteCustomerSubAccount } from '../services/customerSubAccountService'
+import { getWhatsAppLogs, createWhatsAppLog, updateWhatsAppLog, getWhatsAppTemplates, createWhatsAppTemplate, updateWhatsAppTemplate } from '../services/whatsappService'
 
 export { getActivity, getInvoices, getPayments, createInvoice, createPayment, updateInvoice, importStatementInvoices }
 export { getTickets, createTicket, updateTicketStatus }
@@ -26,6 +27,7 @@ export { getDayTrades, createDayTrade }
 export { getSalesmen, createSalesman, updateSalesman, deleteSalesman }
 export { getAssignedTasks, createAssignedTask, updateAssignedTaskStatus }
 export { getCustomerSubAccounts, createCustomerSubAccount, updateCustomerSubAccount, deleteCustomerSubAccount }
+export { getWhatsAppLogs, createWhatsAppLog, updateWhatsAppLog, getWhatsAppTemplates, createWhatsAppTemplate, updateWhatsAppTemplate }
 
 export function createTicketForCustomer(subject: string, message: string, customerId: string) {
   return createTicket('customer', customerId, subject, message)

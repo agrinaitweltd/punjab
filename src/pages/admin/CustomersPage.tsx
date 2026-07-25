@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Customer, CreditNote, CreditNoteAllocation, DeliveryArea, Invoice, Payment } from '../../types'
+import type { Customer, CreditNote, CreditNoteAllocation, DeliveryArea, Invoice, Payment, WhatsAppTemplate } from '../../types'
 import { parseStatementPdf, type StatementRow } from '../../lib/statementImport'
 import { importStatementInvoices } from '../../api/miscApi'
 import { Button } from '../../components/ui/Button'
@@ -10,6 +10,7 @@ import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { CustomerStatementModal } from './CustomerStatementModal'
+import { SendWhatsAppModal } from '../../components/SendWhatsAppModal'
 import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
 import { SALESMEN } from '../../lib/salesmen'
 
@@ -52,6 +53,9 @@ export function CustomersPage({
   onUpdate,
   onDelete,
   canDelete = true,
+  whatsappTemplates = [],
+  onSendWhatsApp,
+  onSaveWhatsAppTemplate,
 }: {
   customers: Customer[]
   deliveryAreas: DeliveryArea[]
@@ -65,7 +69,12 @@ export function CustomersPage({
   /** Gates the Delete button — Salesperson/Cashier-type roles can view and
       create customers but shouldn't be able to delete them. */
   canDelete?: boolean
+  whatsappTemplates?: WhatsAppTemplate[]
+  onSendWhatsApp?: (phone: string, message: string, customer: Customer) => Promise<void>
+  onSaveWhatsAppTemplate?: (name: string, message: string) => Promise<void>
 }) {
+  const [whatsappTarget, setWhatsappTarget] = useState<Customer | null>(null)
+  const [whatsappBusy, setWhatsappBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [editing, setEditing] = useState<Customer | null>(null)
@@ -369,6 +378,9 @@ export function CustomersPage({
                       <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
                       <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Statement</Button>
                       <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
+                      {onSendWhatsApp && (
+                        <Button variant="ghost" className="btn-sm" onClick={() => setWhatsappTarget(customer)}>Send WhatsApp</Button>
+                      )}
                       {canDelete && (
                         <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => archiveCustomer(customer)}>
                           {deletingId === customer.id ? 'Archiving…' : 'Archive'}
@@ -519,6 +531,22 @@ export function CustomersPage({
         creditNotes={creditNotes}
         allocations={creditNoteAllocations}
       />
+
+      {onSendWhatsApp && (
+        <SendWhatsAppModal
+          open={Boolean(whatsappTarget)}
+          onClose={() => setWhatsappTarget(null)}
+          customer={whatsappTarget}
+          templates={whatsappTemplates}
+          busy={whatsappBusy}
+          onSend={async (phone, message) => {
+            if (!whatsappTarget) return
+            setWhatsappBusy(true)
+            try { await onSendWhatsApp(phone, message, whatsappTarget) } finally { setWhatsappBusy(false) }
+          }}
+          onSaveTemplate={onSaveWhatsAppTemplate}
+        />
+      )}
     </div>
   )
 }

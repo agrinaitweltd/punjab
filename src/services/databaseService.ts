@@ -2,6 +2,7 @@
 import type {
   ActivityLog, AdminRole, AdminStaff, AssignedTask, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication,
   CustomerSubAccount, DayTrade, DeliveryArea, Invoice, NotificationLog, Order, Payment, Product, Salesman, StockItem, Supplier, SupportTicket,
+  WhatsAppLog, WhatsAppTemplate,
 } from "../types"
 
 function genId(prefix: string) { return `${prefix}-${Date.now()}` }
@@ -127,6 +128,18 @@ function mapAssignedTask(r: any): AssignedTask {
     assignedToId: r.assigned_to_id ?? "", assignedToName: r.assigned_to_name ?? "",
     assignedByName: r.assigned_by_name ?? "", status: r.status ?? "Open", createdAt: r.created_at ?? "",
   }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapWhatsAppLog(r: any): WhatsAppLog {
+  return {
+    id: r.id, customerId: r.customer_id ?? undefined, customerName: r.customer_name ?? undefined,
+    phone: r.phone, message: r.message, type: r.type ?? "Custom", status: r.status ?? "Pending",
+    response: r.response ?? undefined, sentAt: r.sent_at ?? undefined, createdBy: r.created_by ?? "",
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapWhatsAppTemplate(r: any): WhatsAppTemplate {
+  return { id: r.id, name: r.name, type: r.type, message: r.message }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapCustomerSubAccount(r: any): CustomerSubAccount {
@@ -840,6 +853,52 @@ class SupabaseDatabaseService {
   async deleteCustomerSubAccount(id: string): Promise<boolean> {
     const { error } = await db().from("customer_sub_accounts").delete().eq("id", id)
     return !error
+  }
+
+  // ── WHATSAPP (UltraMsg) ───────────────────────────────────────────────
+  async getWhatsAppLogs(): Promise<WhatsAppLog[]> {
+    const { data, error } = await db().from("whatsapp_logs").select("*").order("created_at", { ascending: false })
+    if (error) { console.error("getWhatsAppLogs", error); return [] }
+    return (data ?? []).map(mapWhatsAppLog)
+  }
+  async createWhatsAppLog(input: Omit<WhatsAppLog, "id">): Promise<WhatsAppLog> {
+    const row = {
+      id: genId("wa"), customer_id: input.customerId ?? null, customer_name: input.customerName ?? null,
+      phone: input.phone, message: input.message, type: input.type, status: input.status,
+      response: input.response ?? null, sent_at: input.sentAt ?? null, created_by: input.createdBy,
+    }
+    const { data, error } = await db().from("whatsapp_logs").insert(row).select().single()
+    if (error) throw error
+    return mapWhatsAppLog(data)
+  }
+  async updateWhatsAppLog(id: string, input: Partial<WhatsAppLog>): Promise<WhatsAppLog | null> {
+    const row: Record<string, unknown> = {}
+    if (input.status !== undefined) row.status = input.status
+    if (input.response !== undefined) row.response = input.response
+    if (input.sentAt !== undefined) row.sent_at = input.sentAt
+    const { data, error } = await db().from("whatsapp_logs").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateWhatsAppLog", error); return null }
+    return mapWhatsAppLog(data)
+  }
+
+  async getWhatsAppTemplates(): Promise<WhatsAppTemplate[]> {
+    const { data, error } = await db().from("whatsapp_templates").select("*").order("name")
+    if (error) { console.error("getWhatsAppTemplates", error); return [] }
+    return (data ?? []).map(mapWhatsAppTemplate)
+  }
+  async createWhatsAppTemplate(input: Omit<WhatsAppTemplate, "id">): Promise<WhatsAppTemplate> {
+    const row = { id: genId("wt"), name: input.name, type: input.type, message: input.message }
+    const { data, error } = await db().from("whatsapp_templates").insert(row).select().single()
+    if (error) throw error
+    return mapWhatsAppTemplate(data)
+  }
+  async updateWhatsAppTemplate(id: string, input: Partial<WhatsAppTemplate>): Promise<WhatsAppTemplate | null> {
+    const row: Record<string, unknown> = {}
+    if (input.name !== undefined) row.name = input.name
+    if (input.message !== undefined) row.message = input.message
+    const { data, error } = await db().from("whatsapp_templates").update(row).eq("id", id).select().single()
+    if (error) { console.error("updateWhatsAppTemplate", error); return null }
+    return mapWhatsAppTemplate(data)
   }
 
   // ── PAYMENT REMINDER NOTIFICATIONS ──────────────────────────────────

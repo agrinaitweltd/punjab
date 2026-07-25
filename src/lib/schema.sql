@@ -433,6 +433,54 @@ create table if not exists customer_sub_accounts (
 );
 alter table customer_sub_accounts disable row level security;
 
+-- WHATSAPP (UltraMsg) — only the single Punjab Exotic Foods Ltd WhatsApp
+-- Business account (connected to UltraMsg instance186201) ever sends;
+-- staff never connect their own number. Every send attempt is logged here.
+create table if not exists whatsapp_logs (
+  id            text primary key default gen_random_uuid()::text,
+  customer_id   text references customers(id) on delete set null,
+  customer_name text,
+  phone         text not null,
+  message       text not null,
+  type          text not null default 'Custom',
+  status        text not null default 'Pending' check (status in ('Sent', 'Failed', 'Pending')),
+  response      text,
+  sent_at       timestamptz,
+  created_by    text,
+  created_at    timestamptz default now()
+);
+alter table whatsapp_logs disable row level security;
+
+create table if not exists whatsapp_templates (
+  id         text primary key default gen_random_uuid()::text,
+  name       text not null,
+  type       text unique not null,
+  message    text not null,
+  created_at timestamptz default now()
+);
+alter table whatsapp_templates disable row level security;
+
+insert into whatsapp_templates (id, name, type, message) values
+  ('wt-invoice',    'Invoice Created',    'Invoice Created',
+    'Hi {{name}}, invoice {{invoiceNumber}} for £{{amount}} has been raised on your Punjab Exotic Foods account. Due {{dueDate}}.'),
+  ('wt-reminder',   'Payment Reminder',   'Payment Reminder',
+    'Hi {{name}}, a friendly reminder that invoice {{invoiceNumber}} for £{{amount}} is {{dueLabel}}. Please arrange payment when you can. Thank you — Punjab Exotic Foods.'),
+  ('wt-received',   'Payment Received',   'Payment Received',
+    'Hi {{name}}, thank you — we''ve received your payment of £{{amount}}. Your Punjab Exotic Foods account is up to date.'),
+  ('wt-confirmed',  'Order Confirmed',    'Order Confirmed',
+    'Hi {{name}}, your order {{orderNumber}} (£{{amount}}) has been confirmed and is being prepared. Thank you for ordering with Punjab Exotic Foods.'),
+  ('wt-packed',     'Order Packed',       'Order Packed',
+    'Hi {{name}}, your order {{orderNumber}} has been packed and will be on its way shortly.'),
+  ('wt-dispatched', 'Order Dispatched',   'Order Dispatched',
+    'Hi {{name}}, your order {{orderNumber}} is out for delivery.'),
+  ('wt-delivered',  'Order Delivered',    'Order Delivered',
+    'Hi {{name}}, your order {{orderNumber}} has been delivered. Thank you for choosing Punjab Exotic Foods!'),
+  ('wt-approved',   'Account Approved',   'Account Approved',
+    'Hi {{name}}, great news — your Punjab Exotic Foods trade account has been approved. You can now log in and start ordering.'),
+  ('wt-suspended',  'Account Suspended',  'Account Suspended',
+    'Hi {{name}}, your Punjab Exotic Foods account has been temporarily suspended. Please contact us to resolve this.')
+on conflict (type) do nothing;
+
 -- DISABLE ROW LEVEL SECURITY (enable later when adding Supabase Auth)
 alter table admin_staff     disable row level security;
 alter table customers       disable row level security;

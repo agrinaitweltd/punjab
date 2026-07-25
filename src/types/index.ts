@@ -318,6 +318,35 @@ export interface SupportTicket {
   createdAt: string
 }
 
+export type WhatsAppMessageType =
+  | 'Invoice Created' | 'Payment Reminder' | 'Payment Received'
+  | 'Order Confirmed' | 'Order Packed' | 'Order Dispatched' | 'Order Delivered'
+  | 'Account Approved' | 'Account Suspended' | 'Custom'
+
+/** One WhatsApp send attempt via UltraMsg — logged whether it succeeds or
+    fails, so Retry can resend the exact same message. */
+export interface WhatsAppLog {
+  id: string
+  customerId?: string
+  customerName?: string
+  phone: string
+  message: string
+  type: WhatsAppMessageType
+  status: 'Sent' | 'Failed' | 'Pending'
+  response?: string
+  sentAt?: string
+  createdBy: string
+}
+
+/** A reusable message body for a given trigger type — {{placeholders}} are
+    filled in per-send (customer name, invoice number, amount, etc.). */
+export interface WhatsAppTemplate {
+  id: string
+  name: string
+  type: WhatsAppMessageType
+  message: string
+}
+
 export interface ActivityLog {
   id: string
   customerName: string

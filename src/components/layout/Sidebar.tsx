@@ -44,6 +44,7 @@ const adminTools = [
   { key: "stock",         label: "Stock",       d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", badge: undefined },
   { key: "files",         label: "Files",       d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", badge: undefined },
   { key: "data-extract",  label: "Integration", d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3", badge: undefined },
+  { key: "whatsapp-logs", label: "WhatsApp Logs", d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: undefined },
 ]
 const adminWorkspace = [
   { key: "delivery-areas", label: "Deliveries", dot: "#22913f" },
@@ -233,6 +234,14 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
                   d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
                   active={current === "sub-accounts"}
                   onClick={() => onNavigate("sub-accounts")}
+                />
+              )}
+              {(isSuperAdmin) && (!q || "send whatsapp".includes(q)) && (
+                <NavItem
+                  label="Send WhatsApp"
+                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                  active={current === "whatsapp-send"}
+                  onClick={() => onNavigate("whatsapp-send")}
                 />
               )}
             </nav>
