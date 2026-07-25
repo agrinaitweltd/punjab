@@ -2472,3 +2472,35 @@ tbody tr:hover td { background: #fafbfc; }
   .stk-banner-btn { width: 100%; }
   .stk-health .ps-search-wrap { width: 100%; margin-left: 0 !important; max-width: none !important; }
 }
+
+/* ══ Mobile-wide UX pass ══
+   1. Any text input/select/textarea under 16px makes iOS Safari (and some
+      Android browsers) zoom the whole page in on focus — bumping every
+      field to 16px on small screens stops that without disabling pinch-zoom
+      for accessibility reasons.
+   2. Buttons/nav items get a real touch target (44px is the iOS HIG / WCAG
+      2.5.5 minimum) instead of relying on desktop-sized hit areas.
+   3. Modals get tighter padding and a taller usable area so short screens
+      don't feel cramped. */
+@media (max-width: 768px) {
+  input, select, textarea { font-size: 16px !important; }
+  .ps-search, .lx-input, .lx-otp, .ss-search { font-size: 16px !important; }
+
+  .btn { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
+  .btn-sm { min-height: 38px; }
+  .sb-item { min-height: 44px; }
+  .modal-close { width: 40px; height: 40px; }
+
+  .modal-backdrop { padding: 0; align-items: flex-end; }
+  .modal { width: 100% !important; max-width: 100% !important; max-height: 92vh; border-radius: 18px 18px 0 0 !important; animation: slideUpMobile 0.25s ease-out; }
+  .modal-body { padding: 18px; }
+  .modal-header { padding: 16px 18px; }
+
+  .form-grid { grid-template-columns: 1fr; }
+  .ps-table-wrap, .hr-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+@keyframes slideUpMobile {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}

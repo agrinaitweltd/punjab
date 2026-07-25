@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 export function Modal({
   open,
@@ -15,7 +16,13 @@ export function Modal({
 }) {
   if (!open) return null
 
-  return (
+  // Rendered via a portal straight into <body> — page content uses CSS
+  // transforms for its enter animation, and any ancestor with a transform
+  // creates a new containing block for position:fixed descendants. Without
+  // the portal, the backdrop would size itself against that animated
+  // ancestor instead of the real viewport, clipping short modals and
+  // leaving a blank gap below them (worst on mobile, where the page is short).
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
       <div className={"modal" + (wide ? " modal-wide" : "")} onClick={(event) => event.stopPropagation()}>
         <header className="modal-header">
@@ -28,6 +35,7 @@ export function Modal({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
