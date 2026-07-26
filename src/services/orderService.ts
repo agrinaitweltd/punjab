@@ -35,11 +35,17 @@ export async function createOrder(input: Omit<Order, "id" | "orderNumber" | "dat
 }
 
 export async function updateOrderStatus(id: string, status: Order["status"]): Promise<Order | null> {
-  if (supabaseReady) return databaseService.updateOrder(id, { status })
+  return updateOrder(id, { status })
+}
+
+/** Full partial update — status, items/amount (editing a ticket before Day
+    End), fulfilment/delivery address, etc. */
+export async function updateOrder(id: string, input: Partial<Order>): Promise<Order | null> {
+  if (supabaseReady) return databaseService.updateOrder(id, input)
   await new Promise(r => setTimeout(r, 100))
   const idx = orders.findIndex(o => o.id === id)
   if (idx === -1) return null
-  orders[idx] = { ...orders[idx], status }
+  orders[idx] = { ...orders[idx], ...input }
   return orders[idx]
 }
 

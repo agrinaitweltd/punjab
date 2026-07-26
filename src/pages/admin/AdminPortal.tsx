@@ -647,6 +647,22 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 }
               }
             }
+            // Editing a ticket's items/amount before Day End — if it was already
+            // invoiced (pay-before-order sales are, immediately), keep that
+            // invoice and the customer's balance in sync with the new total.
+            // Credit-term sales aren't invoiced yet at this point, so nothing
+            // extra is needed there — Day End will bill the corrected amount.
+            if (input.amount !== undefined && order) {
+              const existingInvoice = invoices.find(i => i.invoiceNumber === `INV-${order.orderNumber}`)
+              if (existingInvoice && existingInvoice.status !== 'Paid') {
+                const delta = input.amount - existingInvoice.amount
+                await updateInvoice(existingInvoice.id, { amount: input.amount })
+                if (delta !== 0) {
+                  const customer = customers.find(c => c.id === order.customerId)
+                  if (customer) await updateCustomer(customer.id, { balance: Math.max(0, (customer.balance ?? 0) + delta) })
+                }
+              }
+            }
             await updateOrder(id, input)
             if (input.status === 'Confirmed' || input.status === 'Preparing' || input.status === 'Delivered') {
               const updatedOrder = order ? { ...order, ...input } : orders.find(o => o.id === id)

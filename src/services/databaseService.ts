@@ -405,6 +405,10 @@ class SupabaseDatabaseService {
     if (input.officialInvoiceNumber !== undefined) row.official_invoice_number = input.officialInvoiceNumber
     if (input.salesmanId !== undefined) row.salesman_id = input.salesmanId
     if (input.salesmanName !== undefined) row.salesman_name = input.salesmanName
+    if (input.items !== undefined) row.items = input.items
+    if (input.amount !== undefined) row.amount = input.amount
+    if (input.fulfilment !== undefined) row.fulfilment = input.fulfilment
+    if (input.deliveryAddress !== undefined) row.delivery_address = input.deliveryAddress
     let { data, error } = await db().from("orders").update(row).eq("id", id).select().single()
     if (error && (error.code === "PGRST204" || /official_invoice_number|salesman/.test(error.message ?? ""))) {
       const { official_invoice_number: _oin, salesman_id: _si, salesman_name: _sn, ...fallbackRow } = row

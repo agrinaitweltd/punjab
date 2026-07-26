@@ -18,7 +18,7 @@ import { PlaceOrderModal, catColor } from "./PlaceOrderModal"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
-import { listFilesForCustomer, type StoredFile } from "../../lib/fileService"
+import { listFilesForCustomer, uploadFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
 import { useUnseenCount, useLiveToasts, usePoll } from "../../lib/notifications"
 import { ToastStack } from "../../components/ToastStack"
 
@@ -132,6 +132,11 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [filesLoading, setFilesLoading] = useState(true)
   const [docPreview, setDocPreview]     = useState<StoredFile | null>(null)
   const [orderDetail, setOrderDetail]   = useState<Order | null>(null)
+  const [issueFlagged, setIssueFlagged] = useState<Set<number>>(new Set())
+  const [issueText, setIssueText]       = useState<Record<number, string>>({})
+  const [issuePhoto, setIssuePhoto]     = useState<Record<number, File | null>>({})
+  const [issueBusy, setIssueBusy]       = useState<number | null>(null)
+  const [issueSent, setIssueSent]       = useState<Set<number>>(new Set())
   const [ticketDetail, setTicketDetail] = useState<SupportTicket | null>(null)
   const [invoiceDetail, setInvoiceDetail] = useState<Invoice | null>(null)
   const [me, setMe]                     = useState<Customer | null>(null)
@@ -173,6 +178,39 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
   const openProofUpload = () => {
     setProofFile(null); setProofNote(""); setProofError(""); setShowProofModal(true)
+  }
+
+  const submitIssueReport = async (order: Order, itemIndex: number, productLabel: string) => {
+    const description = (issueText[itemIndex] ?? "").trim()
+    if (!description) return
+    setIssueBusy(itemIndex)
+    try {
+      const photo = issuePhoto[itemIndex]
+      let photoNote = ""
+      if (photo) {
+        if (photo.size > MAX_FILE_BYTES) {
+          window.alert("That photo is too large — please choose one under 2 MB.")
+          setIssueBusy(null)
+          return
+        }
+        const dataUri = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(photo)
+        })
+        await uploadFile(photo.name, photo.type, photo.size, dataUri, `Issue photo — ${productLabel} (order ${order.orderNumber})`, user.id, user.displayName)
+        photoNote = " A photo was attached — see Documents."
+      }
+      const subject = `Product issue — ${productLabel} (order ${order.orderNumber})`
+      const message = `${description}${photoNote}`
+      await createTicket("customer", user.id, subject, message)
+      void sendEmail(ADMIN_NOTIFY_EMAIL, `Product issue reported — ${user.displayName}: ${productLabel}`,
+        `<p><strong>${user.displayName}</strong> reported an issue with <strong>${productLabel}</strong> from order ${order.orderNumber}:</p><p style="color:#4b5563">${description}</p>${photo ? "<p>A photo was attached.</p>" : ""}`)
+      setIssueSent(prev => new Set(prev).add(itemIndex))
+    } finally {
+      setIssueBusy(null)
+    }
   }
 
   const submitAddSubAccount = async () => {
@@ -1003,7 +1041,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       </Modal>
 
       {/* Order detail popup */}
-      <Modal open={Boolean(orderDetail)} title={orderDetail ? `Order ${orderDetail.orderNumber}` : "Order"} onClose={() => setOrderDetail(null)}>
+      <Modal open={Boolean(orderDetail)} title={orderDetail ? `Order ${orderDetail.orderNumber}` : "Order"} onClose={() => { setOrderDetail(null); setIssueFlagged(new Set()); setIssueText({}); setIssuePhoto({}); setIssueSent(new Set()) }}>
         {orderDetail && (() => {
           const o = orderDetail
           const pct = o.status === "Delivered" ? 100 : o.status === "Preparing" ? 65 : o.status === "Confirmed" ? 35 : 10
@@ -1035,14 +1073,49 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               <div className="ord-items">
                 {o.items.map((it, i) => {
                   const p = products.find(x => x.id === it.productId)
+                  const flagged = issueFlagged.has(i)
+                  const sent = issueSent.has(i)
                   return (
-                    <div key={i} className="ord-item-row">
-                      <Avatar name={p?.productName ?? it.productId} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13.5, color: "#111827" }}>{p?.productName ?? "Product"}</div>
-                        <div style={{ fontSize: 12, color: "#9ca3af" }}>{it.quantity} × £{it.unitPrice.toFixed(2)}</div>
+                    <div key={i} style={{ borderBottom: "1px solid #eef1ee", padding: "8px 0" }}>
+                      <div className="ord-item-row" style={{ border: "none", padding: 0 }}>
+                        <Avatar name={p?.productName ?? it.productId} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5, color: "#111827" }}>{p?.productName ?? "Product"}</div>
+                          <div style={{ fontSize: 12, color: "#9ca3af" }}>{it.quantity} × £{it.unitPrice.toFixed(2)}</div>
+                        </div>
+                        <strong>£{(it.quantity * it.unitPrice).toFixed(2)}</strong>
                       </div>
-                      <strong>£{(it.quantity * it.unitPrice).toFixed(2)}</strong>
+                      {sent ? (
+                        <p style={{ fontSize: 12, color: "#15803d", margin: "6px 0 0 42px" }}>✓ Issue reported — we'll be in touch.</p>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, margin: "6px 0 0 42px", fontSize: 12.5, color: "#374151", cursor: "pointer" }}>
+                          <input type="checkbox" checked={flagged} onChange={e => {
+                            setIssueFlagged(prev => { const next = new Set(prev); if (e.target.checked) next.add(i); else next.delete(i); return next })
+                          }} />
+                          Report an issue with this product
+                        </label>
+                      )}
+                      {flagged && !sent && (
+                        <div style={{ margin: "8px 0 0 42px", display: "flex", flexDirection: "column", gap: 6 }}>
+                          <textarea
+                            placeholder="What's wrong with it?"
+                            value={issueText[i] ?? ""}
+                            onChange={e => setIssueText(prev => ({ ...prev, [i]: e.target.value }))}
+                            rows={2}
+                            style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit", resize: "vertical" }}
+                          />
+                          <input type="file" accept="image/*" onChange={e => setIssuePhoto(prev => ({ ...prev, [i]: e.target.files?.[0] ?? null }))} style={{ fontSize: 12 }} />
+                          <div>
+                            <Button
+                              className="btn-sm"
+                              disabled={issueBusy === i || !(issueText[i] ?? "").trim()}
+                              onClick={() => submitIssueReport(o, i, p?.productName ?? it.productId)}
+                            >
+                              {issueBusy === i ? "Sending…" : "Send Report"}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}

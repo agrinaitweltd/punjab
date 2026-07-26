@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react"
-import type { Customer, Invoice, Order, OrderStatus, Product, StockItem } from "../../types"
+import type { Customer, Invoice, Order, OrderItem, OrderStatus, Product, StockItem } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { COLLECTION_ADDRESS } from "../../lib/emailService"
 import { NewSaleModal } from "./NewSaleModal"
+import { EditSaleModal } from "./EditSaleModal"
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; color: string }> = {
   Pending:   { bg: "#fef9c3", color: "#a16207" },
@@ -22,8 +23,12 @@ const NEXT_STEP: Partial<Record<OrderStatus, { status: OrderStatus; label: strin
 }
 const CAN_CANCEL: OrderStatus[] = ["Pending", "Confirmed", "Preparing"]
 const STEPS: OrderStatus[] = ["Pending", "Confirmed", "Preparing", "Delivered"]
+/* Once a sale is Confirmed it's an invoice, not just a pending sale. */
+const INVOICED_STATUSES: OrderStatus[] = ["Confirmed", "Preparing", "Delivered"]
 
 const STATUS_FILTERS: (OrderStatus | "All")[] = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
+
+type Tab = "make-sale" | "tickets"
 
 export function OrdersPage({ orders, products, invoices = [], customers, stock, tradingDate, onUpdateOrder, onMarkPaid, onSalePlaced }: {
   orders: Order[]
@@ -39,12 +44,14 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
 }) {
   const productName = (id: string) => products?.find(p => p.id === id)?.productName ?? id
   const isPaid = (order: Order) => invoices.some(inv => inv.invoiceNumber === `INV-${order.orderNumber}` && inv.status === "Paid")
+  const [tab, setTab] = useState<Tab>(customers && products && stock ? "make-sale" : "tickets")
   const [query, setQuery] = useState("")
   const [statusIdx, setStatusIdx] = useState(0)
   const [detail, setDetail] = useState<Order | null>(null)
   const [busy, setBusy] = useState(false)
   const [marking, setMarking] = useState(false)
   const [showNewSale, setShowNewSale] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const canPlaceSale = Boolean(customers && products && stock)
 
   const statusFilter = STATUS_FILTERS[statusIdx]
@@ -57,6 +64,10 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
       (!q || `${o.customerName} ${o.orderNumber}`.toLowerCase().includes(q))
     ).sort((a, b) => b.date.localeCompare(a.date))
   }, [orders, query, statusFilter])
+
+  /* A ticket can still be edited as long as its trading day hasn't been
+     closed with Day End, and it isn't in a final state. */
+  const canEditTicket = (o: Order) => o.date === tradingDate && o.status !== "Delivered" && o.status !== "Cancelled"
 
   const advance = async (order: Order) => {
     const step = NEXT_STEP[order.status]
@@ -82,6 +93,13 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
     setMarking(false)
   }
 
+  const saveEdit = async (items: OrderItem[], amount: number) => {
+    if (!detail) return
+    await onUpdateOrder(detail.id, { items, amount })
+    setDetail(d => d && d.id === detail.id ? { ...d, items, amount } : d)
+    setShowEdit(false)
+  }
+
   return (
     <div className="stack">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
@@ -89,103 +107,134 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
           <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Sales</h2>
           <p style={{ fontSize: 13.5, color: "#6b7a70", marginTop: 3 }}>
-            Sales move forward through a fixed workflow — confirm, prepare, deliver, or cancel. Once delivered or cancelled, a sale is final.
+            Once confirmed, a sale is an invoice. It stays editable until Day End closes the trading day.
           </p>
         </div>
-        {canPlaceSale && <Button onClick={() => setShowNewSale(true)}>+ New Sale</Button>}
       </div>
 
-      <div className="hr-found-row">
-        <span className="hr-found">{filtered.length} sale{filtered.length !== 1 ? "s" : ""} found</span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="ps-search-wrap" style={{ padding: "7px 12px" }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input className="ps-search" placeholder="Search sales or customers…" value={query} onChange={e => setQuery(e.target.value)} />
-          </div>
-          <button className={"ps-tool-btn" + (statusFilter !== "All" ? " ps-tool-active" : "")} onClick={cycleStatus} title="Cycle status filter">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            {statusFilter === "All" ? "Filter" : statusFilter}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {canPlaceSale && (
+          <button type="button" onClick={() => setTab("make-sale")}
+            style={{ padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: tab === "make-sale" ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: tab === "make-sale" ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: tab === "make-sale" ? "#14532d" : "#374151" }}>
+            Make Sale
           </button>
-        </div>
+        )}
+        <button type="button" onClick={() => setTab("tickets")}
+          style={{ padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: tab === "tickets" ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: tab === "tickets" ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: tab === "tickets" ? "#14532d" : "#374151" }}>
+          Tickets {orders.length > 0 && <span style={{ marginLeft: 4, color: "#9ca3af" }}>({orders.length})</span>}
+        </button>
       </div>
 
-      <div className="ps-table-card">
-        <div className="ps-table-wrap">
-          <table className="ps-table">
-            <thead><tr>
-              <th>Sale</th>
-              <th>Customer</th>
-              <th>Date</th>
-              <th>Items</th>
-              <th>Amount</th>
-              <th>Fulfilment</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr></thead>
-            <tbody>
-              {filtered.map(order => {
-                const sc = STATUS_COLORS[order.status]
-                const step = NEXT_STEP[order.status]
-                const isFinal = !step
-                return (
-                  <tr key={order.id} className="ps-row cd-row-clickable" onClick={() => setDetail(order)}>
-                    <td>
-                      <strong>{order.orderNumber}</strong>
-                      {order.officialInvoiceNumber && <div style={{ fontSize: 11, color: "#6b7280" }}>{order.officialInvoiceNumber}</div>}
-                    </td>
-                    <td>
-                      <div className="ps-product-cell">
-                        <div className="ps-product-avatar" style={{ background: "#e8f8ec", color: "#1a5c2d" }}>
-                          {order.customerName.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="ps-product-name">{order.customerName}</div>
-                      </div>
-                    </td>
-                    <td style={{ color: "#6b7280" }}>{order.date}</td>
-                    <td style={{ color: "#6b7280" }}>{order.items.length} item{order.items.length !== 1 ? "s" : ""}</td>
-                    <td><strong>£{order.amount.toFixed(2)}</strong></td>
-                    <td>
-                      <span className="ps-badge" style={order.fulfilment === "Collection" ? { background: "#ffedd5", color: "#c2410c" } : { background: "#dbeafe", color: "#1d4ed8" }}>
-                        {order.fulfilment ?? "Delivery"}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{order.status}</span>
-                      {isPaid(order) && <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d", marginLeft: 6 }}>Paid</span>}
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      {isFinal
-                        ? <span className="ord-final-tag">Final</span>
-                        : <Button className="btn-sm" onClick={() => advance(order)} disabled={busy}>{step.label}</Button>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: "#374151" }}>No sales found</div>
-              <div style={{ fontSize: 13 }}>Sales placed by customers will appear here.</div>
+      {tab === "make-sale" && canPlaceSale && (
+        <div className="ps-table-card" style={{ padding: 40, textAlign: "center" }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1f7a3a" strokeWidth="1.6" style={{ marginBottom: 12 }}><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+          <p style={{ fontWeight: 700, fontSize: 16, color: "#0d2b1e", marginBottom: 6 }}>Start a new sale</p>
+          <p style={{ color: "#6b7a70", fontSize: 13.5, marginBottom: 18 }}>Pick a customer, then add products just like they would themselves.</p>
+          <Button onClick={() => setShowNewSale(true)}>+ New Sale</Button>
+        </div>
+      )}
+
+      {tab === "tickets" && (
+        <>
+          <div className="hr-found-row">
+            <span className="hr-found">{filtered.length} ticket{filtered.length !== 1 ? "s" : ""} found</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="ps-search-wrap" style={{ padding: "7px 12px" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input className="ps-search" placeholder="Search sales or customers…" value={query} onChange={e => setQuery(e.target.value)} />
+              </div>
+              <button className={"ps-tool-btn" + (statusFilter !== "All" ? " ps-tool-active" : "")} onClick={cycleStatus} title="Cycle status filter">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                {statusFilter === "All" ? "Filter" : statusFilter}
+              </button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Order detail + confirmable workflow */}
-      <Modal open={Boolean(detail)} title={detail ? `Sale ${detail.orderNumber}` : "Sale"} onClose={() => setDetail(null)}>
+          <div className="ps-table-card">
+            <div className="ps-table-wrap">
+              <table className="ps-table">
+                <thead><tr>
+                  <th>Ticket</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Items</th>
+                  <th>Amount</th>
+                  <th>Fulfilment</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr></thead>
+                <tbody>
+                  {filtered.map(order => {
+                    const sc = STATUS_COLORS[order.status]
+                    const step = NEXT_STEP[order.status]
+                    const isFinal = !step
+                    const isInvoice = INVOICED_STATUSES.includes(order.status)
+                    return (
+                      <tr key={order.id} className="ps-row cd-row-clickable" onDoubleClick={() => setDetail(order)} title="Double-click to view">
+                        <td>
+                          <strong>{order.orderNumber}</strong>
+                          {isInvoice && <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 700 }}>INV-{order.orderNumber}</div>}
+                          {order.officialInvoiceNumber && <div style={{ fontSize: 11, color: "#6b7280" }}>{order.officialInvoiceNumber}</div>}
+                        </td>
+                        <td>
+                          <div className="ps-product-cell">
+                            <div className="ps-product-avatar" style={{ background: "#e8f8ec", color: "#1a5c2d" }}>
+                              {order.customerName.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="ps-product-name">{order.customerName}</div>
+                          </div>
+                        </td>
+                        <td style={{ color: "#6b7280" }}>{order.date}</td>
+                        <td style={{ color: "#6b7280" }}>{order.items.length} item{order.items.length !== 1 ? "s" : ""}</td>
+                        <td><strong>£{order.amount.toFixed(2)}</strong></td>
+                        <td>
+                          <span className="ps-badge" style={order.fulfilment === "Collection" ? { background: "#ffedd5", color: "#c2410c" } : { background: "#dbeafe", color: "#1d4ed8" }}>
+                            {order.fulfilment ?? "Delivery"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{order.status}</span>
+                          {isPaid(order) && <span className="ps-badge" style={{ background: "#dcfce7", color: "#15803d", marginLeft: 6 }}>Paid</span>}
+                        </td>
+                        <td onClick={e => e.stopPropagation()}>
+                          {isFinal
+                            ? <span className="ord-final-tag">Final</span>
+                            : <Button className="btn-sm" onClick={() => advance(order)} disabled={busy}>{step.label}</Button>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {filtered.length === 0 && (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: "#374151" }}>No tickets found</div>
+                  <div style={{ fontSize: 13 }}>Sales placed by customers, or made here, will appear here.</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Ticket detail — an invoice once confirmed, editable until Day End */}
+      <Modal open={Boolean(detail)} title={detail ? `${INVOICED_STATUSES.includes(detail.status) ? "Invoice" : "Sale"} ${detail.orderNumber}` : "Sale"} onClose={() => setDetail(null)}>
         {detail && (() => {
           const o = detail
           const sc = STATUS_COLORS[o.status]
           const stepIdx = o.status === "Cancelled" ? -1 : STEPS.indexOf(o.status)
           const step = NEXT_STEP[o.status]
+          const editable = canEditTicket(o)
           return (
             <div>
               <div className="ord-review">
                 <div className="ord-row"><span>Customer</span><strong>{o.customerName}</strong></div>
                 <div className="ord-row"><span>Date placed</span><strong>{o.date}</strong></div>
                 <div className="ord-row"><span>Status</span><span className="ps-badge" style={{ background: sc.bg, color: sc.color }}>{o.status}</span></div>
+                {INVOICED_STATUSES.includes(o.status) && (
+                  <div className="ord-row"><span>Invoice Number</span><strong>INV-{o.orderNumber}</strong></div>
+                )}
                 <div className="ord-row">
                   <span>Payment</span>
                   {isPaid(o)
@@ -235,6 +284,9 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
                   This sale was cancelled and cannot be modified.
                 </div>
               )}
+              {!editable && o.status !== "Cancelled" && o.date !== tradingDate && (
+                <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>This ticket's trading day has closed (Day End), so it's locked and can't be edited.</p>
+              )}
 
               <p style={{ fontSize: 12.5, fontWeight: 700, color: "#6b7280", margin: "18px 0 8px", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Items ({o.items.length})
@@ -253,6 +305,9 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
 
               <div className="actions-row" style={{ marginTop: 18 }}>
                 {step && <Button onClick={() => advance(o)} disabled={busy}>{step.label}</Button>}
+                {editable && products && stock && (
+                  <Button variant="secondary" onClick={() => setShowEdit(true)}>Edit Sale</Button>
+                )}
                 {onMarkPaid && !isPaid(o) && o.status !== "Cancelled" && (
                   <Button onClick={() => markPaid(o)} disabled={marking}>{marking ? "Marking paid…" : "Mark as Paid"}</Button>
                 )}
@@ -275,6 +330,17 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
           stock={stock!}
           tradingDate={tradingDate}
           onPlaced={() => { setShowNewSale(false); onSalePlaced?.() }}
+        />
+      )}
+
+      {products && stock && (
+        <EditSaleModal
+          open={showEdit}
+          onClose={() => setShowEdit(false)}
+          order={detail}
+          products={products}
+          stock={stock}
+          onSave={saveEdit}
         />
       )}
     </div>
