@@ -271,6 +271,22 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (!window.confirm(`Close trading for ${closingDate}? This archives ${todaysSales.length} sale(s) as a permanent Day Trade record, ends buying for that date, and moves new sales/buying to the next day. This cannot be undone.`)) return
     const productsById = toProductsById(products)
     try {
+      // Credit-term sales aren't invoiced at confirm time (only "pay before
+      // order" ones are) — Day End is when they're finally invoiced and
+      // added to the customer's balance, one invoice per sale not already billed.
+      for (const sale of todaysSales) {
+        const invoiceNumber = `INV-${sale.orderNumber}`
+        if (invoices.some(i => i.invoiceNumber === invoiceNumber)) continue
+        const customer = customers.find(c => c.id === sale.customerId)
+        if (!customer) continue
+        const due = new Date(closingDate + "T00:00:00")
+        due.setDate(due.getDate() + (customer.creditDays ?? 14))
+        await createInvoice({
+          customerId: customer.id, invoiceNumber, amount: sale.amount,
+          date: closingDate, dueDate: due.toISOString().slice(0, 10), status: 'Unpaid',
+        })
+        await updateCustomer(customer.id, { balance: (customer.balance ?? 0) + sale.amount })
+      }
       await createDayTrade({
         date: closingDate,
         totalSales: totalSales(todaysSales),
@@ -359,8 +375,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 await updateStock(stockRow.id, { availableQuantity: 0, status: 'out' })
               }
             }
-            await updateBuyingSession(session.id, { status: 'Closed' })
-            void logActivity(user.displayName, `ended daily buying for ${session.date} — ${confirmedPrices.length} item(s) moved to Stock`)
+            if (session.status !== 'Closed') await updateBuyingSession(session.id, { status: 'Closed' })
+            void logActivity(user.displayName, `sent buying for ${session.date} to Stock — ${confirmedPrices.length} item(s) (${session.status === 'Closed' ? 'extra session' : 'first session'})`)
             await load()
             navigate('stock')
           }}
@@ -556,22 +572,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <ProductsPage
           products={products}
           stock={stock}
-          onCreate={async (input, sellingPrice) => {
-            const product = await createProduct(input)
-            if (sellingPrice > 0) {
-              const freshStock = await getStock()
-              const stockRow = freshStock.find(s => s.productId === product.id)
-              if (stockRow) await updateStock(stockRow.id, { price: sellingPrice, status: stockRow.availableQuantity > 0 ? "available" : stockRow.status })
-            }
+          onCreate={async (input) => {
+            await createProduct(input)
             await load()
           }}
           onUpdate={async (id, input) => {
             await updateProduct(id, input)
-            await load()
-          }}
-          onUpdatePrice={async (productId, price) => {
-            const stockRow = stock.find(s => s.productId === productId)
-            if (stockRow) await updateStock(stockRow.id, { price })
             await load()
           }}
           onDelete={async (id) => {
@@ -630,7 +636,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                     customerId: customer.id, invoiceNumber: `INV-${order.orderNumber}`,
                     amount: order.amount, date: today, dueDate: today, status: 'Unpaid',
                   })
-                  await updateCustomer(customer.id, { blocked: true })
+                  // Pay-before-order customers see their balance move the moment
+                  // the order is confirmed — credit customers wait until Day End.
+                  await updateCustomer(customer.id, { blocked: true, balance: (customer.balance ?? 0) + order.amount })
                   if (customer.email) {
                     void sendEmail(customer.email, `Payment needed — order ${order.orderNumber}`,
                       orderPaymentRequiredEmailHtml(customer.contactPerson || customer.companyName, order.orderNumber, order.amount, today))
@@ -668,13 +676,16 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today))
             }
             if (customer && invoice) void sendPaymentReceived(invoice, customer, order.amount, user.displayName)
-            // Once this invoice is paid, check whether the customer is still over
-            // their limit or has other overdue invoices — if not, lift the freeze.
-            if (customer?.blocked && invoice) {
-              const updatedInvoices = invoices.map(i => i.id === invoice.id ? { ...i, status: 'Paid' as const } : i)
-              if (!getCreditStatus(customer, updatedInvoices).isOverdue) {
-                await updateCustomer(customer.id, { blocked: false })
-              }
+            // Paying an invoice brings the balance back down — and once this
+            // invoice is paid, check whether the customer is still over their
+            // limit or has other overdue invoices; if not, lift the freeze.
+            if (customer) {
+              const updatedInvoices = invoice ? invoices.map(i => i.id === invoice.id ? { ...i, status: 'Paid' as const } : i) : invoices
+              const stillOverdue = customer.blocked && getCreditStatus(customer, updatedInvoices).isOverdue
+              await updateCustomer(customer.id, {
+                balance: Math.max(0, (customer.balance ?? 0) - order.amount),
+                ...(customer.blocked ? { blocked: stillOverdue } : {}),
+              })
             }
             void logActivity(user.displayName, `marked order ${order.orderNumber} as paid`)
             await load()
@@ -731,12 +742,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             }
             const paidInvoice = invoices.find(i => proof.invoiceIds.includes(i.id))
             if (customer && paidInvoice) void sendPaymentReceived(paidInvoice, customer, proof.amount, user.displayName)
-            // Lift a payment-required freeze once the account is back within terms.
-            if (customer?.blocked) {
+            // Paying brings the balance down, and lifts a payment-required
+            // freeze once the account is back within terms.
+            if (customer) {
               const updatedInvoices = invoices.map(i => proof.invoiceIds.includes(i.id) ? { ...i, status: 'Paid' as const } : i)
-              if (!getCreditStatus(customer, updatedInvoices).isOverdue) {
-                await updateCustomer(customer.id, { blocked: false })
-              }
+              const stillOverdue = customer.blocked && getCreditStatus(customer, updatedInvoices).isOverdue
+              await updateCustomer(customer.id, {
+                balance: Math.max(0, (customer.balance ?? 0) - proof.amount),
+                ...(customer.blocked ? { blocked: stillOverdue } : {}),
+              })
             }
             void logActivity(user.displayName, `approved payment proof for ${customer?.companyName ?? proof.customerId} (£${proof.amount.toFixed(2)})`)
             await load()

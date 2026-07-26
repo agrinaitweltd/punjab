@@ -20,7 +20,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const initialForm = {
-  productName: "", category: "", variety: "", size: "", sku: "", boxesPerPallet: "0", costPrice: "0", sellingPrice: "0",
+  productName: "", category: "", variety: "", size: "", sku: "", boxesPerPallet: "0", costPrice: "0",
 }
 
 export function ProductsPage({
@@ -29,16 +29,12 @@ export function ProductsPage({
   onCreate,
   onUpdate,
   onDelete,
-  onUpdatePrice,
 }: {
   products: Product[]
   stock: StockItem[]
-  onCreate: (input: Omit<Product, "id">, sellingPrice: number) => Promise<void>
+  onCreate: (input: Omit<Product, "id">) => Promise<void>
   onUpdate: (id: string, input: Partial<Product>) => Promise<void>
   onDelete: (id: string) => Promise<void>
-  /** Sets the selling price directly from the Products page — most products
-      otherwise only get a price once they pass through the Buying Desk. */
-  onUpdatePrice: (productId: string, price: number) => Promise<void>
 }) {
   const [query, setQuery]           = useState("")
   const [selected, setSelected]     = useState<Set<string>>(new Set())
@@ -75,26 +71,17 @@ export function ProductsPage({
     else setSelected(new Set(paginated.map((p) => p.id)))
   }
 
-  const totalRevenue = stock.reduce((s, i) => s + (i.price * i.availableQuantity), 0)
-  const totalSold    = stock.reduce((s, i) => s + i.availableQuantity, 0)
-  const avgPrice     = stock.length ? stock.reduce((s, i) => s + i.price, 0) / stock.length : 0
-
   const exportProducts = () => {
     exportToCsv(
       "products",
-      ["Product", "Variety", "SKU", "Size", "Category", "Price", "Stock", "Boxes/Pallet", "Status"],
-      filtered.map(p => {
-        const s = stockMap[p.id]
-        return [p.productName, p.variety, p.sku, p.size, p.category, s ? s.price.toFixed(2) : "", s ? s.availableQuantity : "", p.boxesPerPallet, s ? s.status : "unknown"]
-      }),
+      ["Product", "Variety", "SKU", "Size", "Category", "Boxes/Pallet", "Has Stock Line"],
+      filtered.map(p => [p.productName, p.variety, p.sku, p.size, p.category, p.boxesPerPallet, stockMap[p.id] ? "Yes" : "No"]),
     )
   }
 
-  const [editPrice, setEditPrice] = useState("0")
-
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
-    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: Number(form.costPrice) || 0, productImage: "" }, Number(form.sellingPrice) || 0)
+    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: Number(form.costPrice) || 0, productImage: "" })
     setForm(initialForm)
     setShowAdd(false)
   }
@@ -103,7 +90,6 @@ export function ProductsPage({
     e.preventDefault()
     if (!editTarget) return
     await onUpdate(editTarget.id, editTarget)
-    await onUpdatePrice(editTarget.id, Number(editPrice) || 0)
     setEditTarget(null)
   }
 
@@ -120,7 +106,7 @@ export function ProductsPage({
       return
     }
     const product = products.find(p => p.id === [...selected][0])
-    if (product) { setEditTarget(product); setEditPrice(String(stockMap[product.id]?.price ?? 0)) }
+    if (product) setEditTarget(product)
   }
 
   const bulkDelete = async () => {
@@ -205,19 +191,12 @@ export function ProductsPage({
             <p className="ps-stat-sub"><span className="ps-delta-pos">+{Math.ceil(products.length * 0.12)} products</span> vs last month</p>
           </div>
           <div className="ps-stat">
-            <p className="ps-stat-label">Stock Value</p>
-            <p className="ps-stat-value">&pound;{totalRevenue.toLocaleString("en-GB", { minimumFractionDigits: 2 })}</p>
-            <p className="ps-stat-sub"><span className="ps-delta-pos">+9%</span> vs last month</p>
+            <p className="ps-stat-label">Categories</p>
+            <p className="ps-stat-value">{new Set(products.map(p => p.category)).size}</p>
           </div>
           <div className="ps-stat">
-            <p className="ps-stat-label">Units Available</p>
-            <p className="ps-stat-value">{totalSold.toLocaleString()}</p>
-            <p className="ps-stat-sub"><span className="ps-delta-pos">+7%</span> vs last month</p>
-          </div>
-          <div className="ps-stat">
-            <p className="ps-stat-label">Avg. Price / Box</p>
-            <p className="ps-stat-value">&pound;{avgPrice.toFixed(2)}</p>
-            <p className="ps-stat-sub"><span className="ps-delta-pos">+5%</span> vs last month</p>
+            <p className="ps-stat-label">With Stock Set Up</p>
+            <p className="ps-stat-value">{stock.length}</p>
           </div>
         </div>
       )}
@@ -234,10 +213,8 @@ export function ProductsPage({
                 <th>Product</th>
                 <th>SKU</th>
                 <th>Size</th>
-                <th>Price</th>
-                <th>Stock</th>
                 <th>Boxes/Pallet</th>
-                <th>Status</th>
+                <th>Stock Status</th>
                 <th>Category</th>
                 <th className="ps-th-plus">+</th>
               </tr>
@@ -262,14 +239,12 @@ export function ProductsPage({
                     </td>
                     <td><code className="ps-code">{product.sku}</code></td>
                     <td>{product.size}</td>
-                    <td><strong>&pound;{s ? s.price.toFixed(2) : "—"}</strong></td>
-                    <td>{s ? s.availableQuantity : "—"}</td>
                     <td>{product.boxesPerPallet}</td>
-                    <td>{s ? <StatusBadge status={s.status} /> : <span className="ps-badge ps-badge-gray">Unknown</span>}</td>
+                    <td>{s ? <StatusBadge status={s.status} /> : <span className="ps-badge ps-badge-gray">Not stocked yet</span>}</td>
                     <td>{product.category}</td>
                     <td>
                       <div className="ps-row-actions">
-                        <button className="ps-action-btn" onClick={() => { setEditTarget(product); setEditPrice(String(s?.price ?? 0)) }} title="Edit">
+                        <button className="ps-action-btn" onClick={() => setEditTarget(product)} title="Edit">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
                         <button className="ps-action-btn ps-action-danger" onClick={() => onDelete(product.id)} title="Delete">
@@ -346,8 +321,8 @@ export function ProductsPage({
           <Input label="Size" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="e.g. 5kg box" required />
           <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="e.g. RED-CAP-5KG" required />
           <Input label="Boxes Per Pallet" type="number" value={form.boxesPerPallet} onChange={(e) => setForm({ ...form, boxesPerPallet: e.target.value })} required />
-          <Input label="Cost Price (£ per unit)" type="number" min="0" step="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
-          <Input label="Selling Price (£ per unit)" type="number" min="0" step="0.01" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} />
+          <Input label="Cost Price (£ per unit, optional)" type="number" min="0" step="0.01" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
+          <p className="wide" style={{ fontSize: 12.5, color: "#6b7a70", margin: 0 }}>Selling price is set later, in Stock — this just creates the product for future use.</p>
           <div className="wide actions-row">
             <Button type="submit">Create Product</Button>
             <Button type="button" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
@@ -365,8 +340,7 @@ export function ProductsPage({
             <Input label="Size" value={editTarget.size} onChange={(e) => setEditTarget({ ...editTarget, size: e.target.value })} />
             <Input label="SKU" value={editTarget.sku} onChange={(e) => setEditTarget({ ...editTarget, sku: e.target.value })} />
             <Input label="Boxes Per Pallet" type="number" value={String(editTarget.boxesPerPallet)} onChange={(e) => setEditTarget({ ...editTarget, boxesPerPallet: Number(e.target.value) })} />
-            <Input label="Cost Price (£ per unit)" type="number" min="0" step="0.01" value={String(editTarget.costPrice ?? 0)} onChange={(e) => setEditTarget({ ...editTarget, costPrice: Number(e.target.value) })} />
-            <Input label="Selling Price (£ per unit)" type="number" min="0" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+            <Input label="Cost Price (£ per unit, optional)" type="number" min="0" step="0.01" value={String(editTarget.costPrice ?? 0)} onChange={(e) => setEditTarget({ ...editTarget, costPrice: Number(e.target.value) })} />
             <div className="wide actions-row">
               <Button type="submit">Save Changes</Button>
               <Button type="button" variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>

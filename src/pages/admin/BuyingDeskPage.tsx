@@ -437,14 +437,17 @@ export function BuyingDeskPage({
                   No confirmed orders yet — confirm quotations from the Current Buying Prices tab.
                 </div>
               )}
-              {canEdit && confirmed.length > 0 && session.status === "Open" && (
+              {canEdit && confirmed.length > 0 && (
                 <div className="actions-row">
-                  <Button onClick={endDailyBuying} disabled={busy}>{busy ? "Ending…" : "End Daily Buying → Go to Stock"}</Button>
+                  <Button onClick={endDailyBuying} disabled={busy}>
+                    {busy ? "Sending…" : session.status === "Open" ? "End Daily Buying → Go to Stock" : "Send Extra Buying to Stock"}
+                  </Button>
                 </div>
               )}
               {session.status === "Closed" && (
                 <div className="ps-table-card" style={{ padding: 16, textAlign: "center", color: "#15803d", fontWeight: 700 }}>
-                  Moved to Stock — set quantity and selling price there before it goes live to customers.
+                  Buying for today has been sent to Stock — set quantity and selling price there before it goes live to customers.
+                  Bought more since then? Confirm it above and click "Send Extra Buying to Stock" — same day, just a later session.
                 </div>
               )}
             </div>

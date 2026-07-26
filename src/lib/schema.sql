@@ -132,13 +132,17 @@ create table if not exists products (
 create table if not exists stock_items (
   id                 text primary key default gen_random_uuid()::text,
   product_id         text references products(id) on delete cascade,
-  available_quantity integer default 0,
+  -- Always stored as boxes — decimal so a customer can order e.g. 2.5 boxes.
+  available_quantity numeric(10,2) default 0,
   price              numeric(10,2) default 0,
   last_updated       text,
   status             text default 'available',
   packaging          text,
   created_at         timestamptz default now()
 );
+
+-- If stock_items already existed with an integer available_quantity, run:
+-- alter table stock_items alter column available_quantity type numeric(10,2);
 
 -- ORDERS
 create table if not exists orders (

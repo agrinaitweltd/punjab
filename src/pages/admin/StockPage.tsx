@@ -7,12 +7,16 @@ import { GmtClock } from '../../components/GmtClock'
 import { currentCycleStart, isStockFresh, latestStockUpdate, formatLondonTime, formatWallWeekday, nextCycleStart, toLondonWallClock } from '../../lib/stockCycle'
 
 const STATUS_META: Record<StockItem['status'], { label: string; bg: string; color: string }> = {
-  available: { label: 'In Stock', bg: '#dcfce7', color: '#15803d' },
+  available: { label: 'Good Stock', bg: '#dcfce7', color: '#15803d' },
   low:       { label: 'Low Stock', bg: '#fef9c3', color: '#a16207' },
   out:       { label: 'Out of Stock', bg: '#fee2e2', color: '#b91c1c' },
 }
 const AV_COLORS = ['#22913f', '#f2790f', '#0ea5e9', '#8b5cf6', '#d93025']
 const PACKAGING_OPTIONS = ['Pallets', 'Bags', 'Boxes', 'Crates', 'Sacks', 'Trays', 'Bunches', 'Punnets', 'Loose (per kg)']
+const LOW_STOCK_BOXES = 5
+
+type Unit = 'Pallets' | 'Boxes'
+type PendingEntry = { qty: string; unit: Unit; price: string; done: boolean }
 
 export function StockPage({
   products, stock, onUpdateStock, onNavigate,
@@ -23,13 +27,16 @@ export function StockPage({
   onNavigate?: (key: string) => void
 }) {
   const [editingStock, setEditingStock] = useState<StockItem | null>(null)
-  const [editForm, setEditForm] = useState({ availableQuantity: 0, price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
+  const [editForm, setEditForm] = useState({ qty: '0', unit: 'Boxes' as Unit, price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
   const [query, setQuery] = useState('')
+  const [entries, setEntries] = useState<Record<string, PendingEntry>>({})
+  const [releasing, setReleasing] = useState(false)
 
   const fresh = isStockFresh(stock)
   const updatedAt = latestStockUpdate(stock)
   const cycleStart = currentCycleStart()
   const inCycle = (s: StockItem) => { const t = new Date(s.lastUpdated); return !isNaN(t.getTime()) && toLondonWallClock(t) >= cycleStart }
+  const boxesPerPallet = (productId: string) => products.find(p => p.id === productId)?.boxesPerPallet || 1
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -39,6 +46,11 @@ export function StockPage({
       .sort((a, b) => (a.product?.productName ?? '').localeCompare(b.product?.productName ?? ''))
   }, [stock, products, query])
 
+  // "Everything I bought" — anything still out of stock needs a quantity and
+  // price entered before it can go live to customers.
+  const pending = rows.filter(({ item }) => item.status === 'out')
+  const active = rows.filter(({ item }) => item.status !== 'out')
+
   const counts = {
     in: stock.filter(s => s.status === 'available').length,
     low: stock.filter(s => s.status === 'low').length,
@@ -46,30 +58,49 @@ export function StockPage({
     today: stock.filter(inCycle).length,
   }
 
+  const entryFor = (id: string): PendingEntry => entries[id] ?? { qty: '', unit: 'Boxes', price: '', done: false }
+  const setEntry = (id: string, patch: Partial<PendingEntry>) =>
+    setEntries(prev => ({ ...prev, [id]: { ...entryFor(id), ...patch } }))
+
+  const readyCount = pending.filter(({ item }) => entryFor(item.id).done).length
+
+  const releasePrices = async () => {
+    setReleasing(true)
+    try {
+      for (const { item } of pending) {
+        const e = entryFor(item.id)
+        if (!e.done) continue
+        const qtyValue = parseFloat(e.qty) || 0
+        const price = parseFloat(e.price) || 0
+        if (qtyValue <= 0 || price <= 0) continue
+        const boxes = e.unit === 'Pallets' ? qtyValue * boxesPerPallet(item.productId) : qtyValue
+        await onUpdateStock(item.id, {
+          availableQuantity: boxes, price,
+          status: boxes <= LOW_STOCK_BOXES ? 'low' : 'available',
+        })
+      }
+      setEntries({})
+    } finally {
+      setReleasing(false)
+    }
+  }
+
   const handleEdit = (item: StockItem) => {
     setEditingStock(item)
-    setEditForm({ availableQuantity: item.availableQuantity, price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0] })
+    setEditForm({ qty: String(item.availableQuantity), unit: 'Boxes', price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0] })
   }
 
   const handleSave = async () => {
     if (!editingStock) return
+    const qtyValue = parseFloat(editForm.qty) || 0
+    const boxes = editForm.unit === 'Pallets' ? qtyValue * boxesPerPallet(editingStock.productId) : qtyValue
     await onUpdateStock(editingStock.id, {
-      availableQuantity: editForm.availableQuantity,
+      availableQuantity: boxes,
       price: editForm.price,
       status: editForm.status,
       packaging: editForm.packaging,
     })
     setEditingStock(null)
-  }
-
-  const handleQuickUpdate = async (id: string, delta: number) => {
-    const item = stock.find(s => s.id === id)
-    if (!item) return
-    const nextQty = Math.max(0, item.availableQuantity + delta)
-    await onUpdateStock(id, {
-      availableQuantity: nextQty,
-      status: nextQty === 0 ? 'out' : nextQty <= 10 ? 'low' : 'available',
-    })
   }
 
   return (
@@ -78,7 +109,7 @@ export function StockPage({
         <div>
           <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0d2b1e' }}>Stock Management</h2>
-          <p style={{ fontSize: 13.5, color: '#6b7a70', marginTop: 3 }}>Live quantities and prices — synced with your daily selling session.</p>
+          <p style={{ fontSize: 13.5, color: '#6b7a70', marginTop: 3 }}>Set quantities and prices here — customers only see them once released.</p>
         </div>
         <GmtClock />
       </div>
@@ -92,7 +123,7 @@ export function StockPage({
         </span>
         <div className="stk-banner-body">
           {fresh
-            ? <><strong>Synced with today's buying prices.</strong> {counts.today} line{counts.today !== 1 ? 's' : ''} updated {updatedAt ? `at ${formatLondonTime(updatedAt)}` : 'today'} — live until {formatWallWeekday(nextCycleStart())} 06:00 UK time.</>
+            ? <><strong>Synced with today's buying prices.</strong> {counts.today} line{counts.today !== 1 ? 's' : ''} updated {updatedAt ? `at ${formatLondonTime(updatedAt)}` : 'today'} — live until {formatWallWeekday(nextCycleStart())} 10:00 UK time.</>
             : <><strong>Today's prices haven't been published yet.</strong> Use the Buying Desk to set today's produce, quantities and prices.</>}
         </div>
         <button className="stk-banner-btn" onClick={() => onNavigate?.('session')}>
@@ -103,30 +134,92 @@ export function StockPage({
       {/* summary pills */}
       <div className="stk-health" style={{ marginBottom: 0 }}>
         <div className="stk-pill"><span className="stk-num" style={{ color: '#1f7a3a' }}>{counts.today}</span> Updated today</div>
-        <div className="stk-pill"><span className="stk-num" style={{ color: '#15803d' }}>{counts.in}</span> In stock</div>
+        <div className="stk-pill"><span className="stk-num" style={{ color: '#15803d' }}>{counts.in}</span> Good stock</div>
         <div className="stk-pill"><span className="stk-num" style={{ color: '#b45309' }}>{counts.low}</span> Low</div>
-        <div className="stk-pill"><span className="stk-num" style={{ color: '#b91c1c' }}>{counts.out}</span> Out</div>
+        <div className="stk-pill"><span className="stk-num" style={{ color: '#b91c1c' }}>{counts.out}</span> Needs pricing</div>
         <div className="ps-search-wrap" style={{ marginLeft: 'auto', maxWidth: 240, padding: '7px 12px' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input className="ps-search" placeholder="Search stock…" value={query} onChange={e => setQuery(e.target.value)} />
         </div>
       </div>
 
-      {/* stock table */}
+      {/* ── Everything bought, awaiting quantity + price ── */}
+      {pending.length > 0 && (
+        <div className="ps-table-card">
+          <div className="ps-toolbar">
+            <div className="ps-toolbar-left">
+              <strong style={{ fontSize: 14 }}>Needs Pricing ({pending.length})</strong>
+              <span style={{ fontSize: 12.5, color: '#6b7a70', marginLeft: 8 }}>Everything bought that hasn't gone live yet</span>
+            </div>
+            <div className="ps-toolbar-right">
+              <Button disabled={readyCount === 0 || releasing} onClick={releasePrices}>
+                {releasing ? 'Releasing…' : `Release Prices to Customers${readyCount > 0 ? ` (${readyCount})` : ''}`}
+              </Button>
+            </div>
+          </div>
+          <div className="ps-table-wrap">
+            <table className="ps-table">
+              <thead><tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Unit</th>
+                <th>Price (£ per box)</th>
+                <th>Done</th>
+              </tr></thead>
+              <tbody>
+                {pending.map(({ item, product }) => {
+                  const e = entryFor(item.id)
+                  return (
+                    <tr key={item.id} className="ps-row">
+                      <td>
+                        <div className="ps-product-name">{product?.productName ?? 'Unknown'}</div>
+                        <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{product?.boxesPerPallet || 0} boxes per pallet</div>
+                      </td>
+                      <td>
+                        <input type="number" min="0" step="0.1" value={e.qty} placeholder="0"
+                          onChange={ev => setEntry(item.id, { qty: ev.target.value, done: false })}
+                          style={{ width: 80, padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }} />
+                      </td>
+                      <td>
+                        <select value={e.unit} onChange={ev => setEntry(item.id, { unit: ev.target.value as Unit, done: false })}
+                          style={{ padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }}>
+                          <option value="Pallets">Pallets</option>
+                          <option value="Boxes">Boxes</option>
+                        </select>
+                      </td>
+                      <td>
+                        <input type="number" min="0" step="0.01" value={e.price} placeholder="0.00"
+                          onChange={ev => setEntry(item.id, { price: ev.target.value, done: false })}
+                          style={{ width: 90, padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }} />
+                      </td>
+                      <td>
+                        <input type="checkbox" checked={e.done}
+                          disabled={!(parseFloat(e.qty) > 0 && parseFloat(e.price) > 0)}
+                          onChange={ev => setEntry(item.id, { done: ev.target.checked })} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* live stock table */}
       <div className="ps-table-card">
         <div className="ps-table-wrap">
           <table className="ps-table">
             <thead><tr>
               <th>Product</th>
               <th>Packaging</th>
-              <th>Quantity</th>
               <th>Price</th>
               <th>Updated</th>
               <th>Status</th>
               <th>Actions</th>
             </tr></thead>
             <tbody>
-              {rows.map(({ item, product }, i) => {
+              {active.map(({ item, product }, i) => {
                 const meta = STATUS_META[item.status]
                 const t = new Date(item.lastUpdated)
                 return (
@@ -143,13 +236,6 @@ export function StockPage({
                       </div>
                     </td>
                     <td style={{ color: '#6b7280', fontSize: 13 }}>{item.packaging || '—'}</td>
-                    <td>
-                      <div className="stk-qty">
-                        <button className="stk-step" title="Remove 10" onClick={() => handleQuickUpdate(item.id, -10)}>−10</button>
-                        <strong>{item.availableQuantity}</strong>
-                        <button className="stk-step" title="Add 10" onClick={() => handleQuickUpdate(item.id, 10)}>+10</button>
-                      </div>
-                    </td>
                     <td><strong>£{item.price.toFixed(2)}</strong></td>
                     <td>
                       {inCycle(item)
@@ -165,11 +251,11 @@ export function StockPage({
               })}
             </tbody>
           </table>
-          {rows.length === 0 && (
+          {active.length === 0 && (
             <div style={{ padding: '42px 24px', textAlign: 'center', color: '#9ca3af' }}>
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#c3c9d2" strokeWidth="1.6" style={{ marginBottom: 8 }}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: '#374151' }}>{stock.length === 0 ? 'No stock lines yet' : 'Nothing matches your search'}</div>
-              <div style={{ fontSize: 13 }}>{stock.length === 0 ? 'Add products, then confirm and end daily buying to bring them here.' : 'Try a different search term.'}</div>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: '#374151' }}>{stock.length === 0 ? 'No stock lines yet' : 'Nothing live yet'}</div>
+              <div style={{ fontSize: 13 }}>Add products, then confirm and end daily buying to bring them here for pricing.</div>
             </div>
           )}
         </div>
@@ -183,14 +269,25 @@ export function StockPage({
               {PACKAGING_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          <Input label="Available Quantity" type="number" min="0" value={editForm.availableQuantity}
-            onChange={(e) => setEditForm({ ...editForm, availableQuantity: Number(e.target.value) })} />
-          <Input label="Selling Price (£ per unit)" type="number" step="0.01" min="0" value={editForm.price}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <Input label="Quantity" type="number" min="0" step="0.1" value={editForm.qty}
+                onChange={(e) => setEditForm({ ...editForm, qty: e.target.value })} />
+            </div>
+            <div className="form-control" style={{ flex: 1 }}>
+              <span>Unit</span>
+              <select value={editForm.unit} onChange={(e) => setEditForm({ ...editForm, unit: e.target.value as Unit })}>
+                <option value="Pallets">Pallets</option>
+                <option value="Boxes">Boxes</option>
+              </select>
+            </div>
+          </div>
+          <Input label="Selling Price (£ per box)" type="number" step="0.01" min="0" value={editForm.price}
             onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })} />
           <div className="form-control">
             <span>Status</span>
             <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as StockItem['status'] })}>
-              <option value="available">In Stock</option>
+              <option value="available">Good Stock</option>
               <option value="low">Low Stock</option>
               <option value="out">Out of Stock</option>
             </select>

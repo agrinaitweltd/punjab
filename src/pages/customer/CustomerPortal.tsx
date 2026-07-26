@@ -163,7 +163,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     setFilesLoading(true)
     listFilesForCustomer(user.id).then(setMyFiles).catch(() => setMyFiles([])).finally(() => setFilesLoading(false))
     listPaymentProofsForCustomer(user.id).then(setMyProofs).catch(() => setMyProofs([]))
-    // Stock-update notification — shows once per daily cycle (06:00 GMT)
+    // Stock-update notification — shows once per daily cycle (10:00 GMT)
     try {
       const key = "punjab-stock-notif-" + currentCycleStart().toISOString().slice(0, 10)
       if (!sessionStorage.getItem(key)) setNotifOpen(true)
@@ -515,15 +515,12 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                 <th>Product</th>
                 <th>Variety / Size</th>
                 <th>Price per Box</th>
-                <th>Available</th>
                 <th>Status</th>
-                <th>Stock Level</th>
               </tr></thead>
               <tbody>
                 {products.map(p => {
                   const s = stockMap[p.id]
                   if (!s) return null
-                  const pct = Math.min(100, (s.availableQuantity / 100) * 100)
                   return (
                     <tr key={p.id} className="cd-row">
                       <td>
@@ -535,11 +532,12 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                           </div>
                         </div>
                       </td>
-                      <td style={{ fontSize: 13 }}>{p.variety}<br/><span style={{ color: "#9ca3af" }}>{p.size}</span></td>
-                      <td><strong>£{s.price.toFixed(2)}</strong></td>
-                      <td>{s.availableQuantity} boxes</td>
-                      <td><span className="cd-status-badge" style={{ background: STOCK_COLORS[s.status] + "18", color: STOCK_COLORS[s.status] }}>{s.status === "available" ? "In Stock" : s.status === "low" ? "Low Stock" : "Out of Stock"}</span></td>
-                      <td><ProgressBar pct={pct} color={STOCK_COLORS[s.status]} /></td>
+                      <td style={{ fontSize: 13 }}>
+                        {p.variety}<br/><span style={{ color: "#9ca3af" }}>{p.size}</span>
+                        {p.boxesPerPallet > 0 && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{p.boxesPerPallet} boxes per pallet</div>}
+                      </td>
+                      <td><strong>£{s.price.toFixed(2)}</strong> <span style={{ fontSize: 11.5, color: "#9ca3af" }}>/ box</span></td>
+                      <td><span className="cd-status-badge" style={{ background: STOCK_COLORS[s.status] + "18", color: STOCK_COLORS[s.status] }}>{s.status === "available" ? "Good Stock" : s.status === "low" ? "Low Stock" : "Out of Stock"}</span></td>
                     </tr>
                   )
                 })}
@@ -874,7 +872,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       notifCount={newOrderUpdates + newTicketUpdates}
       onBellClick={openNotifications}
     >
-      {/* Daily stock notification — once per 06:00 UK-time cycle */}
+      {/* Daily stock notification — once per 10:00 UK-time cycle */}
       {notifOpen && (
         <div className={"cn-toast " + (stockFresh ? "ok" : "due")} role="status">
           {stockFresh
@@ -883,7 +881,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           <div style={{ flex: 1 }}>
             {stockFresh
               ? <><strong>Today's stock has been updated{stockAt ? ` at ${formatLondonTime(stockAt)}` : ""}.</strong> Fresh produce is live — browse today's stock and place your order.</>
-              : <><strong>Today's stock update is pending.</strong> Stock refreshes daily at 06:00 UK time — quantities and prices may change shortly.</>}
+              : <><strong>Today's stock update is pending.</strong> Stock refreshes daily at 10:00 UK time — quantities and prices may change shortly.</>}
           </div>
           <button className="cn-toast-x" onClick={dismissNotif} aria-label="Dismiss">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

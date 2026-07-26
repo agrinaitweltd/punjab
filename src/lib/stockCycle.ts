@@ -14,12 +14,12 @@ export function toLondonWallClock(date: Date): Date {
   return new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second")))
 }
 
-/** Stock refreshes daily at 06:00 UK local time (GMT in winter, BST in summer).
- *  A cycle runs 06:00 → 05:59:59 the next day. Returned value is a wall-clock
+/** Stock refreshes daily at 10:00 UK local time (GMT in winter, BST in summer).
+ *  A cycle runs 10:00 → 09:59:59 the next day. Returned value is a wall-clock
  *  marker for comparisons only — see toLondonWallClock. */
 export function currentCycleStart(now: Date = new Date()): Date {
   const wall = toLondonWallClock(now)
-  const start = new Date(Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate(), 6, 0, 0))
+  const start = new Date(Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate(), 10, 0, 0))
   if (wall < start) start.setUTCDate(start.getUTCDate() - 1)
   return start
 }

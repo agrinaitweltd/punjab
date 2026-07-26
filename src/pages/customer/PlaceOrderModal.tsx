@@ -198,12 +198,16 @@ export function PlaceOrderModal({
                     </div>
                     <div className="po-card-name">{p.productName}</div>
                     <div className="po-card-meta">{p.size || p.variety || p.category}</div>
-                    <div className="po-card-price">£{s.price.toFixed(2)}<span>/ unit</span></div>
-                    <div className="po-card-stock">{s.availableQuantity} available</div>
+                    <div className="po-card-price">£{s.price.toFixed(2)}<span>/ box</span></div>
+                    {p.boxesPerPallet > 0 && <div className="po-card-stock" style={{ fontSize: 10.5 }}>{p.boxesPerPallet} boxes per pallet</div>}
                     {inCart > 0 ? (
                       <div className="po-stepper">
-                        <button onClick={() => setQty(p.id, inCart - 1)} aria-label="Decrease">−</button>
-                        <strong>{inCart}</strong>
+                        <button onClick={() => setQty(p.id, Math.max(0, inCart - 1))} aria-label="Decrease">−</button>
+                        <input
+                          type="number" min="0" step="0.1" value={inCart}
+                          onChange={e => setQty(p.id, parseFloat(e.target.value) || 0)}
+                          style={{ width: 44, textAlign: "center", border: "none", background: "none", fontWeight: 700, fontFamily: "inherit" }}
+                        />
                         <button onClick={() => setQty(p.id, inCart + 1)} disabled={inCart >= s.availableQuantity} aria-label="Increase">+</button>
                       </div>
                     ) : (
