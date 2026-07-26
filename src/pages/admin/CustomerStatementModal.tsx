@@ -39,7 +39,13 @@ export function CustomerStatementModal({
 
   const ledger = useMemo(() => {
     const entries: LedgerEntry[] = []
-    for (const inv of myInvoices) entries.push({ date: inv.date || inv.dueDate, type: "Invoice", ref: inv.invoiceNumber, amount: inv.amount })
+    for (const inv of myInvoices) {
+      entries.push({
+        date: inv.date || inv.dueDate, type: "Invoice", ref: inv.invoiceNumber,
+        note: inv.status === "Part Paid" ? `Part paid — £${(inv.amountPaid ?? 0).toFixed(2)} of £${inv.amount.toFixed(2)} received` : undefined,
+        amount: inv.amount,
+      })
+    }
     for (const p of myPayments) entries.push({ date: p.date, type: "Payment", ref: p.paymentReference, amount: -p.amount })
     for (const a of myAllocations) {
       const note = myCreditNotes.find(c => c.id === a.creditNoteId)

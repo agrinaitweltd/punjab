@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react"
-import type { Invoice, Order, OrderStatus, Product } from "../../types"
+import type { Customer, Invoice, Order, OrderStatus, Product, StockItem } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { COLLECTION_ADDRESS } from "../../lib/emailService"
+import { NewSaleModal } from "./NewSaleModal"
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; color: string }> = {
   Pending:   { bg: "#fef9c3", color: "#a16207" },
@@ -24,12 +25,17 @@ const STEPS: OrderStatus[] = ["Pending", "Confirmed", "Preparing", "Delivered"]
 
 const STATUS_FILTERS: (OrderStatus | "All")[] = ["All", "Pending", "Confirmed", "Preparing", "Delivered", "Cancelled"]
 
-export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onMarkPaid }: {
+export function OrdersPage({ orders, products, invoices = [], customers, stock, tradingDate, onUpdateOrder, onMarkPaid, onSalePlaced }: {
   orders: Order[]
   products?: Product[]
   invoices?: Invoice[]
+  /** Present when this admin can place a sale on a customer's behalf. */
+  customers?: Customer[]
+  stock?: StockItem[]
+  tradingDate?: string
   onUpdateOrder: (id: string, input: Partial<Order>) => Promise<void>
   onMarkPaid?: (order: Order) => Promise<void>
+  onSalePlaced?: () => void
 }) {
   const productName = (id: string) => products?.find(p => p.id === id)?.productName ?? id
   const isPaid = (order: Order) => invoices.some(inv => inv.invoiceNumber === `INV-${order.orderNumber}` && inv.status === "Paid")
@@ -38,6 +44,8 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
   const [detail, setDetail] = useState<Order | null>(null)
   const [busy, setBusy] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [showNewSale, setShowNewSale] = useState(false)
+  const canPlaceSale = Boolean(customers && products && stock)
 
   const statusFilter = STATUS_FILTERS[statusIdx]
   const cycleStatus = () => setStatusIdx(i => (i + 1) % STATUS_FILTERS.length)
@@ -76,12 +84,15 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
 
   return (
     <div className="stack">
-      <div>
-        <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
-        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Sales</h2>
-        <p style={{ fontSize: 13.5, color: "#6b7a70", marginTop: 3 }}>
-          Sales move forward through a fixed workflow — confirm, prepare, deliver, or cancel. Once delivered or cancelled, a sale is final.
-        </p>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+        <div>
+          <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#0d2b1e" }}>Sales</h2>
+          <p style={{ fontSize: 13.5, color: "#6b7a70", marginTop: 3 }}>
+            Sales move forward through a fixed workflow — confirm, prepare, deliver, or cancel. Once delivered or cancelled, a sale is final.
+          </p>
+        </div>
+        {canPlaceSale && <Button onClick={() => setShowNewSale(true)}>+ New Sale</Button>}
       </div>
 
       <div className="hr-found-row">
@@ -254,6 +265,18 @@ export function OrdersPage({ orders, products, invoices = [], onUpdateOrder, onM
           )
         })()}
       </Modal>
+
+      {canPlaceSale && (
+        <NewSaleModal
+          open={showNewSale}
+          onClose={() => setShowNewSale(false)}
+          customers={customers!}
+          products={products!}
+          stock={stock!}
+          tradingDate={tradingDate}
+          onPlaced={() => { setShowNewSale(false); onSalePlaced?.() }}
+        />
+      )}
     </div>
   )
 }

@@ -605,6 +605,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           orders={orders}
           products={products}
           invoices={invoices}
+          customers={customers}
+          stock={stock}
+          tradingDate={tradingDate}
+          onSalePlaced={load}
           onUpdateOrder={async (id, input) => {
             const order = orders.find(o => o.id === id)
             // Approving an order (Pending -> Confirmed) is the credit-control checkpoint:

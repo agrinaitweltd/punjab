@@ -27,8 +27,12 @@ export type StatementRow = {
 }
 
 const DATE_RE = /\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/
-// £1,234.56 / 1234.56 / 1,234 — the last money-looking token on the line wins
-const AMOUNT_RE = /£?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2})\b/g
+// £1,234.56 / 1,234 / 1234.56 / -1,234.56 / (1,234.56) — a leading minus or
+// wrapping parentheses (both common ways statements show a credit/refund
+// line) make the amount negative. Requires either comma-grouped thousands or
+// exactly 2 decimal places, so a bare reference number like the "1495" in
+// "INV-1495" is never mistaken for a money amount.
+const AMOUNT_RE = /(-|\()?\s*£?\s*((?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)|(?:\d+\.\d{2}))\s*(\))?/g
 
 function toIsoDate(d: string, m: string, y: string): string | null {
   const day = parseInt(d, 10), month = parseInt(m, 10)
@@ -49,8 +53,11 @@ function parseLine(line: string): StatementRow | null {
   // column comes before balance, so prefer the second-to-last when there are
   // two or more money tokens after the date).
   const afterDate = line.slice((dateMatch.index ?? 0) + dateMatch[0].length)
-  const amounts = [...afterDate.matchAll(AMOUNT_RE)].map(m2 => parseFloat(m2[1].replace(/,/g, "")))
-    .filter(n => !Number.isNaN(n) && n > 0)
+  const amounts = [...afterDate.matchAll(AMOUNT_RE)].map(m2 => {
+    const raw = parseFloat(m2[2].replace(/,/g, ""))
+    const negative = m2[1] === "-" || m2[1] === "(" || m2[3] === ")"
+    return negative ? -raw : raw
+  }).filter(n => !Number.isNaN(n) && n !== 0)
   if (amounts.length === 0) return null
   const amount = amounts.length >= 2 ? amounts[amounts.length - 2] : amounts[amounts.length - 1]
 
@@ -59,9 +66,9 @@ function parseLine(line: string): StatementRow | null {
   const tokens = afterDate.trim().split(/\s+/)
   let invoiceNumber = ""
   for (const t of tokens) {
-    const clean = t.replace(/[£,]/g, "")
+    const clean = t.replace(/[£,()]/g, "")
     if (!/\d/.test(clean)) continue
-    if (/^\d+(\.\d{1,2})?$/.test(clean) && amounts.includes(parseFloat(clean))) continue
+    if (/^-?\d+(\.\d{1,2})?$/.test(clean) && amounts.includes(parseFloat(clean))) continue
     invoiceNumber = t.replace(/[^\w\-\/]/g, "")
     break
   }
