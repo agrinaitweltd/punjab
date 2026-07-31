@@ -303,18 +303,24 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
                 ))}
               </div>
 
-              <div className="actions-row" style={{ marginTop: 18 }}>
-                {step && <Button onClick={() => advance(o)} disabled={busy}>{step.label}</Button>}
-                {editable && products && stock && (
-                  <Button variant="secondary" onClick={() => setShowEdit(true)}>Edit Sale</Button>
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #eef1ee", display: "flex", flexDirection: "column", gap: 10 }}>
+                {(step || (editable && products && stock) || (onMarkPaid && !isPaid(o) && o.status !== "Cancelled")) && (
+                  <div className="actions-row" style={{ flexWrap: "wrap" }}>
+                    {step && <Button onClick={() => advance(o)} disabled={busy}>{step.label}</Button>}
+                    {onMarkPaid && !isPaid(o) && o.status !== "Cancelled" && (
+                      <Button onClick={() => markPaid(o)} disabled={marking}>{marking ? "Marking paid…" : "Mark as Paid"}</Button>
+                    )}
+                    {editable && products && stock && (
+                      <Button variant="secondary" onClick={() => setShowEdit(true)}>Edit Sale</Button>
+                    )}
+                  </div>
                 )}
-                {onMarkPaid && !isPaid(o) && o.status !== "Cancelled" && (
-                  <Button onClick={() => markPaid(o)} disabled={marking}>{marking ? "Marking paid…" : "Mark as Paid"}</Button>
-                )}
-                {CAN_CANCEL.includes(o.status) && (
-                  <Button variant="danger" onClick={() => cancel(o)} disabled={busy}>Cancel Sale</Button>
-                )}
-                <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
+                <div className="actions-row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+                  {CAN_CANCEL.includes(o.status)
+                    ? <Button variant="danger" onClick={() => cancel(o)} disabled={busy}>Cancel Sale</Button>
+                    : <span />}
+                  <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
+                </div>
               </div>
             </div>
           )

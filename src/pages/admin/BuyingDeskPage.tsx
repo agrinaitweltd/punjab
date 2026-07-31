@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { Input, Select } from "../../components/ui/Input"
 import { CAT_COLORS, type CatalogItem } from "./SessionPage"
+import { brandsFor, rememberBrand } from "../../lib/brandHistory"
 
 type Tab = "current" | "best" | "confirmed" | "history" | "analytics" | "suppliers"
 
@@ -87,21 +88,26 @@ export function BuyingDeskPage({
   }, [unconfirmed])
   const confirmed = sessionPrices.filter(p => p.confirmed)
 
-  // ── Add Prices — browse & select products already created in the Products
-  // section, then set supplier & price for each (Buying Desk records price
-  // quotations only — quantity & selling price are set later in Stock).
+  // ── Add Prices — browse & pick ONE product at a time already created in
+  // the Products section, then set its supplier, brand & price (Buying Desk
+  // records price quotations only — quantity & selling price are set later
+  // in Stock). Picking a product goes straight to its price form — there's
+  // no separate "confirm selection" step, just Back if you picked the wrong one.
   type DraftItem = CatalogItem & { supplier: string; brand: string; price: string; notes: string }
-  const productCatalog: CatalogItem[] = useMemo(() => products.map(p => ({
-    name: p.productName, group: p.variety || p.category || "Other", category: p.category || "Other", size: p.size,
-  })), [products])
+  const productCatalog: CatalogItem[] = useMemo(() =>
+    products.map(p => ({
+      name: p.productName, group: p.variety || p.category || "Other", category: p.category || "Other", size: p.size,
+    })).sort((a, b) => a.name.localeCompare(b.name)),
+  [products])
   const productCategories = useMemo(() => [...new Set(productCatalog.map(c => c.category))].sort(), [productCatalog])
 
   const [showAdd, setShowAdd] = useState(false)
   const [addStep, setAddStep] = useState<"select" | "details">("select")
   const [addSearch, setAddSearch] = useState("")
   const [addCat, setAddCat] = useState<string>("")
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([])
+  const [current, setCurrent] = useState<DraftItem | null>(null)
   const [addError, setAddError] = useState("")
+  const [savedCount, setSavedCount] = useState(0)
 
   const [showAddSupplier, setShowAddSupplier] = useState(false)
   const [supplierForm, setSupplierForm] = useState({ name: "", contact: "", country: "" })
@@ -109,7 +115,7 @@ export function BuyingDeskPage({
   const [supplierBusy, setSupplierBusy] = useState(false)
 
   const openAdd = () => {
-    setDraftItems([]); setAddSearch(""); setAddCat(productCategories[0] ?? ""); setAddStep("select"); setAddError(""); setShowAdd(true)
+    setCurrent(null); setAddSearch(""); setAddCat(productCategories[0] ?? ""); setAddStep("select"); setAddError(""); setSavedCount(0); setShowAdd(true)
   }
 
   const q = addSearch.trim().toLowerCase()
@@ -120,18 +126,16 @@ export function BuyingDeskPage({
   const visibleGroups = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
     for (const c of visibleCatalog) { if (!map.has(c.group)) map.set(c.group, []); map.get(c.group)!.push(c) }
-    return [...map.entries()]
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   }, [visibleCatalog])
 
-  const isSelected = (name: string, group: string) => draftItems.some(i => i.name === name && i.group === group)
-  const toggleItem = (c: CatalogItem) => {
-    setDraftItems(prev => isSelected(c.name, c.group)
-      ? prev.filter(i => !(i.name === c.name && i.group === c.group))
-      : [...prev, { ...c, supplier: suppliers[0]?.name ?? "", brand: "", price: "", notes: "" }])
+  const selectProduct = (c: CatalogItem) => {
+    setCurrent({ ...c, supplier: "", brand: "", price: "", notes: "" })
+    setAddError("")
+    setAddStep("details")
   }
-  const countInCat = (cat: string) => draftItems.filter(i => i.category === cat).length
-  const setDraft = (name: string, group: string, patch: Partial<DraftItem>) =>
-    setDraftItems(prev => prev.map(i => i.name === name && i.group === group ? { ...i, ...patch } : i))
+  const backToSelect = () => { setAddStep("select"); setCurrent(null); setAddError("") }
+  const setDraft = (patch: Partial<DraftItem>) => setCurrent(prev => prev ? { ...prev, ...patch } : prev)
 
   const startSession = async () => {
     setBusy(true); setStartError("")
@@ -142,21 +146,21 @@ export function BuyingDeskPage({
 
   const submitAdd = async () => {
     setAddError("")
-    if (draftItems.length === 0) { setAddError("Select at least one product."); return }
-    for (const item of draftItems) {
-      if (!item.supplier.trim()) { setAddError(`Choose a supplier for ${item.name}.`); return }
-      if (!(Number(item.price) > 0)) { setAddError(`Enter a valid price for ${item.name}.`); return }
-    }
+    if (!current) return
+    if (!current.supplier.trim()) { setAddError("Choose or type a supplier."); return }
+    if (!(Number(current.price) > 0)) { setAddError("Enter a valid price."); return }
     setBusy(true)
     try {
-      for (const item of draftItems) {
-        await onAddPrice({
-          sessionId: session?.id ?? "", date, supplier: item.supplier.trim(), product: item.name,
-          brand: item.brand.trim(), size: item.size, price: Number(item.price), notes: item.notes.trim() || undefined,
-        })
-      }
-      setShowAdd(false)
-    } catch { setAddError("Couldn't save these prices — please try again.") }
+      await onAddPrice({
+        sessionId: session?.id ?? "", date, supplier: current.supplier.trim(), product: current.name,
+        brand: current.brand.trim(), size: current.size, price: Number(current.price), notes: current.notes.trim() || undefined,
+      })
+      if (current.brand.trim()) rememberBrand(current.name, current.brand.trim())
+      setSavedCount(n => n + 1)
+      // Straight back to picking the next product — no extra "confirm" step,
+      // matching how picking the first one worked.
+      backToSelect()
+    } catch { setAddError("Couldn't save this price — please try again.") }
     setBusy(false)
   }
 
@@ -259,6 +263,24 @@ export function BuyingDeskPage({
 
   const allSuppliers = useMemo(() => [...new Set(prices.map(p => p.supplier))].sort(), [prices])
   const allProducts = useMemo(() => [...new Set(prices.map(p => p.product))].sort(), [prices])
+
+  // When a single product is selected, break its rows down by brand — e.g.
+  // "Primetom" tracked separately from other Tomato brands, still filed
+  // under Tomato overall.
+  const brandBreakdown = useMemo(() => {
+    if (!analyticsProduct) return null
+    const map = new Map<string, BuyingPrice[]>()
+    for (const r of analyticsRows) {
+      const key = r.brand?.trim() || "No brand specified"
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(r)
+    }
+    return [...map.entries()].map(([brand, rows]) => ({
+      brand, count: rows.length,
+      avg: rows.reduce((s, r) => s + r.price, 0) / rows.length,
+      lowest: Math.min(...rows.map(r => r.price)),
+    })).sort((a, b) => a.avg - b.avg)
+  }, [analyticsRows, analyticsProduct])
 
   // ── Supplier Analytics — spend compared across suppliers within the same
   // date range used for Buying Analytics, with a drill-down per supplier. ──
@@ -523,6 +545,28 @@ export function BuyingDeskPage({
                     </p>
                     <PriceLine points={analyticsStats.series} empty="Not enough data points to chart a trend." />
                   </div>
+                  {analyticsProduct && brandBreakdown && brandBreakdown.length > 0 && (
+                    <div className="ps-table-card">
+                      <div style={{ padding: "12px 16px", borderBottom: "1px solid #eaecf0", fontWeight: 700 }}>
+                        {analyticsProduct} by Brand
+                      </div>
+                      <div className="ps-table-wrap">
+                        <table className="ps-table">
+                          <thead><tr><th>Brand</th><th>Quotations</th><th>Avg Price</th><th>Lowest</th></tr></thead>
+                          <tbody>
+                            {brandBreakdown.map(b => (
+                              <tr key={b.brand} className="ps-row">
+                                <td><strong>{b.brand}</strong></td>
+                                <td>{b.count}</td>
+                                <td>£{b.avg.toFixed(2)}</td>
+                                <td style={{ color: "#15803d" }}>£{b.lowest.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="ps-table-card" style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
@@ -580,7 +624,8 @@ export function BuyingDeskPage({
         </>
       )}
 
-      {/* Add Prices modal — browse & select from existing Products, then set supplier & price */}
+      {/* Add Prices modal — pick ONE product, straight to its price form, save,
+          then back to picking the next — no multi-select, no confirm step. */}
       <Modal open={showAdd} title="Add Prices" onClose={() => setShowAdd(false)} wide>
         {productCatalog.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
@@ -589,7 +634,9 @@ export function BuyingDeskPage({
         ) : addStep === "select" ? (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-              <h3 style={{ fontSize: 15, fontWeight: 700 }}>Select today's produce <span style={{ color: "#6b7280", fontWeight: 500 }}>({draftItems.length} selected)</span></h3>
+              <h3 style={{ fontSize: 15, fontWeight: 700 }}>
+                Pick a product {savedCount > 0 && <span style={{ color: "#15803d", fontWeight: 600, fontSize: 13 }}>· {savedCount} price{savedCount !== 1 ? "s" : ""} saved so far</span>}
+              </h3>
               <div className="ps-search-wrap" style={{ maxWidth: 260 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input className="ps-search" placeholder="Search produce…" value={addSearch} onChange={e => setAddSearch(e.target.value)} />
@@ -602,7 +649,6 @@ export function BuyingDeskPage({
                     style={addCat === cat ? { borderColor: CAT_COLORS[cat] ?? "#1f7a3a", color: CAT_COLORS[cat] ?? "#1f7a3a" } : undefined}>
                     <span className="ss-cat-dot" style={{ background: CAT_COLORS[cat] ?? "#22913f" }} />
                     {cat}
-                    {countInCat(cat) > 0 && <span className="ss-cat-count">{countInCat(cat)}</span>}
                   </button>
                 ))}
               </div>
@@ -613,17 +659,12 @@ export function BuyingDeskPage({
                   <p className="ss-group-title">{group} <span>({groupItems.length})</span></p>
                   <div className="ss-grid">
                     {groupItems.map((c, ci) => (
-                      <button key={c.group + c.name} type="button" className={"ss-item" + (isSelected(c.name, c.group) ? " sel" : "")} style={{ animationDelay: `${Math.min(ci, 14) * 0.02}s` }} onClick={() => toggleItem(c)}>
+                      <button key={c.group + c.name} type="button" className="ss-item" style={{ animationDelay: `${Math.min(ci, 14) * 0.02}s` }} onClick={() => selectProduct(c)}>
                         <span className="ss-item-av" style={{ background: CAT_COLORS[c.category] ?? "#22913f" }}>{c.name.slice(0, 2).toUpperCase()}</span>
                         <span style={{ minWidth: 0 }}>
                           <span className="ss-item-name">{c.name}</span>
                           <span className="ss-item-meta">{c.group}</span>
                         </span>
-                        {isSelected(c.name, c.group) && (
-                          <span className="ss-item-check">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>
-                          </span>
-                        )}
                       </button>
                     ))}
                   </div>
@@ -631,41 +672,47 @@ export function BuyingDeskPage({
               ))}
               {visibleCatalog.length === 0 && <div className="db-empty">No produce matches "{addSearch}".</div>}
             </div>
-            {addError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 10 }}>{addError}</p>}
             <div className="ss-foot">
-              <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button onClick={() => { if (draftItems.length === 0) { setAddError("Select at least one product."); return } setAddError(""); setAddStep("details") }} disabled={draftItems.length === 0}>
-                Next: Supplier &amp; Price ({draftItems.length}) →
-              </Button>
+              <Button variant="secondary" onClick={() => setShowAdd(false)}>{savedCount > 0 ? "Done" : "Cancel"}</Button>
             </div>
           </div>
-        ) : (
+        ) : current && (
           <div>
-            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Who's it from, and how much?</h3>
-            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 14 }}>Set the supplier, brand and price for each item.</p>
+            <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: "#0d2b1e" }}>{current.name}</h3>
+            <p style={{ fontSize: 12.5, color: "#9ca3af", marginBottom: 16 }}>{current.group} · {current.category}{current.size ? ` · ${current.size}` : ""}</p>
             {suppliers.length === 0 && (
-              <p style={{ fontSize: 12.5, color: "#a16207", background: "#fef9c3", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-                No suppliers yet — close this and use "+ Add Supplier" first.
+              <p style={{ fontSize: 12.5, color: "#a16207", background: "#fef9c3", borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
+                No suppliers yet — you can still type one below, or close this and use "+ Add Supplier" first.
               </p>
             )}
-            <div className="ss-rows">
-              {draftItems.map(i => (
-                <div key={i.group + i.name} className="ss-row">
-                  <div className="ss-row-name">{i.name}<small>{i.group} · {i.category}</small></div>
-                  <select value={i.supplier} title="Supplier" onChange={e => setDraft(i.name, i.group, { supplier: e.target.value })}>
-                    {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                  </select>
-                  <input placeholder="Brand" value={i.brand} title="Brand"
-                    onChange={e => setDraft(i.name, i.group, { brand: e.target.value })} />
-                  <input type="number" min="0.01" step="0.01" placeholder="Price £" value={i.price}
-                    onChange={e => setDraft(i.name, i.group, { price: e.target.value })} />
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 420 }}>
+              <label className="form-control" style={{ marginBottom: 0 }}>
+                <span>Supplier</span>
+                <input
+                  list="bd-supplier-options" placeholder="Type or choose a supplier…" value={current.supplier}
+                  onChange={e => setDraft({ supplier: e.target.value })} autoFocus
+                />
+                <datalist id="bd-supplier-options">
+                  {suppliers.map(s => <option key={s.id} value={s.name} />)}
+                </datalist>
+              </label>
+              <label className="form-control" style={{ marginBottom: 0 }}>
+                <span>Brand <span style={{ color: "#9ca3af", fontWeight: 500 }}>(remembered per product)</span></span>
+                <input
+                  list="bd-brand-options" placeholder="Type or choose a brand for this product…" value={current.brand}
+                  onChange={e => setDraft({ brand: e.target.value })}
+                />
+                <datalist id="bd-brand-options">
+                  {brandsFor(current.name).map(b => <option key={b} value={b} />)}
+                </datalist>
+              </label>
+              <Input label="Price (£)" type="number" min="0.01" step="0.01" placeholder="0.00" value={current.price}
+                onChange={e => setDraft({ price: e.target.value })} />
             </div>
-            {addError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 12 }}>{addError}</p>}
+            {addError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 14 }}>{addError}</p>}
             <div className="ss-foot">
-              <Button variant="secondary" onClick={() => setAddStep("select")}>← Back</Button>
-              <Button onClick={submitAdd} disabled={busy}>{busy ? "Saving…" : `Save ${draftItems.length} Price${draftItems.length !== 1 ? "s" : ""}`}</Button>
+              <Button variant="secondary" onClick={backToSelect}>← Back</Button>
+              <Button onClick={submitAdd} disabled={busy}>{busy ? "Saving…" : "Save Price"}</Button>
             </div>
           </div>
         )}

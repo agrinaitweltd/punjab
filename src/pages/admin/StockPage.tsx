@@ -27,7 +27,7 @@ export function StockPage({
   onNavigate?: (key: string) => void
 }) {
   const [editingStock, setEditingStock] = useState<StockItem | null>(null)
-  const [editForm, setEditForm] = useState({ qty: '0', unit: 'Boxes' as Unit, price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
+  const [editForm, setEditForm] = useState({ qty: '0', unit: 'Pallets' as Unit, price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
   const [query, setQuery] = useState('')
   const [entries, setEntries] = useState<Record<string, PendingEntry>>({})
   const [releasing, setReleasing] = useState(false)
@@ -58,7 +58,7 @@ export function StockPage({
     today: stock.filter(inCycle).length,
   }
 
-  const entryFor = (id: string): PendingEntry => entries[id] ?? { qty: '', unit: 'Boxes', price: '', done: false }
+  const entryFor = (id: string): PendingEntry => entries[id] ?? { qty: '', unit: 'Pallets', price: '', done: false }
   const setEntry = (id: string, patch: Partial<PendingEntry>) =>
     setEntries(prev => ({ ...prev, [id]: { ...entryFor(id), ...patch } }))
 
@@ -87,7 +87,7 @@ export function StockPage({
 
   const handleEdit = (item: StockItem) => {
     setEditingStock(item)
-    setEditForm({ qty: String(item.availableQuantity), unit: 'Boxes', price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0] })
+    setEditForm({ qty: String(item.availableQuantity), unit: 'Pallets', price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0] })
   }
 
   const handleSave = async () => {
