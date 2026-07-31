@@ -10,6 +10,10 @@ type Tab = "current" | "best" | "confirmed" | "history" | "analytics" | "supplie
 
 function todayIso() { return new Date().toISOString().slice(0, 10) }
 
+// parseFloat alone can leave floating-point drift (e.g. 6 -> 5.999999999998)
+// that toFixed can then round the wrong way, so prices are snapped to 2dp.
+function parseMoney(value: string) { return Math.round((parseFloat(value) || 0) * 100) / 100 }
+
 /* Lightweight SVG line chart — same visual language as DashboardHome's AdminLine */
 function PriceLine({ points, color = "#1f7a3a", empty }: { points: number[]; color?: string; empty: string }) {
   if (points.length < 2) return <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>{empty}</div>
@@ -153,7 +157,7 @@ export function BuyingDeskPage({
     try {
       await onAddPrice({
         sessionId: session?.id ?? "", date, supplier: current.supplier.trim(), product: current.name,
-        brand: current.brand.trim(), size: current.size, price: Number(current.price), notes: current.notes.trim() || undefined,
+        brand: current.brand.trim(), size: current.size, price: parseMoney(current.price), notes: current.notes.trim() || undefined,
       })
       if (current.brand.trim()) rememberBrand(current.name, current.brand.trim())
       setSavedCount(n => n + 1)
@@ -365,9 +369,9 @@ export function BuyingDeskPage({
                             <td>{p.size || "—"}</td>
                             <td>
                               {canEdit ? (
-                                <input type="number" min="0.01" step="0.01" defaultValue={p.price}
+                                <input type="number" min="0" step="0.01" defaultValue={p.price}
                                   style={{ width: 80 }}
-                                  onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && v !== p.price) onUpdatePrice(p.id, { price: v }) }} />
+                                  onBlur={e => { const v = parseMoney(e.target.value); if (v > 0 && v !== p.price) onUpdatePrice(p.id, { price: v }) }} />
                               ) : `£${p.price.toFixed(2)}`}
                             </td>
                             <td style={{ color: "#6b7280" }}>{p.notes || "—"}</td>
@@ -706,7 +710,7 @@ export function BuyingDeskPage({
                   {brandsFor(current.name).map(b => <option key={b} value={b} />)}
                 </datalist>
               </label>
-              <Input label="Price (£)" type="number" min="0.01" step="0.01" placeholder="0.00" value={current.price}
+              <Input label="Price (£)" type="number" min="0" step="0.01" placeholder="0.00" value={current.price}
                 onChange={e => setDraft({ price: e.target.value })} />
             </div>
             {addError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginTop: 14 }}>{addError}</p>}

@@ -79,9 +79,11 @@ export function ProductsPage({
     )
   }
 
+  const parseMoney = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100
+
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
-    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: Number(form.costPrice) || 0, productImage: "" })
+    await onCreate({ ...form, boxesPerPallet: Number(form.boxesPerPallet), costPrice: parseMoney(form.costPrice), productImage: "" })
     setForm(initialForm)
     setShowAdd(false)
   }
@@ -339,7 +341,7 @@ export function ProductsPage({
             <Input label="Size" value={editTarget.size} onChange={(e) => setEditTarget({ ...editTarget, size: e.target.value })} />
             <Input label="SKU" value={editTarget.sku} onChange={(e) => setEditTarget({ ...editTarget, sku: e.target.value })} />
             <Input label="Boxes Per Pallet" type="number" value={String(editTarget.boxesPerPallet)} onChange={(e) => setEditTarget({ ...editTarget, boxesPerPallet: Number(e.target.value) })} />
-            <Input label="Cost Price (£ per unit, optional)" type="number" min="0" step="0.01" value={String(editTarget.costPrice ?? 0)} onChange={(e) => setEditTarget({ ...editTarget, costPrice: Number(e.target.value) })} />
+            <Input label="Cost Price (£ per unit, optional)" type="number" min="0" step="0.01" value={String(editTarget.costPrice ?? 0)} onChange={(e) => setEditTarget({ ...editTarget, costPrice: parseMoney(e.target.value) })} />
             <div className="wide actions-row">
               <Button type="submit">Save Changes</Button>
               <Button type="button" variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>

@@ -191,7 +191,7 @@ export function SessionPage({ onFinished }: { onFinished: () => void }) {
           const qty = Math.max(0, Number(item.qty) || 0)
           await updateStock(stockRow.id, {
             availableQuantity: qty,
-            price: Number(item.sellingPrice) || 0,
+            price: Math.round((Number(item.sellingPrice) || 0) * 100) / 100,
             status: qty === 0 ? "out" : qty <= 10 ? "low" : "available",
           })
         }

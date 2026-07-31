@@ -15,8 +15,12 @@ const AV_COLORS = ['#22913f', '#f2790f', '#0ea5e9', '#8b5cf6', '#d93025']
 const PACKAGING_OPTIONS = ['Pallets', 'Bags', 'Boxes', 'Crates', 'Sacks', 'Trays', 'Bunches', 'Punnets', 'Loose (per kg)']
 const LOW_STOCK_BOXES = 5
 
-type Unit = 'Pallets' | 'Boxes'
-type PendingEntry = { qty: string; unit: Unit; price: string; done: boolean }
+// Money is always entered and stored to the penny — parseFloat alone can leave
+// floating-point drift (e.g. 6 -> 5.999999999999998) that toFixed can round
+// the wrong way, so every price is snapped to 2dp right after parsing.
+const parseMoney = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100
+
+type PendingEntry = { pallets: string; itemsPerPallet: string; price: string; done: boolean }
 
 export function StockPage({
   products, stock, onUpdateStock, onNavigate,
@@ -27,7 +31,7 @@ export function StockPage({
   onNavigate?: (key: string) => void
 }) {
   const [editingStock, setEditingStock] = useState<StockItem | null>(null)
-  const [editForm, setEditForm] = useState({ qty: '0', unit: 'Pallets' as Unit, price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
+  const [editForm, setEditForm] = useState({ pallets: '0', itemsPerPallet: '1', price: 0, status: 'available' as StockItem['status'], packaging: PACKAGING_OPTIONS[0] })
   const [query, setQuery] = useState('')
   const [entries, setEntries] = useState<Record<string, PendingEntry>>({})
   const [releasing, setReleasing] = useState(false)
@@ -58,22 +62,24 @@ export function StockPage({
     today: stock.filter(inCycle).length,
   }
 
-  const entryFor = (id: string): PendingEntry => entries[id] ?? { qty: '', unit: 'Pallets', price: '', done: false }
-  const setEntry = (id: string, patch: Partial<PendingEntry>) =>
-    setEntries(prev => ({ ...prev, [id]: { ...entryFor(id), ...patch } }))
+  const entryFor = (id: string, productId: string): PendingEntry =>
+    entries[id] ?? { pallets: '', itemsPerPallet: String(boxesPerPallet(productId) || 1), price: '', done: false }
+  const setEntry = (id: string, productId: string, patch: Partial<PendingEntry>) =>
+    setEntries(prev => ({ ...prev, [id]: { ...entryFor(id, productId), ...patch } }))
 
-  const readyCount = pending.filter(({ item }) => entryFor(item.id).done).length
+  const readyCount = pending.filter(({ item }) => entryFor(item.id, item.productId).done).length
 
   const releasePrices = async () => {
     setReleasing(true)
     try {
       for (const { item } of pending) {
-        const e = entryFor(item.id)
+        const e = entryFor(item.id, item.productId)
         if (!e.done) continue
-        const qtyValue = parseFloat(e.qty) || 0
-        const price = parseFloat(e.price) || 0
-        if (qtyValue <= 0 || price <= 0) continue
-        const boxes = e.unit === 'Pallets' ? qtyValue * boxesPerPallet(item.productId) : qtyValue
+        const pallets = parseFloat(e.pallets) || 0
+        const itemsPerPallet = parseFloat(e.itemsPerPallet) || 0
+        const price = parseMoney(e.price)
+        if (pallets <= 0 || itemsPerPallet <= 0 || price <= 0) continue
+        const boxes = pallets * itemsPerPallet
         await onUpdateStock(item.id, {
           availableQuantity: boxes, price,
           status: boxes <= LOW_STOCK_BOXES ? 'low' : 'available',
@@ -87,16 +93,22 @@ export function StockPage({
 
   const handleEdit = (item: StockItem) => {
     setEditingStock(item)
-    setEditForm({ qty: String(item.availableQuantity), unit: 'Pallets', price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0] })
+    const perPallet = boxesPerPallet(item.productId) || 1
+    setEditForm({
+      pallets: String(perPallet ? +(item.availableQuantity / perPallet).toFixed(2) : item.availableQuantity),
+      itemsPerPallet: String(perPallet),
+      price: item.price, status: item.status, packaging: item.packaging || PACKAGING_OPTIONS[0],
+    })
   }
 
   const handleSave = async () => {
     if (!editingStock) return
-    const qtyValue = parseFloat(editForm.qty) || 0
-    const boxes = editForm.unit === 'Pallets' ? qtyValue * boxesPerPallet(editingStock.productId) : qtyValue
+    const pallets = parseFloat(editForm.pallets) || 0
+    const itemsPerPallet = parseFloat(editForm.itemsPerPallet) || 0
+    const boxes = pallets * itemsPerPallet
     await onUpdateStock(editingStock.id, {
       availableQuantity: boxes,
-      price: editForm.price,
+      price: parseMoney(String(editForm.price)),
       status: editForm.status,
       packaging: editForm.packaging,
     })
@@ -161,41 +173,41 @@ export function StockPage({
             <table className="ps-table">
               <thead><tr>
                 <th>Product</th>
-                <th>Quantity</th>
-                <th>Unit</th>
+                <th>Pallets</th>
+                <th>Items per Pallet</th>
+                <th>Total Boxes</th>
                 <th>Price (£ per box)</th>
                 <th>Done</th>
               </tr></thead>
               <tbody>
                 {pending.map(({ item, product }) => {
-                  const e = entryFor(item.id)
+                  const e = entryFor(item.id, item.productId)
+                  const totalBoxes = (parseFloat(e.pallets) || 0) * (parseFloat(e.itemsPerPallet) || 0)
                   return (
                     <tr key={item.id} className="ps-row">
                       <td>
                         <div className="ps-product-name">{product?.productName ?? 'Unknown'}</div>
-                        <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{product?.boxesPerPallet || 0} boxes per pallet</div>
                       </td>
                       <td>
-                        <input type="number" min="0" step="0.1" value={e.qty} placeholder="0"
-                          onChange={ev => setEntry(item.id, { qty: ev.target.value, done: false })}
-                          style={{ width: 80, padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }} />
+                        <input type="number" min="0" step="1" value={e.pallets} placeholder="0"
+                          onChange={ev => setEntry(item.id, item.productId, { pallets: ev.target.value, done: false })}
+                          style={{ width: 70, padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }} />
                       </td>
                       <td>
-                        <select value={e.unit} onChange={ev => setEntry(item.id, { unit: ev.target.value as Unit, done: false })}
-                          style={{ padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }}>
-                          <option value="Pallets">Pallets</option>
-                          <option value="Boxes">Boxes</option>
-                        </select>
+                        <input type="number" min="0" step="1" value={e.itemsPerPallet} placeholder="0"
+                          onChange={ev => setEntry(item.id, item.productId, { itemsPerPallet: ev.target.value, done: false })}
+                          style={{ width: 70, padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }} />
                       </td>
+                      <td style={{ color: '#6b7280', fontSize: 13 }}>{totalBoxes || '—'}</td>
                       <td>
                         <input type="number" min="0" step="0.01" value={e.price} placeholder="0.00"
-                          onChange={ev => setEntry(item.id, { price: ev.target.value, done: false })}
+                          onChange={ev => setEntry(item.id, item.productId, { price: ev.target.value, done: false })}
                           style={{ width: 90, padding: '6px 8px', borderRadius: 6, border: '1.5px solid #e5e7eb' }} />
                       </td>
                       <td>
                         <input type="checkbox" checked={e.done}
-                          disabled={!(parseFloat(e.qty) > 0 && parseFloat(e.price) > 0)}
-                          onChange={ev => setEntry(item.id, { done: ev.target.checked })} />
+                          disabled={!(parseFloat(e.pallets) > 0 && parseFloat(e.itemsPerPallet) > 0 && parseFloat(e.price) > 0)}
+                          onChange={ev => setEntry(item.id, item.productId, { done: ev.target.checked })} />
                       </td>
                     </tr>
                   )
@@ -271,17 +283,17 @@ export function StockPage({
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}>
-              <Input label="Quantity" type="number" min="0" step="0.1" value={editForm.qty}
-                onChange={(e) => setEditForm({ ...editForm, qty: e.target.value })} />
+              <Input label="Pallets" type="number" min="0" step="1" value={editForm.pallets}
+                onChange={(e) => setEditForm({ ...editForm, pallets: e.target.value })} />
             </div>
-            <div className="form-control" style={{ flex: 1 }}>
-              <span>Unit</span>
-              <select value={editForm.unit} onChange={(e) => setEditForm({ ...editForm, unit: e.target.value as Unit })}>
-                <option value="Pallets">Pallets</option>
-                <option value="Boxes">Boxes</option>
-              </select>
+            <div style={{ flex: 1 }}>
+              <Input label="Items per Pallet" type="number" min="0" step="1" value={editForm.itemsPerPallet}
+                onChange={(e) => setEditForm({ ...editForm, itemsPerPallet: e.target.value })} />
             </div>
           </div>
+          <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>
+            Total: {(parseFloat(editForm.pallets) || 0) * (parseFloat(editForm.itemsPerPallet) || 0)} boxes
+          </p>
           <Input label="Selling Price (£ per box)" type="number" step="0.01" min="0" value={editForm.price}
             onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })} />
           <div className="form-control">
