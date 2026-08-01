@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import './App.css'
 import { loginUser, logoutUser } from './api/authApi'
 import { LoginPage } from './pages/LoginPage'
+import { SetPasswordPage, isPasswordRecoveryUrl } from './pages/SetPasswordPage'
 import { QuickUnlock } from './pages/QuickUnlock'
 import { AdminPortal } from './pages/admin/AdminPortal'
 import { CustomerPortal } from './pages/customer/CustomerPortal'
@@ -68,6 +69,10 @@ function App() {
   const [rememberPrompt, setRememberPrompt] = useState<{
     role: 'admin' | 'customer'; displayName: string; usernameOrEmail: string; password: string
   } | null>(null)
+
+  if (isPasswordRecoveryUrl()) {
+    return <SetPasswordPage onDone={() => window.location.reload()} />
+  }
 
   const deviceAccount = !showSwitcher ? getDeviceAccount() : null
 

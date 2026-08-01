@@ -1,7 +1,25 @@
-﻿import type { User, UserRole } from "../types"
+﻿import bcrypt from "bcryptjs"
+import type { User, UserRole } from "../types"
 import { mockAdmins, mockCustomers } from "../data/mockData"
 import { databaseService } from "./databaseService"
-import { supabaseReady } from "../lib/supabase"
+import { supabase, supabaseReady } from "../lib/supabase"
+
+// Live database rows have been migrated to bcrypt hashes (see
+// scripts/hash-passwords.mjs); offline mock data still uses plain strings
+// since it never leaves this bundle. Accept both so the two paths keep working.
+const passwordMatches = (stored: string, attempt: string) =>
+  stored.startsWith("$2") ? bcrypt.compareSync(attempt, stored) : stored === attempt
+
+// Accounts are being migrated to real Supabase Auth (see
+// scripts/backfill-auth-users.mjs) one at a time as each person sets a real
+// password via the recovery link. Until then this always fails harmlessly
+// and the caller falls back to the legacy password check below — nobody's
+// login can be broken by this.
+async function trySupabaseAuth(email: string, password: string): Promise<boolean> {
+  if (!supabase) return false
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  return !error
+}
 
 class AuthService {
   private currentUser: User | null = null
@@ -19,9 +37,11 @@ class AuthService {
           if (dbAdmins.length > 0) roster = [...dbAdmins, ...mockAdmins]
         } catch { /* offline — use fallback roster */ }
       }
-      const admin = roster.find(a =>
-        a.email === usernameOrEmail && a.password === password && a.active
-      )
+      const candidate = roster.find(a => a.email === usernameOrEmail && a.active)
+      const candidateOk = candidate
+        ? (await trySupabaseAuth(candidate.email, password)) || passwordMatches(candidate.password, password)
+        : false
+      const admin = candidateOk ? candidate : undefined
       if (admin) {
         this.currentUser = {
           id: admin.id,
@@ -37,9 +57,11 @@ class AuthService {
     } else {
       if (supabaseReady) {
         const data = await databaseService.getCustomers()
-        const customer = data.find(c =>
-          (c.customerNumber === usernameOrEmail || c.email === usernameOrEmail) && c.password === password
-        )
+        const customerCandidate = data.find(c => c.customerNumber === usernameOrEmail || c.email === usernameOrEmail)
+        const customerOk = customerCandidate
+          ? (customerCandidate.email && await trySupabaseAuth(customerCandidate.email, password)) || passwordMatches(customerCandidate.password, password)
+          : false
+        const customer = customerOk ? customerCandidate : undefined
         if (customer) {
           this.currentUser = {
             id: customer.id,
@@ -54,7 +76,7 @@ class AuthService {
         // Not the main login — try a team sub-account (must be approved + active).
         const subAccounts = await databaseService.getCustomerSubAccounts()
         const sub = subAccounts.find(s =>
-          s.email.toLowerCase() === usernameOrEmail.trim().toLowerCase() && s.password === password &&
+          s.email.toLowerCase() === usernameOrEmail.trim().toLowerCase() && passwordMatches(s.password, password) &&
           s.status === "Approved" && s.active
         )
         if (sub) {
@@ -92,6 +114,7 @@ class AuthService {
 
   async logout(): Promise<void> {
     await new Promise(r => setTimeout(r, 100))
+    if (supabase) { try { await supabase.auth.signOut() } catch { /* no active supabase session — fine */ } }
     this.currentUser = null
   }
 
