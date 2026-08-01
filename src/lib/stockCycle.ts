@@ -56,3 +56,11 @@ export function formatLondonTime(d: Date): string {
 export function formatWallWeekday(wall: Date): string {
   return wall.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" })
 }
+
+/** Customers can't place orders 05:00–08:00 UK time (stock is being counted
+ *  and re-priced for the day) — everything else (browsing, viewing past
+ *  orders, etc.) stays available. */
+export function isOrderingClosed(now: Date = new Date()): boolean {
+  const hour = toLondonWallClock(now).getUTCHours()
+  return hour >= 5 && hour < 8
+}

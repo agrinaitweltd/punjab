@@ -138,7 +138,18 @@ export interface Order {
   officialInvoiceNumber?: string
   salesmanId?: string
   salesmanName?: string
+  /** Set the moment an admin marks the order Delivered — starts the 20-hour
+      window customers have to report a quality issue (or confirm there isn't one). */
+  deliveredAt?: string
+  /** Whether the customer confirmed the delivery was fine or flagged an issue,
+      within the 20-hour window. Absent until they respond. */
+  deliveryConfirmation?: 'ok' | 'issue'
+  deliveryConfirmedAt?: string
 }
+
+/** Hours a customer has, after an order is marked Delivered, to confirm it
+    arrived fine or report a quality issue. After this the window is locked. */
+export const DELIVERY_COMPLAINT_WINDOW_HOURS = 20
 
 /** A sales login account — logs into the Sales module with number + username
     + code (not a full admin account). One or more of these can be linked to

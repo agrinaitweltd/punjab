@@ -55,6 +55,9 @@ function mapOrder(r: any): Order {
     deliveryAddress: r.delivery_address ?? "",
     officialInvoiceNumber: r.official_invoice_number ?? undefined,
     salesmanId: r.salesman_id ?? undefined, salesmanName: r.salesman_name ?? undefined,
+    deliveredAt: r.delivered_at ?? undefined,
+    deliveryConfirmation: r.delivery_confirmation ?? undefined,
+    deliveryConfirmedAt: r.delivery_confirmed_at ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -409,11 +412,20 @@ class SupabaseDatabaseService {
     if (input.amount !== undefined) row.amount = input.amount
     if (input.fulfilment !== undefined) row.fulfilment = input.fulfilment
     if (input.deliveryAddress !== undefined) row.delivery_address = input.deliveryAddress
+    if (input.deliveredAt !== undefined) row.delivered_at = input.deliveredAt
+    if (input.deliveryConfirmation !== undefined) row.delivery_confirmation = input.deliveryConfirmation
+    if (input.deliveryConfirmedAt !== undefined) row.delivery_confirmed_at = input.deliveryConfirmedAt
     let { data, error } = await db().from("orders").update(row).eq("id", id).select().single()
     if (error && (error.code === "PGRST204" || /official_invoice_number|salesman/.test(error.message ?? ""))) {
       const { official_invoice_number: _oin, salesman_id: _si, salesman_name: _sn, ...fallbackRow } = row
       void _oin; void _si; void _sn
       if (Object.keys(fallbackRow).length === 0) { console.warn("updateOrder: columns not migrated yet — skipped"); return null }
+      ;({ data, error } = await db().from("orders").update(fallbackRow).eq("id", id).select().single())
+    }
+    if (error && (error.code === "PGRST204" || /delivered_at|delivery_confirmation|delivery_confirmed_at/.test(error.message ?? ""))) {
+      const { delivered_at: _da, delivery_confirmation: _dc, delivery_confirmed_at: _dca, ...fallbackRow } = row
+      void _da; void _dc; void _dca
+      if (Object.keys(fallbackRow).length === 0) { console.warn("updateOrder: delivery-window columns not migrated yet — skipped"); return null }
       ;({ data, error } = await db().from("orders").update(fallbackRow).eq("id", id).select().single())
     }
     if (error) { console.error("updateOrder", error); return null }

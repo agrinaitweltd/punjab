@@ -73,8 +73,11 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
     const step = NEXT_STEP[order.status]
     if (!step) return
     setBusy(true)
-    await onUpdateOrder(order.id, { status: step.status })
-    setDetail(d => d && d.id === order.id ? { ...d, status: step.status } : d)
+    // Marking an order Delivered starts the customer's 20-hour window to
+    // confirm the delivery was fine or report a quality issue.
+    const extra = step.status === "Delivered" ? { deliveredAt: new Date().toISOString() } : {}
+    await onUpdateOrder(order.id, { status: step.status, ...extra })
+    setDetail(d => d && d.id === order.id ? { ...d, status: step.status, ...extra } : d)
     setBusy(false)
   }
 

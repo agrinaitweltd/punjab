@@ -6,6 +6,7 @@ import { createOrder } from "../../api/ordersApi"
 import { sendEmail, orderReceivedEmailHtml, URGENT_SUPPORT_PHONE, COLLECTION_ADDRESS, ADMIN_NOTIFY_EMAIL } from "../../lib/emailService"
 import { lookupPostcode, matchDeliveryArea, buildAddressCandidates, lookupFullAddresses } from "../../lib/postcode"
 import { mockDeliveryAreas } from "../../data/mockData"
+import { isOrderingClosed } from "../../lib/stockCycle"
 
 type Fulfilment = "Delivery" | "Collection"
 
@@ -131,6 +132,7 @@ export function PlaceOrderModal({
 
   const confirmOrder = async () => {
     if (cartLines.length === 0) return
+    if (isOrderingClosed()) { setError("Ordering is closed 05:00–08:00 UK time while stock is being counted — please try again after 08:00."); return }
     setPlacing(true); setError("")
     try {
       const order = await createOrder({
@@ -395,7 +397,7 @@ export function PlaceOrderModal({
           <p style={{ fontSize: 12, color: "#9ca3af", marginTop: -6, marginBottom: 12 }}>Urgent Support: <strong style={{ color: "#4d7c5f" }}>{URGENT_SUPPORT_PHONE}</strong></p>
           {error && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>{error}</p>}
           <div className="actions-row">
-            <Button disabled={placing} onClick={confirmOrder}>{placing ? "Placing order…" : `Confirm Order — £${cartTotal.toFixed(2)}`}</Button>
+            <Button disabled={placing || isOrderingClosed()} onClick={confirmOrder}>{placing ? "Placing order…" : `Confirm Order — £${cartTotal.toFixed(2)}`}</Button>
             <Button variant="secondary" onClick={() => setStep("browse")}>← Back to Shopping</Button>
           </div>
         </div>

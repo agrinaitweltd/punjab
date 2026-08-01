@@ -160,12 +160,12 @@ export function StockPage({
         <div className="ps-table-card">
           <div className="ps-toolbar">
             <div className="ps-toolbar-left">
-              <strong style={{ fontSize: 14 }}>Needs Pricing ({pending.length})</strong>
+              <strong style={{ fontSize: 14 }}>Needs Pricing & Quantity ({pending.length})</strong>
               <span style={{ fontSize: 12.5, color: '#6b7a70', marginLeft: 8 }}>Everything bought that hasn't gone live yet</span>
             </div>
             <div className="ps-toolbar-right">
               <Button disabled={readyCount === 0 || releasing} onClick={releasePrices}>
-                {releasing ? 'Releasing…' : `Release Prices to Customers${readyCount > 0 ? ` (${readyCount})` : ''}`}
+                {releasing ? 'Publishing…' : `Publish to Customers${readyCount > 0 ? ` (${readyCount})` : ''}`}
               </Button>
             </div>
           </div>
@@ -218,8 +218,14 @@ export function StockPage({
         </div>
       )}
 
-      {/* live stock table */}
+      {/* live stock table — what customers can currently see and buy */}
       <div className="ps-table-card">
+        <div className="ps-toolbar">
+          <div className="ps-toolbar-left">
+            <strong style={{ fontSize: 14 }}>Published Stock ({active.length})</strong>
+            <span style={{ fontSize: 12.5, color: '#6b7a70', marginLeft: 8 }}>Live now — customers can see and buy this. Edit price or quantity any time.</span>
+          </div>
+        </div>
         <div className="ps-table-wrap">
           <table className="ps-table">
             <thead><tr>

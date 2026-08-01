@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { AppLayout } from "../../components/layout/AppLayout"
 import { getProducts } from "../../api/productsApi"
-import { getOrders } from "../../api/ordersApi"
+import { getOrders, updateOrder } from "../../api/ordersApi"
 import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, getCreditNoteAllocations, getDayTrades, getCustomerSubAccounts, createCustomerSubAccount } from "../../api/miscApi"
 import { currentTradingDate } from "../../lib/tradingDate"
 import { getCustomers } from "../../api/customersApi"
@@ -11,13 +11,14 @@ import { invoiceOutstanding } from "../../lib/creditNotes"
 import { sendEmail, URGENT_SUPPORT_PHONE, ADMIN_NOTIFY_EMAIL, paymentProofSubmittedEmailHtml, paymentProofAdminAlertEmailHtml } from "../../lib/emailService"
 import { uploadPaymentProof, listPaymentProofsForCustomer, MAX_PROOF_BYTES, type PaymentProof } from "../../lib/paymentProofService"
 import type { Customer, CreditNote, CreditNoteAllocation, CustomerSubAccount, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
+import { DELIVERY_COMPLAINT_WINDOW_HOURS } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, TextArea } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { PlaceOrderModal, catColor } from "./PlaceOrderModal"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
-import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime } from "../../lib/stockCycle"
+import { isStockFresh, latestStockUpdate, currentCycleStart, formatLondonTime, isOrderingClosed } from "../../lib/stockCycle"
 import { listFilesForCustomer, uploadFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
 import { useUnseenCount, useLiveToasts, usePoll } from "../../lib/notifications"
 import { ToastStack } from "../../components/ToastStack"
@@ -25,6 +26,16 @@ import { ToastStack } from "../../components/ToastStack"
 const STATUS_COLORS: Record<string, string> = {
   Pending: "#f59e0b", Confirmed: "#3b82f6", Preparing: "#8b5cf6",
   Delivered: "#22c55e", Cancelled: "#ef4444",
+}
+
+/** Hours remaining (can be negative) in the delivery complaint window. */
+function complaintWindowHoursLeft(o: Order): number {
+  if (!o.deliveredAt) return 0
+  const elapsedMs = Date.now() - new Date(o.deliveredAt).getTime()
+  return DELIVERY_COMPLAINT_WINDOW_HOURS - elapsedMs / (1000 * 60 * 60)
+}
+function isComplaintWindowOpen(o: Order): boolean {
+  return o.status === "Delivered" && complaintWindowHoursLeft(o) > 0
 }
 const STOCK_COLORS: Record<string, string> = {
   available: "#22c55e", low: "#f59e0b", out: "#ef4444",
@@ -136,6 +147,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [issueText, setIssueText]       = useState<Record<number, string>>({})
   const [issuePhoto, setIssuePhoto]     = useState<Record<number, File | null>>({})
   const [issueBusy, setIssueBusy]       = useState<number | null>(null)
+  const [wantsToReportIssue, setWantsToReportIssue] = useState(false)
+  const [confirmBusy, setConfirmBusy]   = useState(false)
   const [issueSent, setIssueSent]       = useState<Set<number>>(new Set())
   const [ticketDetail, setTicketDetail] = useState<SupportTicket | null>(null)
   const [invoiceDetail, setInvoiceDetail] = useState<Invoice | null>(null)
@@ -154,6 +167,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
   const [subForm, setSubForm] = useState({ name: "", email: "", password: "", permissions: { ...EMPTY_SUB_PERMS } })
   const [subError, setSubError] = useState("")
   const [subBusy, setSubBusy] = useState(false)
+
+  // Re-checked every minute so the 05:00–08:00 ordering closure kicks in
+  // (and lifts) without needing a page refresh.
+  const [, forceTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => forceTick(t => t + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const orderingClosed = isOrderingClosed()
 
   const load = async () => {
     const [p, s, o, inv, pay, tix, custs, cn, cna, dt, subs] = await Promise.all([
@@ -210,6 +232,19 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       setIssueSent(prev => new Set(prev).add(itemIndex))
     } finally {
       setIssueBusy(null)
+    }
+  }
+
+  const confirmDelivery = async (order: Order, confirmation: 'ok' | 'issue') => {
+    setConfirmBusy(true)
+    try {
+      const patch = { deliveryConfirmation: confirmation, deliveryConfirmedAt: new Date().toISOString() }
+      await updateOrder(order.id, patch)
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...patch } : o))
+      setOrderDetail(d => d && d.id === order.id ? { ...d, ...patch } : d)
+      if (confirmation === 'issue') setWantsToReportIssue(true)
+    } finally {
+      setConfirmBusy(false)
     }
   }
 
@@ -593,8 +628,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           <div className="cd-table-card">
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #eaecf0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>All Orders ({myOrders.length})</span>
-              <Button onClick={() => setShowOrder(true)} disabled={Boolean(me?.blocked)}
-            title={me?.blocked ? "Ordering is paused until your balance is settled" : undefined}>+ Place Order</Button>
+              <Button onClick={() => setShowOrder(true)} disabled={Boolean(me?.blocked) || orderingClosed}
+            title={me?.blocked ? "Ordering is paused until your balance is settled" : orderingClosed ? "Ordering reopens at 08:00 UK time" : undefined}>+ Place Order</Button>
             </div>
             <div className="cd-table-scroll">
             <table className="cd-table">
@@ -954,8 +989,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Export
           </button>
-          <Button onClick={() => setShowOrder(true)} disabled={Boolean(me?.blocked)}
-            title={me?.blocked ? "Ordering is paused until your balance is settled" : undefined}>+ Place Order</Button>
+          <Button onClick={() => setShowOrder(true)} disabled={Boolean(me?.blocked) || orderingClosed}
+            title={me?.blocked ? "Ordering is paused until your balance is settled" : orderingClosed ? "Ordering reopens at 08:00 UK time" : undefined}>+ Place Order</Button>
         </div>
       </div>
 
@@ -1041,7 +1076,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       </Modal>
 
       {/* Order detail popup */}
-      <Modal open={Boolean(orderDetail)} title={orderDetail ? `Order ${orderDetail.orderNumber}` : "Order"} onClose={() => { setOrderDetail(null); setIssueFlagged(new Set()); setIssueText({}); setIssuePhoto({}); setIssueSent(new Set()) }}>
+      <Modal open={Boolean(orderDetail)} title={orderDetail ? `Order ${orderDetail.orderNumber}` : "Order"} onClose={() => { setOrderDetail(null); setIssueFlagged(new Set()); setIssueText({}); setIssuePhoto({}); setIssueSent(new Set()); setWantsToReportIssue(false) }}>
         {orderDetail && (() => {
           const o = orderDetail
           const pct = o.status === "Delivered" ? 100 : o.status === "Preparing" ? 65 : o.status === "Confirmed" ? 35 : 10
@@ -1067,9 +1102,45 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
               )}
               <ProgressBar pct={pct} color={STATUS_COLORS[o.status]} />
 
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: "#6b7280", margin: "18px 0 8px", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Items ({o.items.length})
-              </p>
+              {o.status === "Delivered" && (() => {
+                const windowOpen = isComplaintWindowOpen(o)
+                const hoursLeft = complaintWindowHoursLeft(o)
+                if (!o.deliveryConfirmation && windowOpen) {
+                  return (
+                    <div style={{ margin: "16px 0", padding: 14, borderRadius: 10, background: "#fafbfc", border: "1px solid var(--border-light)" }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 4 }}>How was this delivery?</p>
+                      <p style={{ fontSize: 12, color: "#9ca3af", marginBottom: 10 }}>
+                        You have {Math.max(1, Math.round(hoursLeft))} hour{Math.round(hoursLeft) !== 1 ? "s" : ""} left to let us know.
+                      </p>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Button className="btn-sm" disabled={confirmBusy} onClick={() => confirmDelivery(o, "ok")}>No Quality Issues</Button>
+                        <Button className="btn-sm" variant="secondary" disabled={confirmBusy} onClick={() => confirmDelivery(o, "issue")}>Report a Quality Issue</Button>
+                      </div>
+                    </div>
+                  )
+                }
+                if (!o.deliveryConfirmation && !windowOpen) {
+                  return (
+                    <p style={{ margin: "16px 0", fontSize: 12.5, color: "#9ca3af", background: "#fafbfc", border: "1px solid var(--border-light)", borderRadius: 10, padding: 12 }}>
+                      The {DELIVERY_COMPLAINT_WINDOW_HOURS}-hour window to report a quality issue for this delivery has closed.
+                    </p>
+                  )
+                }
+                if (o.deliveryConfirmation === "ok") {
+                  return (
+                    <p style={{ margin: "16px 0", fontSize: 12.5, color: "#15803d", background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
+                      ✓ You confirmed this delivery had no quality issues.
+                    </p>
+                  )
+                }
+                return null
+              })()}
+
+              {o.status === "Delivered" && (o.deliveryConfirmation === "issue" || wantsToReportIssue) && (
+                <>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: "#6b7280", margin: "18px 0 8px", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Items ({o.items.length})
+                  </p>
               <div className="ord-items">
                 {o.items.map((it, i) => {
                   const p = products.find(x => x.id === it.productId)
@@ -1087,13 +1158,15 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                       </div>
                       {sent ? (
                         <p style={{ fontSize: 12, color: "#15803d", margin: "6px 0 0 42px" }}>✓ Issue reported — we'll be in touch.</p>
-                      ) : (
+                      ) : isComplaintWindowOpen(o) ? (
                         <label style={{ display: "flex", alignItems: "center", gap: 6, margin: "6px 0 0 42px", fontSize: 12.5, color: "#374151", cursor: "pointer" }}>
                           <input type="checkbox" checked={flagged} onChange={e => {
                             setIssueFlagged(prev => { const next = new Set(prev); if (e.target.checked) next.add(i); else next.delete(i); return next })
                           }} />
                           Report an issue with this product
                         </label>
+                      ) : (
+                        <p style={{ fontSize: 12, color: "#9ca3af", margin: "6px 0 0 42px" }}>The window to report an issue with this item has closed.</p>
                       )}
                       {flagged && !sent && (
                         <div style={{ margin: "8px 0 0 42px", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1119,7 +1192,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                     </div>
                   )
                 })}
-              </div>
+                  </div>
+                </>
+              )}
               <div className="actions-row" style={{ marginTop: 16 }}>
                 <Button variant="secondary" onClick={() => setOrderDetail(null)}>Close</Button>
               </div>
