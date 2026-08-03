@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: 'Punjab Exotic Foods <info@punjabexoticfoods.com>',
-        to: [to],
+        to: Array.isArray(to) ? to : [to],
         subject,
         html,
       }),

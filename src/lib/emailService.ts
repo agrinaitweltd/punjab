@@ -2,7 +2,7 @@
    Works on the Vercel deployment; in local dev the call fails gracefully
    and callers can fall back (e.g. show the OTP code on screen). */
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
+export async function sendEmail(to: string | string[], subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const r = await fetch("/api/send-email", {
       method: "POST",
@@ -17,7 +17,11 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
 }
 
 export const URGENT_SUPPORT_PHONE = "07364 219332"
-export const ADMIN_NOTIFY_EMAIL = "contact@punjabexoticfoods.co.uk"
+// Notification-only recipients. These addresses do not create dashboard accounts.
+export const ADMIN_NOTIFY_EMAIL = [
+  "contact@punjabexoticfoods.co.uk",
+  "info@punjabexoticfoods.co.uk",
+]
 export const COLLECTION_ADDRESS = {
   line1: "Punjab Exotic Foods",
   line2: "Gate 9, Stand 1B–1D",
