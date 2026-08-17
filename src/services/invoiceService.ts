@@ -65,7 +65,8 @@ export async function importStatementInvoices(
   for (const row of rows) {
     const due = new Date(row.date + "T00:00:00")
     due.setDate(due.getDate() + creditDays)
-    const outstanding = row.outstandingAmount ?? Math.max(0, row.amount - (row.amountPaid ?? 0))
+    const unpaid = row.status === "Unpaid" || (row.amountPaid ?? 0) <= 0
+    const outstanding = unpaid ? (row.outstandingAmount ?? row.amount) : (row.outstandingAmount ?? Math.max(0, row.amount - (row.amountPaid ?? 0)))
     const inferredPaid = row.outstandingAmount !== undefined && row.status !== "Unpaid"
       ? Math.max(0, Math.round((row.amount - outstanding) * 100) / 100)
       : 0
