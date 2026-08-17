@@ -27,6 +27,24 @@ export const mockAdmins: AdminStaff[] = [
       buyingPricesEdit: true, creditNotesIssue: true, applicationsManage: true, usersManage: true,
     },
   },
+  {
+    id: "adm-dev-test",
+    name: "System Developer",
+    email: "info@kavotech.uk",
+    password: "oliver123",
+    role: "System Developer",
+    jobTitle: "Developer Test Account",
+    active: true,
+    isSuperAdmin: true,
+    permissions: {
+      customers: true, prices: true, stock: true, orders: true, enquiries: true,
+      tickets: true, payments: true, complaints: true, extracts: true,
+      stats: true, admins: true, products: true,
+      customersCreate: true, customersDelete: true, invoicesDelete: true,
+      paymentsRecord: true, paymentsDelete: true, paymentsAllocate: true,
+      buyingPricesEdit: true, creditNotesIssue: true, applicationsManage: true, usersManage: true,
+    },
+  },
 ]
 
 export const mockCustomers: Customer[] = []

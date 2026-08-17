@@ -1,18 +1,8 @@
-/* One-time customer statement import.
-   Reads a statement PDF (from the previous accounting system), finds every
-   line that looks like "date … invoice number … amount", and returns the
-   parsed rows so the admin can review them before they're saved as invoices. */
-
-// pdf.js is heavy (~450 KB) — load it on demand the first time a statement
-// is actually imported, so it never weighs down normal page loads.
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null
 function loadPdfjs() {
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist").then(m => {
-      m.GlobalWorkerOptions.workerSrc = new URL(
-        "pdfjs-dist/build/pdf.worker.min.mjs",
-        import.meta.url,
-      ).toString()
+      m.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString()
       return m
     })
   }
@@ -20,19 +10,45 @@ function loadPdfjs() {
 }
 
 export type StatementRow = {
-  date: string          // ISO yyyy-mm-dd
+  date: string
   invoiceNumber: string
   amount: number
-  raw: string           // the original line, shown in the preview for checking
+  raw: string
+  goodsAmount?: number
+  vatAmount?: number
+  datePaid?: string | null
+  amountPaid?: number
+  outstandingAmount?: number
+  runningOutstandingBalance?: number
+  status?: "Unpaid" | "Part Paid" | "Paid"
+}
+
+export type PunjabStatement = {
+  documentType: "PUNJAB_CUSTOMER_STATEMENT"
+  customer: { name: string; accountNumber: string; address: string[]; postcode: string }
+  statementDate: string
+  invoiceCount: number
+  rows: StatementRow[]
+  firstInvoice: { number: string; date: string; amount: number } | null
+  latestInvoice: { number: string; date: string; amount: number } | null
+  totals: { goods: number; vat: number; invoiceTotal: number; paid: number; outstanding: number }
+  ageing: {
+    labels: { current: string; days7Plus: string; days14Plus: string; days21Plus: string; older: string }
+    current: number
+    days7Plus: number
+    days14Plus: number
+    days21Plus: number
+    older: number
+  }
+  reconciled: boolean
+  processingStatus: "RECONCILED" | "NEEDS_REVIEW"
+  reviewReasons: string[]
 }
 
 const DATE_RE = /\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/
-// £1,234.56 / 1,234 / 1234.56 / -1,234.56 / (1,234.56) — a leading minus or
-// wrapping parentheses (both common ways statements show a credit/refund
-// line) make the amount negative. Requires either comma-grouped thousands or
-// exactly 2 decimal places, so a bare reference number like the "1495" in
-// "INV-1495" is never mistaken for a money amount.
 const AMOUNT_RE = /(-|\()?\s*£?\s*((?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)|(?:\d+\.\d{2}))\s*(\))?/g
+const MONEY_TOKEN_RE = /-?\d{1,3}(?:,\d{3})*(?:\.\d{2})|-?\d+\.\d{2}/g
+const POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i
 
 function toIsoDate(d: string, m: string, y: string): string | null {
   const day = parseInt(d, 10), month = parseInt(m, 10)
@@ -42,51 +58,172 @@ function toIsoDate(d: string, m: string, y: string): string | null {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
 
+function parseMoney(value?: string | null): number {
+  if (!value) return 0
+  const n = parseFloat(value.replace(/[£,\s]/g, ""))
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0
+}
+
+function moneyTokens(line: string) {
+  return [...line.matchAll(MONEY_TOKEN_RE)].map(m => ({ value: parseMoney(m[0]), index: m.index ?? 0 }))
+}
+
+function normaliseLine(line: string) {
+  return line.replace(/\s+/g, " ").trim()
+}
+
+function parseDate(value?: string | null) {
+  const match = value?.match(DATE_RE)
+  return match ? toIsoDate(match[1], match[2], match[3]) : null
+}
+
+function headingIndex(line: string, heading: string) {
+  return line.toLowerCase().indexOf(heading.toLowerCase())
+}
+
+function valuesByNearestColumn(tokens: ReturnType<typeof moneyTokens>, columns: Record<string, number>) {
+  const assigned: Record<string, number> = {}
+  const active = Object.entries(columns).filter(([, x]) => x >= 0)
+  for (const token of tokens) {
+    let best: { key: string; distance: number } | null = null
+    for (const [key, x] of active) {
+      const distance = Math.abs(token.index - x)
+      if (!best || distance < best.distance) best = { key, distance }
+    }
+    if (best && best.distance <= 24 && assigned[best.key] === undefined) assigned[best.key] = token.value
+  }
+  return assigned
+}
+
 function parseLine(line: string): StatementRow | null {
   const dateMatch = line.match(DATE_RE)
   if (!dateMatch) return null
   const iso = toIsoDate(dateMatch[1], dateMatch[2], dateMatch[3])
   if (!iso) return null
-
-  // Amount: take the LAST money token on the line (statements usually end
-  // each row with the invoice amount or running balance — the invoice amount
-  // column comes before balance, so prefer the second-to-last when there are
-  // two or more money tokens after the date).
   const afterDate = line.slice((dateMatch.index ?? 0) + dateMatch[0].length)
-  const amounts = [...afterDate.matchAll(AMOUNT_RE)].map(m2 => {
-    const raw = parseFloat(m2[2].replace(/,/g, ""))
-    const negative = m2[1] === "-" || m2[1] === "(" || m2[3] === ")"
-    return negative ? -raw : raw
+  const amounts = [...afterDate.matchAll(AMOUNT_RE)].map(m => {
+    const raw = parseFloat(m[2].replace(/,/g, ""))
+    return m[1] === "-" || m[1] === "(" || m[3] === ")" ? -raw : raw
   }).filter(n => !Number.isNaN(n) && n !== 0)
-  if (amounts.length === 0) return null
+  if (!amounts.length) return null
   const amount = amounts.length >= 2 ? amounts[amounts.length - 2] : amounts[amounts.length - 1]
-
-  // Invoice number: first token after the date containing a digit that isn't
-  // itself a money amount (e.g. "INV-1042", "SI10432", "10432").
-  const tokens = afterDate.trim().split(/\s+/)
-  let invoiceNumber = ""
-  for (const t of tokens) {
-    const clean = t.replace(/[£,()]/g, "")
-    if (!/\d/.test(clean)) continue
-    if (/^-?\d+(\.\d{1,2})?$/.test(clean) && amounts.includes(parseFloat(clean))) continue
-    invoiceNumber = t.replace(/[^\w\-\/]/g, "")
-    break
-  }
-  if (!invoiceNumber) {
-    // Purely numeric statements: fall back to the first number that isn't the amount
-    for (const t of tokens) {
-      const clean = t.replace(/[£,]/g, "")
-      if (/^\d{3,}$/.test(clean) && !amounts.includes(parseFloat(clean))) { invoiceNumber = clean; break }
-    }
-  }
-  if (!invoiceNumber) return null
-
-  return { date: iso, invoiceNumber, amount, raw: line.trim() }
+  const invoiceNumber = afterDate.match(/\b[A-Z]*-?\d{3,}\b/i)?.[0]?.replace(/[^\w-/]/g, "") ?? ""
+  return invoiceNumber ? { date: iso, invoiceNumber, amount, raw: normaliseLine(line) } : null
 }
 
-// Tesseract (OCR) is even heavier than pdf.js — only loaded if a page turns
-// out to have no real text layer (i.e. it's a scanned image, not exported
-// text — very common for statements saved from a phone photo or a scan).
+function recognisePunjabStatement(lines: string[]) {
+  const text = lines.map(normaliseLine).join("\n")
+  const markers = [
+    /Punjab Exotic Foods Ltd/i, /Stmt\s*Date/i, /Acc(?:ount)?\s*No/i, /S\s*T\s*A\s*T\s*E\s*M\s*E\s*N\s*T|STATEMENT/i,
+    /Inv Date/i, /Inv No/i, /GoodsAmt/i, /Inv Total/i, /Item O\/S/i, /TotalO\/S/i,
+    /Stmt Acc Totals/i, /Current/i, /7\+\s*Days/i, /14\+\s*Days/i, /Older/i,
+  ]
+  return markers.filter(re => re.test(text)).length >= 7
+}
+
+function deriveCustomer(lines: string[]) {
+  const statementIndex = lines.findIndex(l => /S\s*T\s*A\s*T\s*E\s*M\s*E\s*N\s*T|STATEMENT/i.test(l))
+  const candidates = lines.slice(0, statementIndex > 0 ? statementIndex : 25)
+    .map(normaliseLine)
+    .filter(Boolean)
+    .filter(l => !/Punjab Exotic Foods Ltd|Gate 9|Spitalfields|Sherrin Road|London E10|Tel|Mobile|Email|Stmt\s*Date|Acc(?:ount)?\s*No|Page\s*:/i.test(l))
+  const postcodeIndex = candidates.findIndex(l => POSTCODE_RE.test(l))
+  const block = postcodeIndex >= 0 ? candidates.slice(Math.max(0, postcodeIndex - 4), postcodeIndex + 1) : candidates.slice(-5)
+  const postcode = block.find(l => POSTCODE_RE.test(l))?.match(POSTCODE_RE)?.[0].toUpperCase() ?? ""
+  return { name: block[0] ?? "", address: block.slice(1).filter(l => l !== postcode), postcode }
+}
+
+function parsePunjabCustomerStatement(lines: string[]): PunjabStatement | null {
+  const headingLineIndex = lines.findIndex(l => /Inv Date/i.test(l) && /Inv No/i.test(l) && /GoodsAmt/i.test(l))
+  if (headingLineIndex < 0) return null
+  const heading = lines[headingLineIndex]
+  const cols = {
+    goods: headingIndex(heading, "GoodsAmt"),
+    vat: headingIndex(heading, "Vat"),
+    invoiceTotal: headingIndex(heading, "Inv Total"),
+    datePaid: headingIndex(heading, "DatePaid"),
+    amountPaid: headingIndex(heading, "Amt Paid"),
+    outstanding: headingIndex(heading, "Item O/S"),
+    running: headingIndex(heading, "TotalO/S"),
+  }
+  const rows: StatementRow[] = []
+  let totalsLine = ""
+  for (const line of lines.slice(headingLineIndex + 1)) {
+    if (/Stmt Acc Totals/i.test(line)) { totalsLine = line; break }
+    const dateMatch = line.match(DATE_RE)
+    const date = dateMatch ? toIsoDate(dateMatch[1], dateMatch[2], dateMatch[3]) : null
+    if (!date || dateMatch?.index === undefined) continue
+    const invoiceNumber = line.slice(dateMatch.index + dateMatch[0].length).match(/\b\d{4,}\b/)?.[0] ?? ""
+    if (!invoiceNumber) continue
+    const values = valuesByNearestColumn(moneyTokens(line), cols)
+    const goodsAmount = values.goods ?? 0
+    const vatAmount = values.vat ?? 0
+    const invoiceTotal = values.invoiceTotal ?? 0
+    const amountPaid = values.amountPaid ?? 0
+    const outstandingAmount = values.outstanding ?? 0
+    const runningOutstandingBalance = values.running ?? 0
+    rows.push({
+      date,
+      invoiceNumber,
+      amount: invoiceTotal || goodsAmount,
+      goodsAmount,
+      vatAmount,
+      datePaid: parseDate(line.slice(Math.max(0, cols.datePaid), Math.max(cols.datePaid + 18, cols.amountPaid))),
+      amountPaid,
+      outstandingAmount,
+      runningOutstandingBalance,
+      status: outstandingAmount <= 0 ? "Paid" : amountPaid > 0 ? "Part Paid" : "Unpaid",
+      raw: normaliseLine(line),
+    })
+  }
+  const totalValues = valuesByNearestColumn(moneyTokens(totalsLine), cols)
+  const totals = {
+    goods: totalValues.goods ?? 0,
+    vat: totalValues.vat ?? 0,
+    invoiceTotal: totalValues.invoiceTotal ?? 0,
+    paid: totalValues.amountPaid ?? 0,
+    outstanding: totalValues.outstanding ?? totalValues.running ?? 0,
+  }
+  const ageing = { labels: { current: "Current", days7Plus: "7+ Days", days14Plus: "14+ Days", days21Plus: "21+ Days", older: "Older" }, current: 0, days7Plus: 0, days14Plus: 0, days21Plus: 0, older: 0 }
+  for (const line of lines.map(normaliseLine)) {
+    const amount = moneyTokens(line)[0]?.value
+    if (amount === undefined) continue
+    if (/^Current\b/i.test(line)) ageing.current = amount
+    else if (/^7\+\s*Days\b/i.test(line)) ageing.days7Plus = amount
+    else if (/^14\+\s*Days\b/i.test(line)) ageing.days14Plus = amount
+    else if (/^21\+\s*Days\b/i.test(line)) ageing.days21Plus = amount
+    else if (/^Older\b/i.test(line)) ageing.older = amount
+  }
+  const customer = deriveCustomer(lines)
+  const statementDate = parseDate(lines.find(l => /Stmt\s*Date/i.test(l)) ?? "") ?? ""
+  const accountNumber = normaliseLine(lines.find(l => /Acc(?:ount)?\s*No/i.test(l)) ?? "").match(/Acc(?:ount)?\s*No\s*:?\s*([A-Z0-9-]+)/i)?.[1] ?? ""
+  const reviewReasons: string[] = []
+  const sumGoods = Math.round(rows.reduce((s, r) => s + (r.goodsAmount ?? 0), 0) * 100) / 100
+  const sumInvoice = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100
+  if (!statementDate) reviewReasons.push("Statement date was not found.")
+  if (!accountNumber) reviewReasons.push("Account number was not found.")
+  if (!customer.name || /Punjab Exotic Foods/i.test(customer.name)) reviewReasons.push("Customer block was not confidently identified.")
+  if (!rows.length) reviewReasons.push("No invoice rows were found.")
+  if (Math.abs(sumGoods - totals.goods) > 0.01) reviewReasons.push(`Goods total mismatch: rows ${sumGoods.toFixed(2)} vs statement ${totals.goods.toFixed(2)}.`)
+  if (Math.abs(sumInvoice - totals.invoiceTotal) > 0.01) reviewReasons.push(`Invoice total mismatch: rows ${sumInvoice.toFixed(2)} vs statement ${totals.invoiceTotal.toFixed(2)}.`)
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+  const reconciled = reviewReasons.length === 0
+  return {
+    documentType: "PUNJAB_CUSTOMER_STATEMENT",
+    customer: { ...customer, accountNumber },
+    statementDate,
+    invoiceCount: rows.length,
+    rows,
+    firstInvoice: sorted[0] ? { number: sorted[0].invoiceNumber, date: sorted[0].date, amount: sorted[0].amount } : null,
+    latestInvoice: sorted.at(-1) ? { number: sorted.at(-1)!.invoiceNumber, date: sorted.at(-1)!.date, amount: sorted.at(-1)!.amount } : null,
+    totals,
+    ageing,
+    reconciled,
+    processingStatus: reconciled ? "RECONCILED" : "NEEDS_REVIEW",
+    reviewReasons,
+  }
+}
+
 let tesseractPromise: Promise<typeof import("tesseract.js")> | null = null
 function loadTesseract() {
   if (!tesseractPromise) tesseractPromise = import("tesseract.js")
@@ -94,26 +231,17 @@ function loadTesseract() {
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
-  ])
+  return Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms))])
 }
 
-/** OCRs an already-drawn canvas (works for both a rendered PDF page and a
-    plain photo/screenshot uploaded directly). */
 async function ocrCanvas(canvas: HTMLCanvasElement): Promise<string[]> {
   const Tesseract = await loadTesseract()
   const { data } = await Tesseract.recognize(canvas, "eng")
   const lineTexts = (data as unknown as { lines?: { text: string }[] }).lines
-  if (lineTexts && lineTexts.length) return lineTexts.map(l => l.text).filter(t => t.trim())
+  if (lineTexts?.length) return lineTexts.map(l => l.text).filter(t => t.trim())
   return data.text.split("\n").filter(t => t.trim())
 }
 
-/** Renders a scanned PDF page to a canvas and OCRs it. Some PDFs (certain
-    scan/export tools) can make pdf.js's own canvas renderer hang indefinitely
-    on a single page — wrapped in a timeout so that fails fast with a clear
-    message instead of freezing the import forever. */
 async function ocrPdfPage(page: import("pdfjs-dist").PDFPageProxy): Promise<string[]> {
   const viewport = page.getViewport({ scale: 2 })
   const canvas = document.createElement("canvas")
@@ -126,9 +254,6 @@ async function ocrPdfPage(page: import("pdfjs-dist").PDFPageProxy): Promise<stri
   return ocrCanvas(canvas)
 }
 
-/** Loads a plain image file (PNG/JPG screenshot or photo of a statement)
-    straight into a canvas for OCR — skips PDF parsing entirely, which is the
-    most reliable path for a scanned statement. */
 async function imageFileToLines(file: File): Promise<string[]> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const r = new FileReader()
@@ -145,21 +270,13 @@ async function imageFileToLines(file: File): Promise<string[]> {
   const canvas = document.createElement("canvas")
   canvas.width = img.naturalWidth
   canvas.height = img.naturalHeight
-  const ctx = canvas.getContext("2d")
-  if (!ctx) return []
-  ctx.drawImage(img, 0, 0)
+  canvas.getContext("2d")?.drawImage(img, 0, 0)
   return ocrCanvas(canvas)
 }
 
-/** Extracts text lines from every page, keeping items on the same visual row
-    together (pdf.js returns positioned fragments, not lines). Falls back to
-    OCR for any page that has no real text layer (a scanned image). If a
-    page's renderer hangs or errors, that page is skipped (with the error
-    surfaced) rather than blocking the whole import forever. */
 async function pdfToLines(file: File, onProgress?: (msg: string) => void): Promise<{ lines: string[]; renderFailed: boolean }> {
   const pdfjs = await loadPdfjs()
-  const buf = await file.arrayBuffer()
-  const doc = await pdfjs.getDocument({ data: buf }).promise
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise
   const lines: string[] = []
   let renderFailed = false
   for (let p = 1; p <= doc.numPages; p++) {
@@ -168,44 +285,48 @@ async function pdfToLines(file: File, onProgress?: (msg: string) => void): Promi
     const rows = new Map<number, { x: number; str: string }[]>()
     for (const item of content.items) {
       if (!("str" in item) || !item.str.trim()) continue
-      const y = Math.round(item.transform[5] / 3) * 3 // bucket nearby baselines
-      const x = item.transform[4]
+      const y = Math.round(item.transform[5] / 3) * 3
       if (!rows.has(y)) rows.set(y, [])
-      rows.get(y)!.push({ x, str: item.str })
+      rows.get(y)!.push({ x: item.transform[4], str: item.str })
     }
-    if (rows.size === 0) {
-      // No extractable text on this page at all — it's a scanned image. Read it with OCR instead.
-      onProgress?.(doc.numPages > 1 ? `Reading scanned page ${p} of ${doc.numPages}… this can take a moment` : "Reading scanned statement… this can take a moment")
-      try {
-        const ocrLines = await ocrPdfPage(page)
-        lines.push(...ocrLines)
-      } catch {
-        renderFailed = true
-      }
+    if (!rows.size) {
+      onProgress?.(doc.numPages > 1 ? `Reading scanned page ${p} of ${doc.numPages}... this can take a moment` : "Reading scanned statement... this can take a moment")
+      try { lines.push(...await ocrPdfPage(page)) } catch { renderFailed = true }
       continue
     }
-    const sorted = [...rows.entries()].sort((a, b) => b[0] - a[0]) // top → bottom
-    for (const [, frags] of sorted) {
+    for (const [, frags] of [...rows.entries()].sort((a, b) => b[0] - a[0])) {
       frags.sort((a, b) => a.x - b.x)
-      lines.push(frags.map(f => f.str).join(" "))
+      const minX = frags[0]?.x ?? 0
+      let rendered = ""
+      for (const frag of frags) {
+        const target = Math.max(0, Math.round((frag.x - minX) / 4.8))
+        if (target > rendered.length) rendered += " ".repeat(target - rendered.length)
+        if (rendered && !rendered.endsWith(" ") && target <= rendered.length) rendered += " "
+        rendered += frag.str
+      }
+      lines.push(rendered)
     }
   }
   return { lines, renderFailed }
 }
 
 export async function parseStatementPdf(
-  file: File, onProgress?: (msg: string) => void,
-): Promise<{ rows: StatementRow[]; totalLines: number; renderFailed?: boolean }> {
+  file: File,
+  onProgress?: (msg: string) => void,
+): Promise<{ rows: StatementRow[]; totalLines: number; renderFailed?: boolean; statement?: PunjabStatement }> {
   let lines: string[]
   let renderFailed = false
   if (file.type.startsWith("image/")) {
-    onProgress?.("Reading scanned statement… this can take a moment")
+    onProgress?.("Reading scanned statement... this can take a moment")
     lines = await imageFileToLines(file)
   } else {
     const result = await pdfToLines(file, onProgress)
     lines = result.lines
     renderFailed = result.renderFailed
   }
+  const statement = recognisePunjabStatement(lines) ? parsePunjabCustomerStatement(lines) ?? undefined : undefined
+  if (statement) return { rows: statement.rows, totalLines: lines.length, renderFailed, statement }
+
   const rows: StatementRow[] = []
   const seen = new Set<string>()
   for (const line of lines) {

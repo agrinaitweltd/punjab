@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Customer, CreditNote, CreditNoteAllocation, DeliveryArea, Invoice, Payment, WhatsAppTemplate } from '../../types'
-import { parseStatementPdf, type StatementRow } from '../../lib/statementImport'
+import { parseStatementPdf, type PunjabStatement, type StatementRow } from '../../lib/statementImport'
 import { importStatementInvoices } from '../../api/miscApi'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -91,6 +91,7 @@ export function CustomersPage({
   // One-time statement import
   const [importTarget, setImportTarget] = useState<Customer | null>(null)
   const [importRows, setImportRows] = useState<StatementRow[]>([])
+  const [importStatement, setImportStatement] = useState<PunjabStatement | null>(null)
   const [importChecked, setImportChecked] = useState<Set<string>>(new Set())
   const [importBusy, setImportBusy] = useState(false)
   const [importMsg, setImportMsg] = useState('')
@@ -212,21 +213,23 @@ export function CustomersPage({
 
   const openImport = (customer: Customer) => {
     setImportTarget(customer); setImportRows([]); setImportChecked(new Set())
-    setImportMsg(''); setImportDone('')
+    setImportStatement(null); setImportMsg(''); setImportDone('')
   }
 
   const handleStatementFile = async (file: File | undefined) => {
     if (!file) return
     setImportBusy(true); setImportMsg(''); setImportProgress('Reading statement…'); setImportRows([]); setImportDone('')
     try {
-      const { rows, renderFailed } = await parseStatementPdf(file, msg => setImportProgress(msg))
+      const { rows, renderFailed, statement } = await parseStatementPdf(file, msg => setImportProgress(msg))
       if (rows.length === 0 && renderFailed) {
         setImportMsg("This PDF's scan couldn't be read (some scanned/exported PDFs aren't compatible with the in-browser reader). Please upload the original photo or screenshot instead (JPG/PNG) — that reads reliably.")
       } else if (rows.length === 0) {
         setImportMsg("No invoice lines found — the file may have unclear text or an unusual layout. Check it and try again, or send it to support so we can improve the reader.")
       } else {
+        setImportStatement(statement ?? null)
         setImportRows(rows)
         setImportChecked(new Set(rows.map(r => r.invoiceNumber)))
+        if (statement?.processingStatus === 'NEEDS_REVIEW') setImportMsg(`Statement requires review: ${statement.reviewReasons.join(' ')}`)
       }
     } catch {
       setImportMsg("Couldn't read that file — check it isn't password-protected and try again.")
@@ -240,10 +243,11 @@ export function CustomersPage({
     const rows = importRows.filter(r => importChecked.has(r.invoiceNumber))
     if (rows.length === 0) return
     setImportBusy(true)
-    const { created, failed } = await importStatementInvoices(importTarget.id, rows, importTarget.creditDays ?? 14)
+    const { created, updated, failed } = await importStatementInvoices(importTarget.id, rows, importTarget.creditDays ?? 14)
+    void updated
     // Opening balance = total of everything just imported (plus any existing balance)
-    const importedTotal = rows.filter(r => !failed.includes(r.invoiceNumber)).reduce((s, r) => s + r.amount, 0)
-    await onUpdate(importTarget.id, { balance: (importTarget.balance ?? 0) + importedTotal })
+    const importedTotal = rows.filter(r => !failed.includes(r.invoiceNumber)).reduce((s, r) => s + (r.outstandingAmount ?? r.amount), 0)
+    await onUpdate(importTarget.id, { balance: importedTotal })
     setImportDone(
       `${created} invoice${created !== 1 ? 's' : ''} imported (£${importedTotal.toFixed(2)})` +
       (failed.length ? ` — ${failed.length} skipped as duplicates: ${failed.join(', ')}` : ''),
@@ -480,6 +484,33 @@ export function CustomersPage({
             {importMsg && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px' }}>{importMsg}</p>}
             {importDone && <p style={{ color: '#15803d', fontSize: 13, background: '#f0fdf4', borderRadius: 8, padding: '8px 12px' }}>{importDone}</p>}
 
+            {importStatement && (
+              <div style={{ border: '1px solid #dbe7dd', borderRadius: 8, padding: 12, marginBottom: 12, background: '#fbfdfb' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <strong style={{ fontSize: 13.5 }}>{importStatement.customer.name}</strong>
+                    <div style={{ fontSize: 12.5, color: '#6b7a70' }}>Account #{importStatement.customer.accountNumber} - {importStatement.statementDate}</div>
+                  </div>
+                  <span className="ps-badge" style={importStatement.reconciled ? { background: '#dcfce7', color: '#15803d' } : { background: '#fef2f2', color: '#b91c1c' }}>
+                    {importStatement.reconciled ? 'Statement reconciled successfully' : 'Needs review'}
+                  </span>
+                </div>
+                <div className="ps-stats-row" style={{ marginTop: 10 }}>
+                  <div className="ps-stat"><p className="ps-stat-label">Outstanding</p><p className="ps-stat-value">£{importStatement.totals.outstanding.toFixed(2)}</p></div>
+                  <div className="ps-stat"><p className="ps-stat-label">Total Invoiced</p><p className="ps-stat-value">£{importStatement.totals.invoiceTotal.toFixed(2)}</p></div>
+                  <div className="ps-stat"><p className="ps-stat-label">Total Paid</p><p className="ps-stat-value">£{importStatement.totals.paid.toFixed(2)}</p></div>
+                  <div className="ps-stat"><p className="ps-stat-label">Invoices</p><p className="ps-stat-value">{importStatement.invoiceCount}</p></div>
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: 12.5, color: '#374151' }}>
+                  <span>Current: <strong>£{importStatement.ageing.current.toFixed(2)}</strong></span>
+                  <span>7+ Days: <strong>£{importStatement.ageing.days7Plus.toFixed(2)}</strong></span>
+                  <span>14+ Days: <strong>£{importStatement.ageing.days14Plus.toFixed(2)}</strong></span>
+                  <span>21+ Days: <strong>£{importStatement.ageing.days21Plus.toFixed(2)}</strong></span>
+                  <span>Older: <strong>£{importStatement.ageing.older.toFixed(2)}</strong></span>
+                </div>
+              </div>
+            )}
+
             {importRows.length > 0 && (
               <>
                 <p style={{ fontSize: 12.5, fontWeight: 700, color: '#374151', margin: '10px 0 6px' }}>
@@ -487,7 +518,7 @@ export function CustomersPage({
                 </p>
                 <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
                   <table className="ps-table" style={{ width: '100%' }}>
-                    <thead><tr><th></th><th>Date</th><th>Invoice No.</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+                    <thead><tr><th></th><th>Date</th><th>Invoice No.</th><th style={{ textAlign: 'right' }}>Total</th><th style={{ textAlign: 'right' }}>Paid</th><th style={{ textAlign: 'right' }}>Outstanding</th><th>Status</th></tr></thead>
                     <tbody>
                       {importRows.map(r => (
                         <tr key={r.invoiceNumber} title={r.raw}>
@@ -502,6 +533,9 @@ export function CustomersPage({
                           <td>{r.date}</td>
                           <td><code className="ps-code">{r.invoiceNumber}</code></td>
                           <td style={{ textAlign: 'right' }}><strong>£{r.amount.toFixed(2)}</strong></td>
+                          <td style={{ textAlign: 'right' }}>£{(r.amountPaid ?? 0).toFixed(2)}</td>
+                          <td style={{ textAlign: 'right' }}>£{(r.outstandingAmount ?? r.amount).toFixed(2)}</td>
+                          <td>{r.status ?? 'Unpaid'}</td>
                         </tr>
                       ))}
                     </tbody>

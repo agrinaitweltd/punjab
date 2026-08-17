@@ -55,29 +55,43 @@ export async function updateInvoice(id: string, input: Partial<Invoice>): Promis
     invoices for one customer. dueDate = issue date + the customer's credit days. */
 export async function importStatementInvoices(
   customerId: string,
-  rows: { date: string; invoiceNumber: string; amount: number }[],
+  rows: { date: string; invoiceNumber: string; amount: number; amountPaid?: number; outstandingAmount?: number; status?: Invoice["status"] }[],
   creditDays: number,
-): Promise<{ created: number; failed: string[] }> {
+): Promise<{ created: number; updated: number; failed: string[] }> {
   let created = 0
+  let updated = 0
   const failed: string[] = []
+  const existing = supabaseReady ? await databaseService.getInvoices() : invoices
   for (const row of rows) {
     const due = new Date(row.date + "T00:00:00")
     due.setDate(due.getDate() + creditDays)
+    const status = row.status ?? ((row.outstandingAmount ?? row.amount) <= 0 ? "Paid" : (row.amountPaid ?? 0) > 0 ? "Part Paid" : "Unpaid")
     try {
+      const duplicate = existing.find(i => i.customerId === customerId && i.invoiceNumber === row.invoiceNumber)
+      if (duplicate) {
+        await updateInvoice(duplicate.id, {
+          amountPaid: row.amountPaid ?? duplicate.amountPaid ?? 0,
+          status,
+          dueDate: duplicate.dueDate || due.toISOString().slice(0, 10),
+        })
+        updated++
+        continue
+      }
       await createInvoice({
         customerId,
         invoiceNumber: row.invoiceNumber,
         amount: row.amount,
         date: row.date,
         dueDate: due.toISOString().slice(0, 10),
-        status: "Unpaid",
+        amountPaid: row.amountPaid ?? 0,
+        status,
       })
       created++
     } catch {
       failed.push(row.invoiceNumber) // usually a duplicate invoice number
     }
   }
-  return { created, failed }
+  return { created, updated, failed }
 }
 
 export async function createPayment(input: Omit<Payment, "id" | "paymentReference">): Promise<Payment> {

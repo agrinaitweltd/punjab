@@ -447,7 +447,13 @@ class SupabaseDatabaseService {
       amount: input.amount, due_date: input.dueDate, status: input.status,
     }
     if (input.date) row.date = input.date
+    if (input.amountPaid !== undefined) row.amount_paid = input.amountPaid
     let { data, error } = await db().from("invoices").insert(row).select().single()
+    if (error && (error.code === "PGRST204" || /amount_paid/.test(error.message ?? "")) && "amount_paid" in row) {
+      const { amount_paid: _ap, ...rest } = row
+      void _ap
+      ;({ data, error } = await db().from("invoices").insert(rest).select().single())
+    }
     // Retry without the issue-date column if that migration hasn't been run yet.
     if (error && (error.code === "PGRST204" || /column .*date/.test(error.message ?? "")) && "date" in row) {
       const { date: _d, ...rest } = row
