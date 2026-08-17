@@ -516,6 +516,105 @@ tbody tr:hover td { background: #fafbfc; }
 .ps-badge-yellow { background: #fef9c3; color: #a16207; }
 .ps-badge-red    { background: #fee2e2; color: #b91c1c; }
 .ps-badge-gray   { background: #f3f4f6; color: #6b7280; }
+
+.stmt-preview {
+  border: 1px solid #d9e3dc;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 14px;
+  margin-bottom: 12px;
+  color: #1f2937;
+}
+.stmt-preview-head,
+.stmt-customer-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.stmt-preview-head {
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5ebe7;
+}
+.stmt-issuer,
+.stmt-customer-block,
+.stmt-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stmt-issuer strong {
+  font-size: 16px;
+  color: #0d2b1e;
+}
+.stmt-issuer span,
+.stmt-meta,
+.stmt-customer-block span {
+  font-size: 12.5px;
+  color: #6b7280;
+}
+.stmt-meta {
+  min-width: 180px;
+  font-family: Consolas, "Courier New", monospace;
+  text-align: right;
+}
+.stmt-customer-row {
+  align-items: flex-start;
+  padding: 12px 0;
+}
+.stmt-customer-block strong {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.stmt-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid #eef2ef;
+  border-bottom: 1px solid #eef2ef;
+}
+.stmt-summary-grid div {
+  min-width: 0;
+}
+.stmt-summary-grid span,
+.stmt-ageing > strong {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.stmt-summary-grid strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 18px;
+  color: #111827;
+}
+.stmt-ageing {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(5, minmax(85px, 1fr));
+  gap: 8px;
+  align-items: center;
+  padding-top: 10px;
+  font-size: 12.5px;
+}
+.stmt-ageing span {
+  color: #374151;
+}
+.stmt-ageing b {
+  display: block;
+  color: #111827;
+  margin-top: 2px;
+}
+
+@media (max-width: 760px) {
+  .stmt-meta { text-align: left; }
+  .stmt-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stmt-ageing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .ps-row-actions { display: flex; gap: 4px; }
 .ps-action-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: #fff; color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.12s; }
 .ps-action-btn:hover { background: #f3f4f6; color: var(--text); }

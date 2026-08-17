@@ -108,6 +108,7 @@ export function CustomersPage({
     [customers, query, showArchived],
   )
   const archivedCount = useMemo(() => customers.filter(c => c.archived).length, [customers])
+  const fmtMoney = (value: number | undefined | null) => `£${(value ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault()
@@ -485,28 +486,37 @@ export function CustomersPage({
             {importDone && <p style={{ color: '#15803d', fontSize: 13, background: '#f0fdf4', borderRadius: 8, padding: '8px 12px' }}>{importDone}</p>}
 
             {importStatement && (
-              <div style={{ border: '1px solid #dbe7dd', borderRadius: 8, padding: 12, marginBottom: 12, background: '#fbfdfb' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <div>
-                    <strong style={{ fontSize: 13.5 }}>{importStatement.customer.name}</strong>
-                    <div style={{ fontSize: 12.5, color: '#6b7a70' }}>Account #{importStatement.customer.accountNumber} - {importStatement.statementDate}</div>
+              <div className="stmt-preview">
+                <div className="stmt-preview-head">
+                  <div className="stmt-issuer"><strong>Punjab Exotic Foods Ltd</strong><span>Customer Statement Import</span></div>
+                  <div className="stmt-meta">
+                    <span>StmtDate: <strong>{importStatement.statementDate || 'Needs review'}</strong></span>
+                    <span>Acc No: <strong>{importStatement.customer.accountNumber || 'Needs review'}</strong></span>
+                  </div>
+                </div>
+                <div className="stmt-customer-row">
+                  <div className="stmt-customer-block">
+                    <strong>{importStatement.customer.name || 'Customer needs review'}</strong>
+                    {importStatement.customer.address.map(line => <span key={line}>{line}</span>)}
+                    {importStatement.customer.postcode && <span>{importStatement.customer.postcode}</span>}
                   </div>
                   <span className="ps-badge" style={importStatement.reconciled ? { background: '#dcfce7', color: '#15803d' } : { background: '#fef2f2', color: '#b91c1c' }}>
-                    {importStatement.reconciled ? 'Statement reconciled successfully' : 'Needs review'}
+                    {importStatement.reconciled ? 'Statement reconciled successfully' : 'Statement requires review'}
                   </span>
                 </div>
-                <div className="ps-stats-row" style={{ marginTop: 10 }}>
-                  <div className="ps-stat"><p className="ps-stat-label">Outstanding</p><p className="ps-stat-value">£{importStatement.totals.outstanding.toFixed(2)}</p></div>
-                  <div className="ps-stat"><p className="ps-stat-label">Total Invoiced</p><p className="ps-stat-value">£{importStatement.totals.invoiceTotal.toFixed(2)}</p></div>
-                  <div className="ps-stat"><p className="ps-stat-label">Total Paid</p><p className="ps-stat-value">£{importStatement.totals.paid.toFixed(2)}</p></div>
-                  <div className="ps-stat"><p className="ps-stat-label">Invoices</p><p className="ps-stat-value">{importStatement.invoiceCount}</p></div>
+                <div className="stmt-summary-grid">
+                  <div><span>Outstanding Balance</span><strong>{fmtMoney(importStatement.totals.outstanding)}</strong></div>
+                  <div><span>Total Invoiced</span><strong>{fmtMoney(importStatement.totals.invoiceTotal)}</strong></div>
+                  <div><span>Total Paid</span><strong>{fmtMoney(importStatement.totals.paid)}</strong></div>
+                  <div><span>Invoices</span><strong>{importStatement.invoiceCount}</strong></div>
                 </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: 12.5, color: '#374151' }}>
-                  <span>Current: <strong>£{importStatement.ageing.current.toFixed(2)}</strong></span>
-                  <span>7+ Days: <strong>£{importStatement.ageing.days7Plus.toFixed(2)}</strong></span>
-                  <span>14+ Days: <strong>£{importStatement.ageing.days14Plus.toFixed(2)}</strong></span>
-                  <span>21+ Days: <strong>£{importStatement.ageing.days21Plus.toFixed(2)}</strong></span>
-                  <span>Older: <strong>£{importStatement.ageing.older.toFixed(2)}</strong></span>
+                <div className="stmt-ageing">
+                  <strong>Outstanding Ageing</strong>
+                  <span>Current <b>{fmtMoney(importStatement.ageing.current)}</b></span>
+                  <span>7+ Days <b>{fmtMoney(importStatement.ageing.days7Plus)}</b></span>
+                  <span>14+ Days <b>{fmtMoney(importStatement.ageing.days14Plus)}</b></span>
+                  <span>21+ Days <b>{fmtMoney(importStatement.ageing.days21Plus)}</b></span>
+                  <span>Older <b>{fmtMoney(importStatement.ageing.older)}</b></span>
                 </div>
               </div>
             )}
@@ -518,7 +528,7 @@ export function CustomersPage({
                 </p>
                 <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
                   <table className="ps-table" style={{ width: '100%' }}>
-                    <thead><tr><th></th><th>Date</th><th>Invoice No.</th><th style={{ textAlign: 'right' }}>Total</th><th style={{ textAlign: 'right' }}>Paid</th><th style={{ textAlign: 'right' }}>Outstanding</th><th>Status</th></tr></thead>
+                    <thead><tr><th></th><th>Inv Date</th><th>Inv No</th><th style={{ textAlign: 'right' }}>GoodsAmt</th><th style={{ textAlign: 'right' }}>Vat</th><th style={{ textAlign: 'right' }}>Inv Total</th><th>DatePaid</th><th style={{ textAlign: 'right' }}>Amt Paid</th><th style={{ textAlign: 'right' }}>Item O/S</th><th style={{ textAlign: 'right' }}>TotalO/S</th><th>Status</th></tr></thead>
                     <tbody>
                       {importRows.map(r => (
                         <tr key={r.invoiceNumber} title={r.raw}>
@@ -532,9 +542,13 @@ export function CustomersPage({
                           </td>
                           <td>{r.date}</td>
                           <td><code className="ps-code">{r.invoiceNumber}</code></td>
-                          <td style={{ textAlign: 'right' }}><strong>£{r.amount.toFixed(2)}</strong></td>
-                          <td style={{ textAlign: 'right' }}>£{(r.amountPaid ?? 0).toFixed(2)}</td>
-                          <td style={{ textAlign: 'right' }}>£{(r.outstandingAmount ?? r.amount).toFixed(2)}</td>
+                          <td style={{ textAlign: 'right' }}>{fmtMoney(r.goodsAmount ?? r.amount)}</td>
+                          <td style={{ textAlign: 'right' }}>{fmtMoney(r.vatAmount)}</td>
+                          <td style={{ textAlign: 'right' }}><strong>{fmtMoney(r.amount)}</strong></td>
+                          <td>{r.datePaid || ''}</td>
+                          <td style={{ textAlign: 'right' }}>{fmtMoney(r.amountPaid)}</td>
+                          <td style={{ textAlign: 'right' }}>{fmtMoney(r.outstandingAmount ?? r.amount)}</td>
+                          <td style={{ textAlign: 'right' }}>{fmtMoney(r.runningOutstandingBalance ?? r.outstandingAmount ?? r.amount)}</td>
                           <td>{r.status ?? 'Unpaid'}</td>
                         </tr>
                       ))}
@@ -543,8 +557,8 @@ export function CustomersPage({
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
                   <span style={{ fontSize: 13.5 }}>
-                    Selected total:{' '}
-                    <strong>£{importRows.filter(r => importChecked.has(r.invoiceNumber)).reduce((s, r) => s + r.amount, 0).toFixed(2)}</strong>
+                    Selected outstanding:{' '}
+                    <strong>{fmtMoney(importRows.filter(r => importChecked.has(r.invoiceNumber)).reduce((s, r) => s + (r.outstandingAmount ?? r.amount), 0))}</strong>
                   </span>
                   <Button onClick={confirmImport} disabled={importBusy || importChecked.size === 0}>
                     {importBusy ? 'Importing…' : `Import ${importChecked.size} Invoice${importChecked.size !== 1 ? 's' : ''}`}

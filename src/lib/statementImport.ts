@@ -162,17 +162,19 @@ function parsePunjabCustomerStatement(lines: string[]): PunjabStatement | null {
     const amountPaid = values.amountPaid ?? 0
     const outstandingAmount = values.outstanding ?? 0
     const runningOutstandingBalance = values.running ?? 0
+    const datePaid = parseDate(line.slice(Math.max(0, cols.datePaid), Math.max(cols.datePaid + 18, cols.amountPaid)))
+    const status = !datePaid && amountPaid <= 0 ? "Unpaid" : outstandingAmount <= 0 ? "Paid" : "Part Paid"
     rows.push({
       date,
       invoiceNumber,
       amount: invoiceTotal || goodsAmount,
       goodsAmount,
       vatAmount,
-      datePaid: parseDate(line.slice(Math.max(0, cols.datePaid), Math.max(cols.datePaid + 18, cols.amountPaid))),
+      datePaid,
       amountPaid,
       outstandingAmount,
       runningOutstandingBalance,
-      status: outstandingAmount <= 0 ? "Paid" : amountPaid > 0 ? "Part Paid" : "Unpaid",
+      status,
       raw: normaliseLine(line),
     })
   }
