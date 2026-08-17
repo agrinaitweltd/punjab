@@ -163,15 +163,18 @@ function parsePunjabCustomerStatement(lines: string[]): PunjabStatement | null {
     const outstandingAmount = values.outstanding ?? 0
     const runningOutstandingBalance = values.running ?? 0
     const datePaid = parseDate(line.slice(Math.max(0, cols.datePaid), Math.max(cols.datePaid + 18, cols.amountPaid)))
-    const status = !datePaid && amountPaid <= 0 ? "Unpaid" : outstandingAmount <= 0 ? "Paid" : "Part Paid"
+    const statementAmount = invoiceTotal || goodsAmount
+    const isBlankPayment = !datePaid && amountPaid <= 0
+    const syncedAmountPaid = isBlankPayment ? 0 : Math.max(0, Math.round((statementAmount - outstandingAmount) * 100) / 100) || amountPaid
+    const status = isBlankPayment ? "Unpaid" : outstandingAmount <= 0 ? "Paid" : syncedAmountPaid > 0 ? "Part Paid" : "Unpaid"
     rows.push({
       date,
       invoiceNumber,
-      amount: invoiceTotal || goodsAmount,
+      amount: statementAmount,
       goodsAmount,
       vatAmount,
       datePaid,
-      amountPaid,
+      amountPaid: syncedAmountPaid,
       outstandingAmount,
       runningOutstandingBalance,
       status,

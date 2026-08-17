@@ -471,8 +471,8 @@ export function CustomersPage({
         {importTarget && (
           <div>
             <p style={{ fontSize: 13.5, color: '#6b7a70', marginBottom: 12 }}>
-              One-time migration from your old system: upload this customer's statement PDF. Every line with a date,
-              invoice number and amount becomes an unpaid invoice on their account, and their opening balance is set to the total.
+              Upload this customer's Punjab statement PDF. Each invoice row is matched to the statement columns,
+              and the customer's balance is synced to the outstanding amount that has not been paid.
               If it's a scanned statement, a photo or screenshot (JPG/PNG) usually reads more reliably than a scanned PDF.
             </p>
             <input

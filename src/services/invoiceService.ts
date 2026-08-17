@@ -65,12 +65,17 @@ export async function importStatementInvoices(
   for (const row of rows) {
     const due = new Date(row.date + "T00:00:00")
     due.setDate(due.getDate() + creditDays)
-    const status = row.status ?? ((row.outstandingAmount ?? row.amount) <= 0 ? "Paid" : (row.amountPaid ?? 0) > 0 ? "Part Paid" : "Unpaid")
+    const outstanding = row.outstandingAmount ?? Math.max(0, row.amount - (row.amountPaid ?? 0))
+    const inferredPaid = row.outstandingAmount !== undefined && row.status !== "Unpaid"
+      ? Math.max(0, Math.round((row.amount - outstanding) * 100) / 100)
+      : 0
+    const amountPaid = Math.max(row.amountPaid ?? 0, inferredPaid)
+    const status = row.status ?? (outstanding <= 0 ? "Paid" : amountPaid > 0 ? "Part Paid" : "Unpaid")
     try {
       const duplicate = existing.find(i => i.customerId === customerId && i.invoiceNumber === row.invoiceNumber)
       if (duplicate) {
         await updateInvoice(duplicate.id, {
-          amountPaid: row.amountPaid ?? duplicate.amountPaid ?? 0,
+          amountPaid,
           status,
           dueDate: duplicate.dueDate || due.toISOString().slice(0, 10),
         })
@@ -83,7 +88,7 @@ export async function importStatementInvoices(
         amount: row.amount,
         date: row.date,
         dueDate: due.toISOString().slice(0, 10),
-        amountPaid: row.amountPaid ?? 0,
+        amountPaid,
         status,
       })
       created++
