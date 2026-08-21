@@ -523,7 +523,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'files') {
-      return <FilesPage customers={customers} />
+          return <FilesPage customers={customers} invoices={invoices} />
     }
 
     if (current === 'customers') {

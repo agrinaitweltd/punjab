@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { Customer } from "../../types"
+import type { Customer, Invoice } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { listFiles, uploadFile, deleteFile, renameFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
@@ -16,7 +16,7 @@ function fileKind(type: string, name: string) {
 
 const INTERNAL = "__internal__"
 
-export function FilesPage({ customers }: { customers: Customer[] }) {
+export function FilesPage({ customers, invoices = [] }: { customers: Customer[]; invoices?: Invoice[] }) {
   const [files, setFiles] = useState<StoredFile[]>([])
   const [loading, setLoading] = useState(true)
   const [folderQuery, setFolderQuery] = useState("")
@@ -44,11 +44,19 @@ export function FilesPage({ customers }: { customers: Customer[] }) {
 
   const folders = useMemo(() => {
     const q = folderQuery.trim().toLowerCase()
-    return customers.filter(c => !q || `${c.companyName} ${c.customerNumber}`.toLowerCase().includes(q))
-  }, [customers, folderQuery])
+    return customers.filter(c => {
+      if (!q) return true
+      const customerInvoices = invoices.filter(i => i.customerId === c.id).map(i => i.invoiceNumber).join(' ')
+      return `${c.companyName} ${c.customerNumber} ${c.email} ${c.phone} ${customerInvoices}`.toLowerCase().includes(q)
+    })
+  }, [customers, invoices, folderQuery])
 
   const selectedCustomer = selected === INTERNAL ? null : customers.find(c => c.id === selected)
-  const folderFiles = files.filter(f => (selected === INTERNAL ? !f.customerId : f.customerId === selected))
+  const folderFiles = files.filter(f => {
+    const inFolder = selected === INTERNAL ? !f.customerId : f.customerId === selected
+    const q = folderQuery.trim().toLowerCase()
+    return inFolder && (!q || `${f.name} ${f.note ?? ''}`.toLowerCase().includes(q) || (selected !== INTERNAL && folders.some(c => c.id === selected)))
+  })
 
   const onPick = async (f: File | undefined) => {
     if (!f) return

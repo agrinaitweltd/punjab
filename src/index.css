@@ -2106,6 +2106,8 @@ tbody tr:hover td { background: #fafbfc; }
 .status-badge.danger { background: #fee4e2; color: #b42318; }
 .status-badge.warning { background: #fff1cc; color: #9a6700; }
 .status-badge.info { background: #e0f2fe; color: #075985; }
+.hr-card-av, .doc-folder-icon { border-radius: 10px !important; }
+.hr-card-av, .doc-folder-icon { letter-spacing: 0; }
 .modal {
   border-radius: 18px !important;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28) !important;
