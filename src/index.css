@@ -2108,6 +2108,20 @@ tbody tr:hover td { background: #fafbfc; }
 .status-badge.info { background: #e0f2fe; color: #075985; }
 .hr-card-av, .doc-folder-icon { border-radius: 10px !important; }
 .hr-card-av, .doc-folder-icon { letter-spacing: 0; }
+.create-customer-results { display: grid; background: #fff; border: 1px solid var(--border); border-radius: 8px; margin-top: 5px; overflow: hidden; }
+.create-customer-results button { text-align: left; border: 0; border-bottom: 1px solid var(--border-light); background: #fff; padding: 10px 12px; cursor: pointer; color: var(--text-heading); }
+.create-customer-results button:hover { background: var(--green-50); }
+.invoice-customer-summary { display: grid; gap: 4px; padding: 12px 14px; background: var(--green-50); border-left: 3px solid var(--green-600); color: var(--text-heading); }
+.invoice-customer-summary span { color: var(--text-muted); font-size: 12.5px; }
+.invoice-builder-table { overflow-x: auto; }
+.invoice-builder-table table { min-width: 900px; }
+.invoice-builder-table td input { min-width: 64px; width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 6px; font: inherit; }
+.invoice-total-panel { display: flex; justify-content: flex-end; gap: 22px; flex-wrap: wrap; margin: 18px 0; padding-top: 14px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.invoice-total-panel span { display: grid; gap: 4px; text-align: right; }
+.invoice-total-panel strong { color: var(--text-heading); font-size: 15px; }
+.invoice-total-panel .grand strong { color: var(--green-700); font-size: 20px; }
+.success-message, .error-message { padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+.success-message { color: #166534; background: #dcfce7; }.error-message { color: #b42318; background: #fee4e2; }
 .modal {
   border-radius: 18px !important;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28) !important;

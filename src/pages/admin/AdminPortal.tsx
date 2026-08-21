@@ -107,6 +107,7 @@ import { DashboardHome } from './DashboardHome'
 import { DeliveryAreasPage } from './DeliveryAreasPage'
 import { InvoicesPage } from './InvoicesPage'
 import { OutstandingInvoicesPage } from './OutstandingInvoicesPage'
+import { CreateInvoicePage } from './CreateInvoicePage'
 import { InvoiceNumbersPage } from './InvoiceNumbersPage'
 import { SalesLoginPage } from './SalesLoginPage'
 import { AnalyticsPage } from './AnalyticsPage'
@@ -730,6 +731,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
         await load()
       }} />
+    }
+
+    if (current === 'create-invoice') {
+      return <CreateInvoicePage customers={customers} invoices={invoices} onCreated={load} />
     }
 
     if (current === 'day-trade') {
