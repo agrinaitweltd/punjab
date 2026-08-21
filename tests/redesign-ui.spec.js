@@ -38,8 +38,8 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
       localStorage.setItem('punjab-cookie-consent', JSON.stringify({ necessary: true }))
       localStorage.setItem('sb-vqnnlorukpzsftfisjrm-auth-token', JSON.stringify(session))
     }, { user, session })
-    await page.route('**/api/system-overview', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(overview) }))
-    await page.route('**/api/system-mode', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ testMode: false, changedAt: null }) }))
+    await page.route('**/api/admin-security?action=system-overview', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(overview) }))
+    await page.route('**/api/admin-security?action=system-mode', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ testMode: false, changedAt: null }) }))
     await page.goto(origin, { waitUntil: 'domcontentloaded' })
 
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open menu' }).click()

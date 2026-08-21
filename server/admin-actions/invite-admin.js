@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
-import { guardApi, safeError } from '../server/security.js'
-import { requireSensitiveStaff, writeSystemAudit } from '../server/sensitive-actions.js'
+import { guardApi, safeError } from '../security.js'
+import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js'
 
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 

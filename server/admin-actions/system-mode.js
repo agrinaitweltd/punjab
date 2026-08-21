@@ -1,5 +1,5 @@
-import { guardApi, requireUser, safeError } from '../server/security.js'
-import { requireSensitiveStaff, writeSystemAudit } from '../server/sensitive-actions.js'
+import { guardApi, requireUser, safeError } from '../security.js'
+import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js'
 
 export default async function handler(req, res) {
   if (!guardApi(req, res, { methods: ['GET', 'POST'], maxBytes: 4_096, limit: 20 })) return

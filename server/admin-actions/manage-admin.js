@@ -1,5 +1,5 @@
-import { guardApi, safeError } from '../server/security.js'
-import { requireSensitiveStaff, writeSystemAudit } from '../server/sensitive-actions.js'
+import { guardApi, safeError } from '../security.js'
+import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js'
 
 export default async function handler(req, res) {
   if (!guardApi(req, res, { maxBytes: 32_000, limit: 12, windowMs: 15 * 60_000 })) return

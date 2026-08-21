@@ -16,20 +16,20 @@ async function api<T>(path: string, init: RequestInit = {}, sensitiveToken?: str
 }
 
 export async function verifySensitiveAction(password: string) {
-  return api<{ token: string; expiresIn: number }>('/api/verify-sensitive-action', { method: 'POST', body: JSON.stringify({ password }) })
+  return api<{ token: string; expiresIn: number }>('/api/admin-security?action=verify-sensitive-action', { method: 'POST', body: JSON.stringify({ password }) })
 }
 
 export type AdminInvitationInput = { name: string; email: string; role: string; jobTitle: string; permissions: PermissionSet; isSalesman: boolean; salesmanIds: string[] }
 export async function inviteAdmin(input: AdminInvitationInput, sensitiveToken: string) {
-  return api<{ ok: true }>('/api/invite-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)
+  return api<{ ok: true }>('/api/admin-security?action=invite-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)
 }
 
 export async function manageAdmin(input: Record<string, unknown>, sensitiveToken: string) {
-  return api<{ ok: true }>('/api/manage-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)
+  return api<{ ok: true }>('/api/admin-security?action=manage-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)
 }
 
-export async function getSystemOverview() { return api<SystemOverview>('/api/system-overview') }
-export async function getSystemMode() { return api<{ testMode: boolean; changedAt: string | null }>('/api/system-mode') }
+export async function getSystemOverview() { return api<SystemOverview>('/api/admin-security?action=system-overview') }
+export async function getSystemMode() { return api<{ testMode: boolean; changedAt: string | null }>('/api/admin-security?action=system-mode') }
 
 export type SystemOverview = {
   health: Record<string, string>

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { guardApi, requireUser } from '../server/security.js'
-import { issueSensitiveToken } from '../server/sensitive-actions.js'
+import { guardApi, requireUser } from '../security.js'
+import { issueSensitiveToken } from '../sensitive-actions.js'
 
 export default async function handler(req, res) {
   if (!guardApi(req, res, { maxBytes: 4_096, limit: 8, windowMs: 15 * 60_000 })) return

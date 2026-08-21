@@ -37,7 +37,7 @@ export function SetPasswordPage({ onDone }: { onDone: () => void }) {
     if (updateError) { setBusy(false); setError('Your password could not be saved. The link may have expired; request a new one.'); return }
     const { data } = await supabase.auth.getSession()
     if (data.session?.access_token) {
-      await fetch('/api/complete-account-setup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token }, body: '{}' }).catch(() => null)
+      await fetch('/api/admin-security?action=complete-account-setup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token }, body: '{}' }).catch(() => null)
     }
     window.history.replaceState(null, '', window.location.pathname)
     setBusy(false); setComplete(true)
