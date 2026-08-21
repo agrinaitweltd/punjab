@@ -728,6 +728,14 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         const newPaid = Math.min(invoice.amount, (invoice.amountPaid ?? 0) + amount)
         await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
         await updateInvoice(invoice.id, { amountPaid: newPaid, status: newPaid >= invoice.amount ? 'Paid' : 'Part Paid' })
+        const customer = customers.find(c => c.id === invoice.customerId)
+        if (customer) {
+          await updateCustomer(customer.id, { balance: Math.max(0, (customer.balance ?? 0) - amount) })
+          if (newPaid >= invoice.amount) {
+            void sendPaymentReceived(invoice, customer, amount, user.displayName)
+            if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)))
+          }
+        }
         void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
         await load()
       }} />
