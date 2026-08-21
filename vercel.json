@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "api/generate-invoice-docx.js": { "includeFiles": "Punjab Invoice Template.docx" }
+  },
   "crons": [
     {
       "path": "/api/cron-whatsapp-reminders",

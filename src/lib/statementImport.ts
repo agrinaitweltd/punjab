@@ -279,6 +279,15 @@ async function imageFileToLines(file: File): Promise<string[]> {
   return ocrCanvas(canvas)
 }
 
+export async function extractDocumentLines(file: File, onProgress?: (msg: string) => void): Promise<string[]> {
+  if (file.type.startsWith('image/')) {
+    onProgress?.('Reading invoice image...')
+    return imageFileToLines(file)
+  }
+  const result = await pdfToLines(file, onProgress)
+  return result.lines
+}
+
 async function pdfToLines(file: File, onProgress?: (msg: string) => void): Promise<{ lines: string[]; renderFailed: boolean }> {
   const pdfjs = await loadPdfjs()
   const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise

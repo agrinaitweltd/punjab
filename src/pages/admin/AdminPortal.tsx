@@ -544,6 +544,24 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             }
             await load()
           }}
+          onCreateFromInvoice={async (data) => {
+            let customer = customers.find(c => c.customerNumber === data.customer.accountNumber)
+            if (!customer) {
+              customer = await createCustomer({
+                companyName: data.customer.companyName, contactPerson: '', email: data.customer.email || `${data.customer.accountNumber}@pending.punjab.local`,
+                phone: data.customer.phone, customerNumber: data.customer.accountNumber, password: `pending-${Math.random().toString(36).slice(2, 12)}`,
+                address: data.customer.address, deliveryArea: '', paymentTerms: '14 Days', creditDays: 14,
+              })
+              void logActivity(user.displayName, `created customer ${customer.companyName} from invoice`)
+            }
+            const issueDate = data.invoice.date || new Date().toISOString().slice(0, 10)
+            const due = new Date(`${issueDate}T00:00:00`); due.setDate(due.getDate() + (customer.creditDays ?? 14))
+            if (data.invoice.invoiceNumber && invoices.some(i => i.invoiceNumber === data.invoice.invoiceNumber)) throw new Error('That invoice number already exists.')
+            await createInvoice({ customerId: customer.id, ...(data.invoice.invoiceNumber ? { invoiceNumber: data.invoice.invoiceNumber } : {}), date: issueDate, dueDate: due.toISOString().slice(0, 10), amount: data.invoice.grandTotal, amountPaid: 0, status: 'Unpaid' })
+            await updateCustomer(customer.id, { balance: data.customer.ledgerBalance || Math.max(0, (customer.balance ?? 0) + data.invoice.grandTotal) })
+            void logActivity(user.displayName, `uploaded first invoice for ${customer.companyName}`)
+            await load()
+          }}
           onUpdate={async (id, input) => {
             await updateCustomer(id, input)
             await load()

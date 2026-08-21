@@ -2122,6 +2122,9 @@ tbody tr:hover td { background: #fafbfc; }
 .invoice-total-panel .grand strong { color: var(--green-700); font-size: 20px; }
 .success-message, .error-message { padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 .success-message { color: #166534; background: #dcfce7; }.error-message { color: #b42318; background: #fee4e2; }
+.invoice-upload-zone { display: grid; place-items: center; gap: 5px; min-height: 130px; padding: 22px; border: 1.5px dashed #86b895; background: #f7fbf8; border-radius: 8px; cursor: pointer; color: var(--text-heading); }
+.invoice-upload-zone span { font-size: 12px; color: var(--text-muted); }.invoice-upload-zone input { margin-top: 8px; max-width: 100%; }
+.processing-message { padding: 10px 12px; border-left: 3px solid var(--green-600); background: var(--green-50); color: var(--green-800); font-size: 13px; }
 .modal {
   border-radius: 18px !important;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28) !important;

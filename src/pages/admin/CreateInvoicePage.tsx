@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Customer, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { createInvoice } from '../../services/invoiceService'
+import { uploadFile } from '../../lib/fileService'
 
 type Line = { line: string; qty: string; product: string; variety: string; size: string; price: string; vatRate: string; vatCode: string }
 const blankLine = (): Line => ({ line: '', qty: '1', product: '', variety: '', size: '', price: '0', vatRate: '0', vatCode: '0' })
@@ -32,9 +33,25 @@ export function CreateInvoicePage({ customers, invoices, onCreated }: { customer
     const existing = invoices.map(i => i.invoiceNumber)
     const generated = invoiceNumber.trim() || `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(3, '0')}`
     if (existing.includes(generated)) { setMessage('That invoice number already exists. Choose another number.'); setSaving(false); return }
-    await createInvoice({ customerId: customer.id, invoiceNumber: generated, amount: Math.round(totals.total * 100) / 100, amountPaid: 0, status: 'Unpaid', date: invoiceDate, dueDate: due.toISOString().slice(0, 10) })
-    await onCreated(); setMessage(`Invoice ${generated} created for ${customer.companyName}.`); setInvoiceNumber(''); setLines([blankLine()])
-    setSaving(false)
+    try {
+      const addressParts = (customer.address || customer.registeredAddress || '').split(',').map(x => x.trim()).filter(Boolean)
+      const response = await fetch('/api/generate-invoice-docx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      customer: { name: customer.companyName, accountNumber: customer.customerNumber, addressLine1: addressParts[0] || '', addressLine2: addressParts.slice(1, -1).join(', '), postcode: addressParts.at(-1) || '', phone: customer.phone, balance: customer.balance ?? 0 },
+      invoice: { invoiceNumber: generated, date: invoiceDate, packages, totalGoods: totals.goods, vatTotal: totals.vat, grandTotal: totals.total }, items: lines,
+      }) })
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Invoice document generation failed')
+      const blob = await response.blob()
+      const fileName = `Punjab-Invoice-${generated.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`
+      const dataUri = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob) })
+      await createInvoice({ customerId: customer.id, invoiceNumber: generated, amount: Math.round(totals.total * 100) / 100, amountPaid: 0, status: 'Unpaid', date: invoiceDate, dueDate: due.toISOString().slice(0, 10) })
+      await uploadFile(fileName, blob.type, blob.size, dataUri, `Generated invoice ${generated}`, customer.id, customer.companyName)
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; anchor.click(); URL.revokeObjectURL(url)
+      await onCreated(); setMessage(`Invoice ${generated} created, stored in Files and downloaded.`); setInvoiceNumber(''); setLines([blankLine()])
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Invoice generation failed. No invoice was saved.')
+    } finally {
+      setSaving(false)
+    }
   }
   return <div className="stack">
     <div className="page-heading"><div><h1>Create Invoice</h1><p>Create a new invoice from the dashboard. Totals are calculated from the product rows.</p></div></div>

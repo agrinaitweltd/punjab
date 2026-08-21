@@ -13,6 +13,7 @@ import { CustomerStatementModal } from './CustomerStatementModal'
 import { SendWhatsAppModal } from '../../components/SendWhatsAppModal'
 import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
 import { SALESMEN } from '../../lib/salesmen'
+import { parseLegacyInvoice, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
 
 const initialForm = {
   companyName: '',
@@ -56,6 +57,7 @@ export function CustomersPage({
   whatsappTemplates = [],
   onSendWhatsApp,
   onSaveWhatsAppTemplate,
+  onCreateFromInvoice,
 }: {
   customers: Customer[]
   deliveryAreas: DeliveryArea[]
@@ -72,6 +74,7 @@ export function CustomersPage({
   whatsappTemplates?: WhatsAppTemplate[]
   onSendWhatsApp?: (phone: string, message: string, customer: Customer) => Promise<void>
   onSaveWhatsAppTemplate?: (name: string, message: string) => Promise<void>
+  onCreateFromInvoice?: (data: ImportedLegacyInvoice) => Promise<void>
 }) {
   const [whatsappTarget, setWhatsappTarget] = useState<Customer | null>(null)
   const [whatsappBusy, setWhatsappBusy] = useState(false)
@@ -83,7 +86,9 @@ export function CustomersPage({
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
-  const [addMode, setAddMode] = useState<'invite' | 'full'>('invite')
+  const [addMode, setAddMode] = useState<'invoice' | 'invite' | 'full'>('invoice')
+  const [invoiceReview, setInvoiceReview] = useState<ImportedLegacyInvoice | null>(null)
+  const [invoiceReading, setInvoiceReading] = useState('')
   const [fullForm, setFullForm] = useState(initialFullForm)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -217,6 +222,22 @@ export function CustomersPage({
     setImportStatement(null); setImportMsg(''); setImportDone('')
   }
 
+  const readFirstInvoice = async (file?: File) => {
+    if (!file) return
+    setAddError(''); setInvoiceReview(null); setInvoiceReading('Reading invoice...')
+    try { setInvoiceReview(await parseLegacyInvoice(file, setInvoiceReading)) } catch { setAddError('Could not read that invoice. Try the original PDF, JPG or PNG file.') }
+    setInvoiceReading('')
+  }
+
+  const submitInvoiceCustomer = async () => {
+    if (!invoiceReview || !onCreateFromInvoice) return
+    if (!/^\d{6}$/.test(invoiceReview.customer.accountNumber)) { setAddError('Account Number must be exactly six digits from the invoice Num field.'); return }
+    if (!invoiceReview.customer.companyName.trim()) { setAddError('Company name is required.'); return }
+    setAdding(true); setAddError('')
+    try { await onCreateFromInvoice(invoiceReview); setShowAdd(false); setInvoiceReview(null) } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not create the customer and invoice.') }
+    setAdding(false)
+  }
+
   const handleStatementFile = async (file: File | undefined) => {
     if (!file) return
     setImportBusy(true); setImportMsg(''); setImportProgress('Reading statement…'); setImportRows([]); setImportDone('')
@@ -270,12 +291,16 @@ export function CustomersPage({
           <Button variant="secondary" onClick={() => setShowArchived(a => !a)}>
             {showArchived ? '← Back to Customers' : `Archived Customers${archivedCount > 0 ? ` (${archivedCount})` : ''}`}
           </Button>
-          {!showArchived && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invite'); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
+          {!showArchived && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invoice'); setInvoiceReview(null); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
         </div>
       </div>
 
-      <Modal open={showAdd} title={addMode === 'invite' ? 'Invite New Customer' : 'Create Customer Account'} onClose={() => setShowAdd(false)} wide={addMode === 'full'}>
+      <Modal open={showAdd} title={addMode === 'invoice' ? 'Create Customer from Invoice' : addMode === 'invite' ? 'Invite New Customer' : 'Create Customer Account'} onClose={() => setShowAdd(false)} wide={addMode !== 'invite'}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          <button type="button" onClick={() => { setAddMode('invoice'); setAddError('') }}
+            style={{ flex: 1, padding: '9px 14px', borderRadius: 8, cursor: 'pointer', border: addMode === 'invoice' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'invoice' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13 }}>
+            From Invoice
+          </button>
           <button type="button" onClick={() => { setAddMode('invite'); setAddError('') }}
             style={{ flex: 1, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', border: addMode === 'invite' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'invite' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13, color: addMode === 'invite' ? '#14532d' : '#374151' }}>
             Invite by Email
@@ -286,7 +311,29 @@ export function CustomersPage({
           </button>
         </div>
 
-        {addMode === 'invite' ? (
+        {addMode === 'invoice' ? (
+          <div className="stack">
+            <label className="invoice-upload-zone"><strong>Upload First Invoice</strong><span>PDF, JPG, JPEG or PNG</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e => readFirstInvoice(e.target.files?.[0])} /></label>
+            {invoiceReading && <p className="processing-message">{invoiceReading}</p>}
+            {invoiceReview && <>
+              <div className="form-grid">
+                <Input label="Company Name" value={invoiceReview.customer.companyName} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, companyName: e.target.value } })} />
+                <Input label="Account Number" value={invoiceReview.customer.accountNumber} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, accountNumber: e.target.value.replace(/\D/g,'').slice(0,6) } })} />
+                <div className="wide"><Input label="Address" value={invoiceReview.customer.address} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, address: e.target.value } })} /></div>
+                <Input label="Telephone" value={invoiceReview.customer.phone} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, phone: e.target.value } })} />
+                <Input label="Email" value={invoiceReview.customer.email} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, email: e.target.value } })} />
+                <Input label="Invoice Number" value={invoiceReview.invoice.invoiceNumber} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, invoiceNumber: e.target.value } })} />
+                <Input label="Invoice Date" type="date" value={invoiceReview.invoice.date} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, date: e.target.value } })} />
+                <Input label="Grand Total (£)" type="number" value={String(invoiceReview.invoice.grandTotal)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, grandTotal: Number(e.target.value) || 0 } })} />
+                <Input label="Packages" type="number" value={String(invoiceReview.invoice.packages)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, packages: Number(e.target.value) || 0 } })} />
+              </div>
+              {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber) && <p className="processing-message">Existing Customer Found: {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber)?.companyName}</p>}
+              {invoiceReview.warnings.map(w => <p className="error-message" key={w}>{w}</p>)}
+              <div className="actions-row"><Button onClick={submitInvoiceCustomer} disabled={adding}>{adding ? 'Saving...' : customers.some(c => c.customerNumber === invoiceReview.customer.accountNumber) ? 'Add Invoice to Existing Customer' : 'Create Customer & Add Invoice'}</Button></div>
+            </>}
+            {addError && <p className="error-message">{addError}</p>}
+          </div>
+        ) : addMode === 'invite' ? (
           <form onSubmit={submitCreate}>
             <div className="inv-hero">
               <span className="inv-ico">
