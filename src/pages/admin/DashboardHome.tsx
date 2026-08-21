@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus, Invoice } from "../../types"
+import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus, Invoice, Payment, Expense } from "../../types"
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { CountUp } from "../../components/CountUp"
@@ -71,10 +71,12 @@ type HomeTab = "overview" | "orders" | "customers"
 type CustFilter = "all" | "active" | "inactive"
 
 export function DashboardHome({
-  customers, products, orders, stock = [], activity = [], invoices = [], onNavigate,
+  customers, products, orders, stock = [], activity = [], invoices = [], payments = [], expenses = [], onNavigate,
 }: {
   customers: Customer[]; products: Product[]; orders: Order[]; stock?: StockItem[]; activity?: ActivityLog[]
   invoices?: Invoice[]
+  payments?: Payment[]
+  expenses?: Expense[]
   onNavigate?: (page: string) => void
 }) {
   const [tab, setTab]               = useState<HomeTab>("overview")
@@ -90,14 +92,17 @@ export function DashboardHome({
   const statusFilter = STATUS_FILTERS[statusIdx]
 
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
-  const pendingOrders = orders.filter(o => o.status === "Pending").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
-  const avgOrder      = orders.length ? orderRevenue / orders.length : 0
 
   const totalBusiness = invoices.reduce((s, i) => s + i.amount, 0)
   const totalPaid     = invoices.reduce((s, i) => s + (i.amountPaid ?? (i.status === "Paid" ? i.amount : 0)), 0)
   const totalOutstanding = Math.max(0, totalBusiness - totalPaid)
   const paidPct = totalBusiness > 0 ? Math.round((totalPaid / totalBusiness) * 100) : 0
+  const month = new Date().toISOString().slice(0, 7)
+  const monthPayments = payments.filter(p => p.date.startsWith(month)).reduce((s,p) => s + p.amount, 0)
+  const monthInvoiced = invoices.filter(i => (i.date ?? '').startsWith(month)).reduce((s,i) => s + i.amount, 0)
+  const monthExpenses = expenses.filter(e => e.expenseDate.startsWith(month)).reduce((s,e) => s + e.amount, 0)
+  const netPosition = monthPayments - monthExpenses
 
   /* per-day series for the overview charts */
   const byDay: Record<string, { n: number; rev: number }> = {}
@@ -293,10 +298,11 @@ export function DashboardHome({
       {tab === "overview" && (
         <>
           <div className="ho-stats">
-            <HoStat label="Total Revenue" value={<CountUp value={orderRevenue} prefix="£" decimals={0} />} delta="+3.4%" up />
-            <HoStat label="New Sales" value={<CountUp value={pendingOrders} />} delta="+2.2%" up />
-            <HoStat label="Active Sales" value={<CountUp value={activeOrders} />} delta="+1.5%" up />
-            <HoStat label="Avg Order" value={<CountUp value={avgOrder} prefix="£" />} delta="+0.9%" up />
+            <HoStat label="Outstanding Payments" value={<CountUp value={totalOutstanding} prefix="£" decimals={2} />} delta={`${invoices.filter(i => i.status !== 'Paid').length} invoices`} />
+            <HoStat label="Payments Received" value={<CountUp value={monthPayments} prefix="£" decimals={2} />} delta="this month" up />
+            <HoStat label="Total Invoiced" value={<CountUp value={monthInvoiced} prefix="£" decimals={2} />} delta="this month" up />
+            <HoStat label="Expenses" value={<CountUp value={monthExpenses} prefix="£" decimals={2} />} delta="this month" />
+            <HoStat label="Net Position" value={<CountUp value={netPosition} prefix="£" decimals={2} />} delta="payments minus expenses" up={netPosition >= 0} />
           </div>
 
           <div className="ho-card" style={{ marginBottom: 18 }}>

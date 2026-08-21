@@ -58,6 +58,8 @@ export function CustomersPage({
   onSendWhatsApp,
   onSaveWhatsAppTemplate,
   onCreateFromInvoice,
+  onNavigate,
+  onInviteCustomer,
 }: {
   customers: Customer[]
   deliveryAreas: DeliveryArea[]
@@ -75,6 +77,8 @@ export function CustomersPage({
   onSendWhatsApp?: (phone: string, message: string, customer: Customer) => Promise<void>
   onSaveWhatsAppTemplate?: (name: string, message: string) => Promise<void>
   onCreateFromInvoice?: (data: ImportedLegacyInvoice) => Promise<void>
+  onNavigate?: (page: string) => void
+  onInviteCustomer?: (accountNumber: string, email: string, phone: string) => Promise<void>
 }) {
   const [whatsappTarget, setWhatsappTarget] = useState<Customer | null>(null)
   const [whatsappBusy, setWhatsappBusy] = useState(false)
@@ -89,6 +93,13 @@ export function CustomersPage({
   const [addMode, setAddMode] = useState<'invoice' | 'invite' | 'full'>('invoice')
   const [invoiceReview, setInvoiceReview] = useState<ImportedLegacyInvoice | null>(null)
   const [invoiceReading, setInvoiceReading] = useState('')
+  const [onboardingCustomer, setOnboardingCustomer] = useState('')
+  const [onboardingContact, setOnboardingContact] = useState(false)
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [onboardingAccount, setOnboardingAccount] = useState('')
+  const [accountProfile, setAccountProfile] = useState<Customer | null>(null)
+  const [profileTab, setProfileTab] = useState('Overview')
   const [fullForm, setFullForm] = useState(initialFullForm)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -234,7 +245,7 @@ export function CustomersPage({
     if (!/^\d{6}$/.test(invoiceReview.customer.accountNumber)) { setAddError('Account Number must be exactly six digits from the invoice Num field.'); return }
     if (!invoiceReview.customer.companyName.trim()) { setAddError('Company name is required.'); return }
     setAdding(true); setAddError('')
-    try { await onCreateFromInvoice(invoiceReview); setShowAdd(false); setInvoiceReview(null) } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not create the customer and invoice.') }
+    try { await onCreateFromInvoice(invoiceReview); setOnboardingCustomer(`${invoiceReview.customer.companyName} - ${invoiceReview.customer.accountNumber}`); setOnboardingAccount(invoiceReview.customer.accountNumber); setContactEmail(invoiceReview.customer.email); setContactPhone(invoiceReview.customer.phone); setInvoiceReview(null) } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not create the customer and invoice.') }
     setAdding(false)
   }
 
@@ -291,7 +302,7 @@ export function CustomersPage({
           <Button variant="secondary" onClick={() => setShowArchived(a => !a)}>
             {showArchived ? '← Back to Customers' : `Archived Customers${archivedCount > 0 ? ` (${archivedCount})` : ''}`}
           </Button>
-          {!showArchived && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invoice'); setInvoiceReview(null); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
+          {!showArchived && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invoice'); setInvoiceReview(null); setOnboardingCustomer(''); setOnboardingContact(false); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
         </div>
       </div>
 
@@ -313,6 +324,9 @@ export function CustomersPage({
 
         {addMode === 'invoice' ? (
           <div className="stack">
+            {onboardingCustomer && !invoiceReview && !onboardingContact && <div className="onboarding-success"><strong>Customer Created / Invoice Added</strong><span>{onboardingCustomer}</span><p>Would you like to add another invoice for this customer?</p><div className="actions-row"><Button onClick={()=>setOnboardingCustomer('')}>+ Add Another Invoice</Button><Button variant="secondary" onClick={()=>setOnboardingContact(true)}>Finished Adding Invoices</Button></div></div>}
+            {onboardingContact && <div className="stack"><div className="onboarding-success"><strong>Customer Contact & Portal Access</strong><span>{onboardingCustomer}</span></div><div className="form-grid"><Input label="Email Address" type="email" value={contactEmail} onChange={e=>setContactEmail(e.target.value)}/><Input label="Telephone Number" value={contactPhone} onChange={e=>setContactPhone(e.target.value)}/></div><h3>Invite Customer to Portal?</h3><div className="actions-row"><Button disabled={!contactEmail||adding} onClick={async()=>{if(!onInviteCustomer)return;setAdding(true);await onInviteCustomer(onboardingAccount,contactEmail,contactPhone);setAdding(false);setShowAdd(false);setOnboardingContact(false);setOnboardingCustomer('')}}>{adding?'Sending...':'Send Invitation'}</Button><Button variant="secondary" onClick={()=>{setShowAdd(false);setOnboardingContact(false);setOnboardingCustomer('')}}>Not Now</Button><Button variant="ghost" onClick={()=>{setOnboardingContact(false);setOnboardingCustomer('')}}>+ Add Another Invoice</Button></div></div>}
+            {!onboardingCustomer && !onboardingContact && <>
             <label className="invoice-upload-zone"><strong>Upload First Invoice</strong><span>PDF, JPG, JPEG or PNG</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e => readFirstInvoice(e.target.files?.[0])} /></label>
             {invoiceReading && <p className="processing-message">{invoiceReading}</p>}
             {invoiceReview && <>
@@ -327,11 +341,14 @@ export function CustomersPage({
                 <Input label="Grand Total (£)" type="number" value={String(invoiceReview.invoice.grandTotal)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, grandTotal: Number(e.target.value) || 0 } })} />
                 <Input label="Packages" type="number" value={String(invoiceReview.invoice.packages)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, packages: Number(e.target.value) || 0 } })} />
               </div>
+              <div className="invoice-builder-table"><table><thead><tr>{['Line','Qty','Product','Variety','Size','Price','VAT %','Remove'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{invoiceReview.items.map((item,index)=><tr key={index}>{(['line','quantity','product','variety','size','price','vatRate'] as const).map(key=><td key={key}><input value={String(item[key])} onChange={e=>setInvoiceReview({...invoiceReview,items:invoiceReview.items.map((x,i)=>i===index?{...x,[key]:['quantity','price','vatRate'].includes(key)?Number(e.target.value):e.target.value}:x)})}/></td>)}<td><button className="icon-button" onClick={()=>setInvoiceReview({...invoiceReview,items:invoiceReview.items.filter((_,i)=>i!==index)})}>×</button></td></tr>)}</tbody></table></div>
+              <Button variant="secondary" onClick={()=>setInvoiceReview({...invoiceReview,items:[...invoiceReview.items,{line:'',quantity:1,product:'',variety:'',size:'',price:0,goodsValue:0,vatCode:'',vatRate:0}]})}>+ Add Product</Button>
               {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber) && <p className="processing-message">Existing Customer Found: {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber)?.companyName}</p>}
               {invoiceReview.warnings.map(w => <p className="error-message" key={w}>{w}</p>)}
               <div className="actions-row"><Button onClick={submitInvoiceCustomer} disabled={adding}>{adding ? 'Saving...' : customers.some(c => c.customerNumber === invoiceReview.customer.accountNumber) ? 'Add Invoice to Existing Customer' : 'Create Customer & Add Invoice'}</Button></div>
             </>}
             {addError && <p className="error-message">{addError}</p>}
+            </>}
           </div>
         ) : addMode === 'invite' ? (
           <form onSubmit={submitCreate}>
@@ -428,6 +445,7 @@ export function CustomersPage({
                   ) : (
                     <>
                       <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
+                      <Button variant="secondary" className="btn-sm" onClick={() => { setAccountProfile(customer); setProfileTab('Overview') }}>Open Account</Button>
                       <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Statement</Button>
                       <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
                       {onSendWhatsApp && (
@@ -452,6 +470,15 @@ export function CustomersPage({
           />
         )}
       </Card>
+
+      <Modal open={Boolean(accountProfile)} title={accountProfile ? `${accountProfile.companyName} - ${accountProfile.customerNumber}` : 'Customer Account'} onClose={() => setAccountProfile(null)} wide>
+        {accountProfile && (() => {
+          const myInvoices=invoices.filter(i=>i.customerId===accountProfile.id), myPayments=payments.filter(p=>p.customerId===accountProfile.id)
+          const invoiced=myInvoices.reduce((s,i)=>s+i.amount,0), paid=myInvoices.reduce((s,i)=>s+(i.amountPaid??0),0), outstanding=Math.max(0,invoiced-paid)
+          const overdue=myInvoices.filter(i=>i.status!=='Paid'&&i.dueDate<new Date().toISOString().slice(0,10)).reduce((s,i)=>s+Math.max(0,i.amount-(i.amountPaid??0)),0)
+          return <div className="stack"><div className="customer-action-bar"><button onClick={()=>{setAccountProfile(null);onNavigate?.('create-invoice')}}>+ Create Invoice</button><button onClick={()=>{setAccountProfile(null);openImport(accountProfile)}}>+ Add Invoice</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('outstanding')}}>Record Payment</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('expenses')}}>Record Expense</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('files')}}>Upload Document</button>{onSendWhatsApp&&<button onClick={()=>setWhatsappTarget(accountProfile)}>Send Message</button>}</div><div className="customer-finance-grid">{[['Total Invoiced',invoiced],['Total Paid',paid],['Outstanding',outstanding],['Overdue',overdue],['Current S/L Balance',outstanding]].map(([l,v])=><div key={String(l)}><span>{l}</span><strong>{fmtMoney(Number(v))}</strong></div>)}</div><div className="profile-tabs">{['Overview','Invoices','Outstanding','Payments','Documents','Statements','Activity'].map(t=><button className={profileTab===t?'active':''} onClick={()=>setProfileTab(t)} key={t}>{t}</button>)}</div>{profileTab==='Overview'&&<div className="form-grid"><div><strong>Email</strong><p>{accountProfile.email}</p></div><div><strong>Telephone</strong><p>{accountProfile.phone||'—'}</p></div><div className="wide"><strong>Address</strong><p>{accountProfile.address||'—'}</p></div></div>}{['Invoices','Outstanding'].includes(profileTab)&&<DataTable columns={['Invoice','Date','Due','Total','Paid','Outstanding','Status']}>{myInvoices.filter(i=>profileTab!=='Outstanding'||i.status!=='Paid').map(i=><tr key={i.id}><td>{i.invoiceNumber}</td><td>{i.date}</td><td>{i.dueDate}</td><td>{fmtMoney(i.amount)}</td><td>{fmtMoney(i.amountPaid)}</td><td>{fmtMoney(i.amount-(i.amountPaid??0))}</td><td>{i.status}</td></tr>)}</DataTable>}{profileTab==='Payments'&&<DataTable columns={['Reference','Date','Method','Amount']}>{myPayments.map(p=><tr key={p.id}><td>{p.paymentReference}</td><td>{p.date}</td><td>{p.method}</td><td>{fmtMoney(p.amount)}</td></tr>)}</DataTable>}{profileTab==='Documents'&&<button className="btn btn-primary" onClick={()=>{setAccountProfile(null);onNavigate?.('files')}}>Open Customer Files</button>}{profileTab==='Statements'&&<button className="btn btn-primary" onClick={()=>{setAccountProfile(null);setStatementTarget(accountProfile)}}>View Statement</button>}{profileTab==='Activity'&&<p className="empty-state">Customer invoice uploads, payments and communications appear in Recent Activity and communication history.</p>}</div>
+        })()}
+      </Modal>
 
       <Modal open={Boolean(editing)} title={editing ? `Edit ${editing.companyName || 'Customer'}` : 'Edit Customer'} onClose={() => setEditing(null)}>
         {editing ? (

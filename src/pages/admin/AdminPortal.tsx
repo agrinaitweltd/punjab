@@ -95,6 +95,7 @@ import type {
   User,
   WhatsAppLog,
   WhatsAppTemplate,
+  Expense,
 } from '../../types'
 import { AdminsPage } from './AdminsPage'
 import { ComplaintsPage } from './ComplaintsPage'
@@ -130,6 +131,10 @@ import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
 import { StockPage } from './StockPage'
 import { TicketsPage } from './TicketsPage'
+import { ExpensesPage } from './ExpensesPage'
+import { GlobalSearchPage } from './GlobalSearchPage'
+import { CommunicationHistoryPage } from './CommunicationHistoryPage'
+import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [current, setCurrent] = useState('dashboard')
@@ -159,6 +164,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [subAccounts, setSubAccounts] = useState<CustomerSubAccount[]>([])
   const [whatsappLogs, setWhatsappLogs] = useState<WhatsAppLog[]>([])
   const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsAppTemplate[]>([])
+  const [expenses, setExpenses] = useState<Expense[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -186,6 +192,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       subAccountsData,
       whatsappLogsData,
       whatsappTemplatesData,
+      expensesData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -211,6 +218,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getCustomerSubAccounts(),
       getWhatsAppLogs(),
       getWhatsAppTemplates(),
+      getExpenses(),
     ])
 
     setCustomers(customersData)
@@ -237,6 +245,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setSubAccounts(subAccountsData)
     setWhatsappLogs(whatsappLogsData)
     setWhatsappTemplates(whatsappTemplatesData)
+    setExpenses(expensesData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -328,10 +337,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           stock={stock}
           activity={activity}
           invoices={invoices}
+          payments={payments}
+          expenses={expenses}
           onNavigate={navigate}
         />
       )
     }
+
+    if (current === 'global-search') return <GlobalSearchPage customers={customers} invoices={invoices} onNavigate={navigate} />
+    if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
     if (current === 'session') {
       const canEditBuying = user.isSuperAdmin || Boolean(user.permissions?.buyingPricesEdit)
@@ -560,6 +574,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await createInvoice({ customerId: customer.id, ...(data.invoice.invoiceNumber ? { invoiceNumber: data.invoice.invoiceNumber } : {}), date: issueDate, dueDate: due.toISOString().slice(0, 10), amount: data.invoice.grandTotal, amountPaid: 0, status: 'Unpaid' })
             await updateCustomer(customer.id, { balance: data.customer.ledgerBalance || Math.max(0, (customer.balance ?? 0) + data.invoice.grandTotal) })
             void logActivity(user.displayName, `uploaded first invoice for ${customer.companyName}`)
+            await load()
+          }}
+          onNavigate={navigate}
+          onInviteCustomer={async (accountNumber, email, phone) => {
+            const customer=customers.find(c=>c.customerNumber===accountNumber)
+            if(!customer) throw new Error('Customer account not found')
+            await updateCustomer(customer.id,{email,phone})
+            await sendEmail(email,'Welcome to the Punjab Exotic Foods Customer Portal',welcomeEmailHtml(customer.companyName,'customer',window.location.origin))
+            void logActivity(user.displayName,`sent portal invitation to ${customer.companyName} (${email})`)
             await load()
           }}
           onUpdate={async (id, input) => {
@@ -1022,6 +1045,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
     if (current === 'payments') {
       return <PaymentsPage payments={payments} />
+    }
+
+    if (current === 'expenses') {
+      return <ExpensesPage expenses={expenses} userName={user.displayName} onCreate={async input => { await createExpense(input); void logActivity(user.displayName, `recorded expense £${input.amount.toFixed(2)} ${input.category}`); await load() }} onDelete={async id => { await deleteExpense(id); await load() }} />
     }
 
     if (current === 'delivery-areas') {

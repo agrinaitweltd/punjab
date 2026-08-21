@@ -239,6 +239,21 @@ export interface Payment {
   invoiceId?: string
 }
 
+export interface Expense {
+  id: string
+  title: string
+  category: string
+  supplier: string
+  amount: number
+  currency: string
+  expenseDate: string
+  description: string
+  paymentMethod: string
+  reference: string
+  recordedBy: string
+  createdAt: string
+}
+
 /** Option A: issued against a specific invoice (reduces its balance
     immediately). Option B: a standalone "account credit" (no linkedInvoiceId)
     that sits on the customer's account until applied to a future invoice via

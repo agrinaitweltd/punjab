@@ -10,7 +10,7 @@ export type ImportedLegacyInvoice = {
 
 const money = (value?: string) => Number((value ?? '').replace(/[£,\s]/g, '')) || 0
 const valueAfter = (text: string, label: string) => text.match(new RegExp(`${label}\\s*:?\\s*([^\\n]+)`, 'i'))?.[1]?.trim() ?? ''
-const isoDate = (value: string) => { const m = value.match(/(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})/); if (!m) return ''; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` }
+const isoDate = (value: string) => { const m = value.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/); if (!m) return ''; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` }
 
 export function parseLegacyInvoiceLines(lines: string[]): ImportedLegacyInvoice {
   const clean = lines.map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean)

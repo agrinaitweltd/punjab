@@ -2125,6 +2125,19 @@ tbody tr:hover td { background: #fafbfc; }
 .invoice-upload-zone { display: grid; place-items: center; gap: 5px; min-height: 130px; padding: 22px; border: 1.5px dashed #86b895; background: #f7fbf8; border-radius: 8px; cursor: pointer; color: var(--text-heading); }
 .invoice-upload-zone span { font-size: 12px; color: var(--text-muted); }.invoice-upload-zone input { margin-top: 8px; max-width: 100%; }
 .processing-message { padding: 10px 12px; border-left: 3px solid var(--green-600); background: var(--green-50); color: var(--green-800); font-size: 13px; }
+.document-categories { display:flex; gap:6px; overflow-x:auto; padding-bottom:12px; margin-bottom:14px; border-bottom:1px solid var(--border-light); }
+.document-categories button { flex-shrink:0; border:1px solid var(--border); background:#fff; padding:7px 10px; border-radius:6px; color:var(--text-muted); cursor:pointer; font:inherit; font-size:12px; }
+.document-categories button.active { background:var(--green-700); border-color:var(--green-700); color:#fff; }
+.global-search-box input { width:100%; padding:15px 16px; border:1px solid var(--border); border-radius:8px; font:inherit; font-size:15px; box-shadow:var(--shadow-sm); }
+.search-results { display:grid; gap:8px; }
+.search-results button { display:grid; grid-template-columns:90px minmax(180px,1fr) minmax(180px,2fr) auto; align-items:center; gap:12px; width:100%; border:1px solid var(--border); border-radius:8px; background:#fff; padding:12px 14px; text-align:left; cursor:pointer; color:var(--text-heading); }
+.search-results button:hover { border-color:var(--green-400); background:var(--green-50); }.search-results span{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--green-700)}.search-results small{color:var(--text-muted)}.search-results b{color:var(--green-700);font-size:12px}
+@media(max-width:700px){.search-results button{grid-template-columns:70px 1fr}.search-results small{grid-column:1/-1}.search-results b{display:none}}
+.customer-action-bar{display:flex;gap:7px;flex-wrap:wrap}.customer-action-bar button{border:1px solid var(--border);background:#fff;border-radius:6px;padding:8px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;color:var(--green-800)}.customer-action-bar button:hover{background:var(--green-50);border-color:var(--green-400)}
+.customer-finance-grid{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));border:1px solid var(--border);border-radius:8px;overflow:hidden}.customer-finance-grid>div{padding:12px;border-right:1px solid var(--border)}.customer-finance-grid>div:last-child{border:0}.customer-finance-grid span{display:block;font-size:10px;text-transform:uppercase;color:var(--text-muted);font-weight:800}.customer-finance-grid strong{display:block;margin-top:5px;font-size:17px;color:var(--text-heading)}
+.profile-tabs{display:flex;gap:0;overflow-x:auto;border-bottom:1px solid var(--border)}.profile-tabs button{border:0;background:none;padding:10px 12px;font:inherit;font-size:12px;font-weight:700;color:var(--text-muted);border-bottom:2px solid transparent;cursor:pointer}.profile-tabs button.active{color:var(--green-700);border-bottom-color:var(--green-700)}
+@media(max-width:800px){.customer-finance-grid{grid-template-columns:repeat(2,1fr)}.customer-finance-grid>div{border-bottom:1px solid var(--border)}}
+.onboarding-success{display:grid;gap:6px;padding:18px;border:1px solid #86b895;border-left:4px solid var(--green-600);background:var(--green-50);border-radius:8px}.onboarding-success strong{font-size:16px;color:var(--green-800)}.onboarding-success span{font-weight:700;color:var(--text-heading)}.onboarding-success p{color:var(--text-muted);font-size:13px}
 .modal {
   border-radius: 18px !important;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28) !important;

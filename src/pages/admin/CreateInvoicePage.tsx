@@ -3,6 +3,8 @@ import type { Customer, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { createInvoice } from '../../services/invoiceService'
 import { uploadFile } from '../../lib/fileService'
+import { sendEmail } from '../../lib/emailService'
+import { sendWhatsAppMessage } from '../../lib/whatsapp'
 
 type Line = { line: string; qty: string; product: string; variety: string; size: string; price: string; vatRate: string; vatCode: string }
 const blankLine = (): Line => ({ line: '', qty: '1', product: '', variety: '', size: '', price: '0', vatRate: '0', vatCode: '0' })
@@ -18,6 +20,8 @@ export function CreateInvoicePage({ customers, invoices, onCreated }: { customer
   const [lines, setLines] = useState<Line[]>([blankLine()])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [sendDraft,setSendDraft]=useState<{customer:Customer;invoice:Invoice;text:string;fileName:string;base64:string}|null>(null)
+  const [sendStatus,setSendStatus]=useState('')
   const customer = customers.find(c => c.id === customerId)
   const matches = customers.filter(c => `${c.companyName} ${c.customerNumber}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
   const totals = useMemo(() => {
@@ -43,9 +47,11 @@ export function CreateInvoicePage({ customers, invoices, onCreated }: { customer
       const blob = await response.blob()
       const fileName = `Punjab-Invoice-${generated.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`
       const dataUri = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob) })
-      await createInvoice({ customerId: customer.id, invoiceNumber: generated, amount: Math.round(totals.total * 100) / 100, amountPaid: 0, status: 'Unpaid', date: invoiceDate, dueDate: due.toISOString().slice(0, 10) })
+      const created=await createInvoice({ customerId: customer.id, invoiceNumber: generated, amount: Math.round(totals.total * 100) / 100, amountPaid: 0, status: 'Unpaid', date: invoiceDate, dueDate: due.toISOString().slice(0, 10) })
       await uploadFile(fileName, blob.type, blob.size, dataUri, `Generated invoice ${generated}`, customer.id, customer.companyName)
       const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; anchor.click(); URL.revokeObjectURL(url)
+      const draft=`Hello ${customer.companyName},\n\nPlease see the details of your latest Punjab Exotic Foods invoice below.\n\nInvoice: ${generated}\n${lines.map(l=>`${l.product} - Qty ${l.qty} - £${Number(l.price).toFixed(2)}`).join('\n')}\n\nTotal: £${totals.total.toFixed(2)}\nInvoice Date: ${invoiceDate}\nDue Date: ${created.dueDate}\nAccount Number: ${customer.customerNumber}\n\nKind regards,\nPunjab Exotic Foods Limited`
+      setSendDraft({customer,invoice:created,text:draft,fileName,base64:dataUri.split(',')[1]||''})
       await onCreated(); setMessage(`Invoice ${generated} created, stored in Files and downloaded.`); setInvoiceNumber(''); setLines([blankLine()])
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Invoice generation failed. No invoice was saved.')
@@ -71,5 +77,6 @@ export function CreateInvoicePage({ customers, invoices, onCreated }: { customer
       {message && <p className={message.startsWith('Invoice') ? 'success-message' : 'error-message'}>{message}</p>}
       <div className="actions-row"><button className="btn btn-primary" type="button" disabled={saving} onClick={save}>{saving ? 'Creating...' : 'Generate Invoice'}</button><button className="btn btn-secondary" type="button" onClick={() => window.print()}>Preview Invoice</button></div>
     </Card>
+    {sendDraft&&<Card title="Send Invoice"><label className="form-control"><span>Editable invoice message</span><textarea rows={12} value={sendDraft.text} onChange={e=>setSendDraft({...sendDraft,text:e.target.value})}/></label><div className="actions-row" style={{marginTop:12}}><button className="btn btn-primary" disabled={!sendDraft.customer.email} onClick={async()=>{const r=await sendEmail(sendDraft.customer.email,`Invoice ${sendDraft.invoice.invoiceNumber} - Punjab Exotic Foods Limited`,`<div style="white-space:pre-line">${sendDraft.text.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]!))}</div>`,[{filename:sendDraft.fileName,content:sendDraft.base64}]);setSendStatus(r.ok?'Invoice document sent by email.':`Email failed: ${r.error}`)}}>Email + Document</button><button className="btn btn-secondary" disabled={!sendDraft.customer.phone} onClick={async()=>{const r=await sendWhatsAppMessage(sendDraft.customer.phone,sendDraft.text,{type:'Invoice Created',customerId:sendDraft.customer.id,customerName:sendDraft.customer.companyName,createdBy:'Admin'});setSendStatus(r.status==='Sent'?'Invoice text sent by WhatsApp.':'WhatsApp send failed and was logged.')}}>Send WhatsApp Text</button></div>{sendStatus&&<p className={sendStatus.includes('failed')?'error-message':'success-message'}>{sendStatus}</p>}</Card>}
   </div>
 }

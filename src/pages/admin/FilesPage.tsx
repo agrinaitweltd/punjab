@@ -15,6 +15,8 @@ function fileKind(type: string, name: string) {
 }
 
 const INTERNAL = "__internal__"
+const DOCUMENT_CATEGORIES = ['All','Invoices','Statements','Payment Notices','Credit Notes','Delivery Documents','Receipts','Other Documents']
+function categoryFor(file: StoredFile) { const text=`${file.name} ${file.note}`.toLowerCase(); if(text.includes('statement'))return 'Statements'; if(text.includes('payment notice'))return 'Payment Notices'; if(text.includes('credit note'))return 'Credit Notes'; if(text.includes('delivery'))return 'Delivery Documents'; if(text.includes('receipt'))return 'Receipts'; if(text.includes('invoice'))return 'Invoices'; return 'Other Documents' }
 
 export function FilesPage({ customers, invoices = [] }: { customers: Customer[]; invoices?: Invoice[] }) {
   const [files, setFiles] = useState<StoredFile[]>([])
@@ -22,6 +24,8 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
   const [folderQuery, setFolderQuery] = useState("")
   const [selected, setSelected] = useState<string>(INTERNAL)
   const [note, setNote] = useState("")
+  const [category, setCategory] = useState('All')
+  const [uploadCategory, setUploadCategory] = useState('Other Documents')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [preview, setPreview] = useState<StoredFile | null>(null)
@@ -55,7 +59,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
   const folderFiles = files.filter(f => {
     const inFolder = selected === INTERNAL ? !f.customerId : f.customerId === selected
     const q = folderQuery.trim().toLowerCase()
-    return inFolder && (!q || `${f.name} ${f.note ?? ''}`.toLowerCase().includes(q) || (selected !== INTERNAL && folders.some(c => c.id === selected)))
+    return inFolder && (category === 'All' || categoryFor(f) === category) && (!q || `${f.name} ${f.note ?? ''}`.toLowerCase().includes(q) || (selected !== INTERNAL && folders.some(c => c.id === selected)))
   })
 
   const onPick = async (f: File | undefined) => {
@@ -70,7 +74,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
         r.onerror = () => reject(r.error)
         r.readAsDataURL(f)
       })
-      await uploadFile(f.name, f.type || "application/octet-stream", f.size, dataUri, note.trim(),
+      await uploadFile(f.name, f.type || "application/octet-stream", f.size, dataUri, `${uploadCategory}: ${note.trim()}`.trim(),
         selectedCustomer?.id ?? null, selectedCustomer?.companyName ?? "Internal only")
       setNote("")
       if (inputRef.current) inputRef.current.value = ""
@@ -147,10 +151,11 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
             </span>
             <div>
               <h3 style={{ fontSize: 15, fontWeight: 800, color: "#111827" }}>{selectedCustomer ? selectedCustomer.companyName : "Internal Only"}</h3>
-              <p style={{ fontSize: 12, color: "#9ca3af" }}>{folderFiles.length} file{folderFiles.length !== 1 ? "s" : ""} in this folder</p>
+              <p style={{ fontSize: 12, color: "#9ca3af" }}>{selectedCustomer ? `Account ${selectedCustomer.customerNumber} · ` : ''}{folderFiles.length} file{folderFiles.length !== 1 ? "s" : ""}</p>
             </div>
           </div>
 
+          {selectedCustomer && <div className="document-categories">{DOCUMENT_CATEGORIES.map(x=><button key={x} className={category===x?'active':''} onClick={()=>setCategory(x)}>{x}</button>)}</div>}
           <div className="fl-upload" style={{ marginBottom: 16 }}>
             <div className="fl-drop" onClick={() => inputRef.current?.click()}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -168,6 +173,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
               <span>Label (optional)</span>
               <input placeholder="e.g. Invoice — March deliveries" value={note} onChange={e => setNote(e.target.value)} />
             </label>
+            <label className="form-control" style={{ minWidth: 170 }}><span>Document category</span><select value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)}>{DOCUMENT_CATEGORIES.slice(1).map(x=><option key={x}>{x}</option>)}</select></label>
           </div>
           {error && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>{error}</p>}
 

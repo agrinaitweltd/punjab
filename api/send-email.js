@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   const key = process.env.RESEND_API_KEY
   if (!key) return res.status(500).json({ error: 'RESEND_API_KEY not configured' })
 
-  const { to, subject, html } = req.body ?? {}
+  const { to, subject, html, attachments } = req.body ?? {}
   if (!to || !subject || !html) return res.status(400).json({ error: 'Missing to/subject/html' })
 
   try {
@@ -18,6 +18,7 @@ export default async function handler(req, res) {
         to: Array.isArray(to) ? to : [to],
         subject,
         html,
+        ...(Array.isArray(attachments) && attachments.length ? { attachments: attachments.slice(0, 5).map(a => ({ filename: String(a.filename || 'attachment'), content: String(a.content || '') })) } : {}),
       }),
     })
     const data = await r.json()

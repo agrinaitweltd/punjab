@@ -45,7 +45,7 @@ export type PunjabStatement = {
   reviewReasons: string[]
 }
 
-const DATE_RE = /\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/
+const DATE_RE = /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/
 const AMOUNT_RE = /(-|\()?\s*£?\s*((?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)|(?:\d+\.\d{2}))\s*(\))?/g
 const MONEY_TOKEN_RE = /-?\d{1,3}(?:,\d{3})*(?:\.\d{2})|-?\d+\.\d{2}/g
 const POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i
