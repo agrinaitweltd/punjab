@@ -68,7 +68,7 @@ import {
   createWhatsAppTemplate,
   updateWhatsAppTemplate,
 } from '../../api/miscApi'
-import { sendWhatsAppMessage, retryWhatsAppMessage, sendInvoiceMessage, sendPaymentReceived, sendOrderConfirmed, sendOrderPacked, sendOrderDelivered, sendAccountApproved, sendAccountSuspended, invalidateTemplateCache } from '../../lib/whatsapp'
+import { sendWhatsAppMessage, retryWhatsAppMessage, sendInvoiceMessage, sendPaymentReceived, sendPaymentReminder, sendOrderConfirmed, sendOrderPacked, sendOrderDelivered, sendAccountApproved, sendAccountSuspended, invalidateTemplateCache } from '../../lib/whatsapp'
 import { WhatsAppLogsPage } from './WhatsAppLogsPage'
 import { WhatsAppSendPage } from './WhatsAppSendPage'
 import { computeCreditApplication } from '../../lib/creditNotes'
@@ -778,13 +778,22 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'outstanding') {
-      return <OutstandingInvoicesPage invoices={invoices} customers={customers} onRecordPayment={async (invoice, amount) => {
+      return <OutstandingInvoicesPage invoices={invoices} customers={customers} onSendReminder={async (invoice, customer) => {
+        const outstanding = Math.max(0, invoice.amount - (invoice.amountPaid ?? 0))
+        if (customer.email) await sendEmail(customer.email, `Payment Reminder - Invoice ${invoice.invoiceNumber}`, paymentReminderEmailHtml(customer.companyName, invoice.invoiceNumber, outstanding, invoice.dueDate, `${window.location.origin}/customer`))
+        if (customer.phone) await sendPaymentReminder(invoice, customer, Math.max(0, Math.floor((Date.now() - new Date(`${invoice.dueDate}T00:00:00`).getTime()) / 86400000)), user.displayName)
+        void logActivity(user.displayName, `sent payment reminder for invoice ${invoice.invoiceNumber}`)
+        await load()
+      }} onRecordPayment={async (invoice, amount) => {
         const newPaid = Math.min(invoice.amount, (invoice.amountPaid ?? 0) + amount)
         await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
         await updateInvoice(invoice.id, { amountPaid: newPaid, status: newPaid >= invoice.amount ? 'Paid' : 'Part Paid' })
         const customer = customers.find(c => c.id === invoice.customerId)
         if (customer) {
-          await updateCustomer(customer.id, { balance: Math.max(0, (customer.balance ?? 0) - amount) })
+          const synchronizedBalance = invoices
+            .filter(item => item.customerId === customer.id)
+            .reduce((sum, item) => sum + Math.max(0, item.amount - (item.id === invoice.id ? newPaid : (item.amountPaid ?? 0))), 0)
+          await updateCustomer(customer.id, { balance: synchronizedBalance })
           if (newPaid >= invoice.amount) {
             void sendPaymentReceived(invoice, customer, amount, user.displayName)
             if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)))
@@ -796,7 +805,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'create-invoice') {
-      return <CreateInvoicePage customers={customers} invoices={invoices} onCreated={load} />
+      return <CreateInvoicePage customers={customers} invoices={invoices} userName={user.displayName} onCreated={load} />
     }
 
     if (current === 'day-trade') {

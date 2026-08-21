@@ -27,6 +27,9 @@ export type ImportedLegacyInvoice = {
   }
   invoice: {
     invoiceNumber: string
+    invoiceAccount: string
+    deliveryAccount: string
+    salesman: string
     date: string
     currency: 'GBP'
     totalGoods: number
@@ -95,7 +98,17 @@ function metadataSection(lines: string[]) {
   const dateToken = values.match(/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/)?.[0] ?? ''
   const afterDate = dateToken ? values.slice(values.indexOf(dateToken) + dateToken.length) : ''
   const accountNumber = afterDate.match(/\b\d{6}\b/)?.[0] ?? ''
-  return { date: isoDate(dateToken), accountNumber }
+  const cells = columns(values)
+  const deliveryAccount = cells[1] ?? ''
+  const invoiceAccount = cells[2] ?? ''
+  const salesman = cells[3] ?? ''
+  const forbidden = new Set([deliveryAccount, invoiceAccount, salesman, accountNumber].filter(Boolean))
+  let invoiceNumber = ''
+  for (const line of lines) {
+    const explicit = line.match(/\bInvoice\s*(?:No\.?|Number)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,})\b/i)?.[1] ?? ''
+    if (explicit && !forbidden.has(explicit)) { invoiceNumber = explicit; break }
+  }
+  return { date: isoDate(dateToken), accountNumber, deliveryAccount, invoiceAccount, salesman, invoiceNumber }
 }
 
 function productSection(lines: string[]): ImportedInvoiceItem[] {
@@ -158,13 +171,13 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
 
   return {
     customer: { ...customer, email: '', accountNumber: metadata.accountNumber, ledgerBalance },
-    invoice: { invoiceNumber: '', date: metadata.date, currency: 'GBP', totalGoods, vat, grandTotal, packages },
+    invoice: { invoiceNumber: metadata.invoiceNumber, invoiceAccount: metadata.invoiceAccount, deliveryAccount: metadata.deliveryAccount, salesman: metadata.salesman, date: metadata.date, currency: 'GBP', totalGoods, vat, grandTotal, packages },
     items,
     vatSummary,
     confidence: {
       companyName: confidence(customer.companyName), address: confidence(customer.address), postcode: confidence(customer.postcode),
       phone: confidence(customer.phone), accountNumber: /^\d{6}$/.test(metadata.accountNumber) ? 'high' : 'review',
-      invoiceNumber: 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
+      invoiceNumber: metadata.invoiceNumber ? 'high' : 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
       totals: Math.abs(totalGoods + vat - grandTotal) <= 0.02 ? 'high' : 'review',
     },
     warnings,

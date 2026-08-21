@@ -11,12 +11,14 @@ export default async function handler(req, res) {
   const token = process.env.ULTRAMSG_TOKEN
   if (!token) return res.status(500).json({ error: 'ULTRAMSG_TOKEN not configured' })
 
-  const { phone, message } = req.body ?? {}
+  const { phone, message, document, filename } = req.body ?? {}
   if (!phone || !message) return res.status(400).json({ error: 'Missing phone/message' })
 
   try {
-    const body = new URLSearchParams({ token, to: phone, body: message })
-    const r = await fetch(`${ULTRAMSG_BASE}/messages/chat`, {
+    const body = document
+      ? new URLSearchParams({ token, to: phone, filename: filename || 'Punjab-Invoice.pdf', document, caption: message })
+      : new URLSearchParams({ token, to: phone, body: message })
+    const r = await fetch(`${ULTRAMSG_BASE}/messages/${document ? 'document' : 'chat'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),

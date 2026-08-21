@@ -4,48 +4,41 @@ import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
 import { invoiceOutstanding } from '../../lib/creditNotes'
 
-function dayStart(value: Date) { return new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime() }
-function money(value: number) { return `£${value.toFixed(2)}` }
+const dayStart = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
+const money = (value: number) => `£${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment }: {
+export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment, onSendReminder }: {
   invoices: Invoice[]
   customers: Customer[]
   onRecordPayment: (invoice: Invoice, amount: number) => Promise<void>
+  onSendReminder: (invoice: Invoice, customer: Customer) => Promise<void>
 }) {
   const [query, setQuery] = useState('')
+  const [customerId, setCustomerId] = useState('')
   const [selected, setSelected] = useState<Invoice | null>(null)
   const [payment, setPayment] = useState('')
   const [confirmStep, setConfirmStep] = useState<1 | 2 | null>(null)
+  const [notice, setNotice] = useState('')
   const today = dayStart(new Date())
-  const rows = useMemo(() => invoices.filter(i => invoiceOutstanding(i) > 0).filter(i => {
-    const customer = customers.find(c => c.id === i.customerId)
-    const haystack = `${customer?.companyName ?? ''} ${customer?.customerNumber ?? ''} ${i.invoiceNumber}`.toLowerCase()
-    return haystack.includes(query.toLowerCase())
-  }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [invoices, customers, query])
+  const outstandingInvoices = useMemo(() => invoices.filter(invoice => invoiceOutstanding(invoice) > 0).sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [invoices])
   const due = (invoice: Invoice) => dayStart(new Date(`${invoice.dueDate}T00:00:00`))
-  const dueToday = rows.filter(i => due(i) === today)
-  const nextSeven = rows.filter(i => due(i) > today && due(i) <= today + 7 * 86400000)
-  const overdue = rows.filter(i => due(i) < today)
-  const partPaid = rows.filter(i => (i.amountPaid ?? 0) > 0)
-  const total = (list: Invoice[]) => list.reduce((sum, i) => sum + invoiceOutstanding(i), 0)
+  const total = (list: Invoice[]) => list.reduce((sum, invoice) => sum + invoiceOutstanding(invoice), 0)
+  const groups = useMemo(() => customers.map(customer => {
+    const rows = outstandingInvoices.filter(invoice => invoice.customerId === customer.id)
+    return { customer, rows, outstanding: total(rows), overdue: rows.filter(invoice => due(invoice) < today).length, nextDue: rows[0]?.dueDate ?? '' }
+  }).filter(group => group.rows.length > 0).filter(group => `${group.customer.companyName} ${group.customer.customerNumber}`.toLowerCase().includes(query.toLowerCase())), [customers, outstandingInvoices, query, today])
+  const selectedGroup = groups.find(group => group.customer.id === customerId) ?? (() => { const customer = customers.find(item => item.id === customerId); if (!customer) return undefined; const rows = outstandingInvoices.filter(invoice => invoice.customerId === customer.id); return { customer, rows, outstanding: total(rows), overdue: rows.filter(invoice => due(invoice) < today).length, nextDue: rows[0]?.dueDate ?? '' } })()
+  const openPayment = (invoice: Invoice, fullyPaid = false) => { setSelected(invoice); setPayment(invoiceOutstanding(invoice).toFixed(2)); setConfirmStep(fullyPaid ? 1 : null) }
+  const downloadDuePdf = async (invoice: Invoice, customer: Customer) => { const response = await fetch('/api/generate-payment-due-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer: { name: customer.companyName, accountNumber: customer.customerNumber, email: customer.email, phone: customer.phone }, invoice: { number: invoice.invoiceNumber, date: invoice.date, dueDate: invoice.dueDate, total: invoice.amount, paid: invoice.amountPaid, outstanding: invoiceOutstanding(invoice) } }) }); if (!response.ok) return; const blob = await response.blob(), url = URL.createObjectURL(blob), anchor = document.createElement('a'); anchor.href = url; anchor.download = `Payment-Due-${invoice.invoiceNumber}.pdf`; anchor.click(); URL.revokeObjectURL(url) }
+  const dueToday = outstandingInvoices.filter(invoice => due(invoice) === today)
+  const nextSeven = outstandingInvoices.filter(invoice => due(invoice) > today && due(invoice) <= today + 7 * 86400000)
+  const overdue = outstandingInvoices.filter(invoice => due(invoice) < today)
 
-  return <div className="stack">
-    <div className="page-heading"><div><h1>Outstanding Invoices</h1><p>Every unpaid balance, due date and payment action in one place.</p></div></div>
-    <div className="overview-grid">
-      {[['Total Outstanding', total(rows)], ['Due Today', total(dueToday)], ['Due Next 7 Days', total(nextSeven)], ['Overdue', total(overdue)], ['Part Paid', total(partPaid)]].map(([label, value]) => <Card key={String(label)} title={String(label)}><p className="metric">{money(Number(value))}</p></Card>)}
-    </div>
-    <Card title="Payment collection queue">
-      <div className="table-toolbar"><input className="search-input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer, account or invoice..." /></div>
-      <DataTable columns={['Customer', 'Account No', 'Invoice No', 'Invoice Date', 'Due Date', 'Invoice Total', 'Paid', 'Outstanding', 'Status', 'Actions']}>
-        {rows.map(invoice => {
-          const customer = customers.find(c => c.id === invoice.customerId)
-          const isOverdue = due(invoice) < today
-          const status = isOverdue ? 'Overdue' : (invoice.amountPaid ?? 0) > 0 ? 'Part Paid' : 'Unpaid'
-          return <tr key={invoice.id}><td><strong>{customer?.companyName ?? invoice.customerId}</strong></td><td>{customer?.customerNumber || '—'}</td><td>{invoice.invoiceNumber}</td><td>{invoice.date || '—'}</td><td>{invoice.dueDate}</td><td>{money(invoice.amount)}</td><td>{money(invoice.amountPaid ?? 0)}</td><td><strong>{money(invoiceOutstanding(invoice))}</strong></td><td><span className={`status-badge ${isOverdue ? 'danger' : status === 'Part Paid' ? 'warning' : 'info'}`}>{status}</span></td><td><div className="table-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={async()=>{const r=await fetch('/api/generate-payment-due-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer:{name:customer?.companyName,accountNumber:customer?.customerNumber,email:customer?.email,phone:customer?.phone},invoice:{number:invoice.invoiceNumber,date:invoice.date,dueDate:invoice.dueDate,total:invoice.amount,paid:invoice.amountPaid,outstanding:invoiceOutstanding(invoice)}})});if(!r.ok)return;const b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=`Payment-Due-${invoice.invoiceNumber}.pdf`;a.click();URL.revokeObjectURL(u)}}>Due PDF</button><button className="btn btn-primary btn-sm" type="button" onClick={() => { setSelected(invoice); setPayment(invoiceOutstanding(invoice).toFixed(2)) }}>Record Payment</button></div></td></tr>
-        })}
-      </DataTable>
-      {rows.length === 0 && <div className="empty-state">No outstanding invoices match this search.</div>}
-    </Card>
-    {selected && <div className="modal-backdrop" role="presentation"><div className="modal-card" role="dialog" aria-modal="true"><h2>{confirmStep ? (confirmStep === 1 ? 'Confirm Customer Payment' : 'Final Confirmation') : 'Record Payment'}</h2><p>{confirmStep === 1 ? `You are about to mark ${selected.invoiceNumber} as fully paid.` : confirmStep === 2 ? `Are you sure the full outstanding payment of ${money(invoiceOutstanding(selected))} has been received?` : `${selected.invoiceNumber} · ${money(invoiceOutstanding(selected))} outstanding`}</p>{!confirmStep && <label>Amount received<input className="input" type="number" min="0.01" max={invoiceOutstanding(selected)} step="0.01" value={payment} onChange={e => setPayment(e.target.value)} /></label>}{!confirmStep && Number(payment) === invoiceOutstanding(selected) && <button className="btn btn-secondary" type="button" style={{ marginTop: 12 }} onClick={() => setConfirmStep(1)}>Customer Has Paid</button>}<div className="modal-actions"><button className="btn btn-ghost" type="button" onClick={() => { setSelected(null); setConfirmStep(null) }}>{confirmStep === 2 ? 'Go Back' : 'Cancel'}</button>{confirmStep === 1 && <button className="btn btn-primary" type="button" onClick={() => setConfirmStep(2)}>Continue</button>}{confirmStep === 2 && <button className="btn btn-primary" type="button" onClick={async () => { await onRecordPayment(selected, invoiceOutstanding(selected)); setSelected(null); setConfirmStep(null) }}>Yes, Payment Has Been Received</button>}{!confirmStep && <button className="btn btn-primary" type="button" onClick={async () => { const amount = Number(payment); if (!Number.isFinite(amount) || amount <= 0 || amount > invoiceOutstanding(selected)) return; await onRecordPayment(selected, amount); setSelected(null) }}>Save Payment</button>}</div></div></div>}
+  return <div className="stack outstanding-page"><div className="page-heading"><div><h1>Outstanding Invoices</h1><p>Customer accounts with unpaid or partly paid invoices.</p></div></div>
+    <div className="overview-grid outstanding-summary">{[['Total Outstanding', total(outstandingInvoices)], ['Overdue', total(overdue)], ['Due Today', total(dueToday)], ['Due Next 7 Days', total(nextSeven)]].map(([label, value]) => <Card key={String(label)} title={String(label)}><p className="metric">{money(Number(value))}</p></Card>)}</div>
+    {!selectedGroup ? <Card title="Customers with outstanding balances"><div className="table-toolbar"><input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search customer name or account number..." /></div><div className="outstanding-customer-list">{groups.map(group => <article className="outstanding-customer-row" key={group.customer.id}><div><h3>{group.customer.companyName}</h3><p>Account {group.customer.customerNumber}</p></div><div><span>Outstanding</span><strong>{money(group.outstanding)}</strong></div><div><span>Invoices</span><strong>{group.rows.length}</strong></div><div><span>Overdue</span><strong>{group.overdue}</strong></div><div><span>Next Due</span><strong>{group.nextDue || '—'}</strong></div><button className="btn btn-secondary" onClick={() => setCustomerId(group.customer.id)}>View Outstanding Invoices</button></article>)}</div>{groups.length === 0 && <div className="empty-state">No customer accounts match this search.</div>}</Card>
+    : <Card title={`${selectedGroup.customer.companyName} - Account ${selectedGroup.customer.customerNumber}`} actions={<button className="btn btn-secondary btn-sm" onClick={() => setCustomerId('')}>Back to Customers</button>}><div className="customer-outstanding-heading"><span>Total Outstanding</span><strong>{money(selectedGroup.outstanding)}</strong></div><DataTable columns={['Invoice No','Invoice Date','Due Date','Invoice Total','Paid','Outstanding','Status','Actions']}>{selectedGroup.rows.map(invoice => { const isOverdue = due(invoice) < today; const status = isOverdue ? 'Overdue' : (invoice.amountPaid ?? 0) > 0 ? 'Part Paid' : due(invoice) === today ? 'Due Today' : 'Due Soon'; return <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong></td><td>{invoice.date || '—'}</td><td>{invoice.dueDate}</td><td>{money(invoice.amount)}</td><td>{money(invoice.amountPaid ?? 0)}</td><td><strong>{money(invoiceOutstanding(invoice))}</strong></td><td><span className={`status-badge ${isOverdue ? 'danger' : status === 'Part Paid' ? 'warning' : 'info'}`}>{status}</span></td><td><div className="table-actions"><button className="btn btn-secondary btn-sm" onClick={() => downloadDuePdf(invoice, selectedGroup.customer)}>View Invoice</button><button className="btn btn-secondary btn-sm" onClick={() => openPayment(invoice)}>Record Payment</button><button className="btn btn-primary btn-sm" onClick={() => openPayment(invoice, true)}>Customer Has Paid</button><button className="btn btn-secondary btn-sm" onClick={async () => { await onSendReminder(invoice, selectedGroup.customer); setNotice(`Reminder sent for ${invoice.invoiceNumber}.`) }}>Send Reminder</button></div></td></tr>})}</DataTable></Card>}
+    {notice && <p className="success-message">{notice}</p>}
+    {selected && <div className="modal-backdrop" role="presentation"><div className="modal-card" role="dialog" aria-modal="true"><h2>{confirmStep ? (confirmStep === 1 ? 'Confirm Customer Payment' : 'Final Confirmation') : 'Record Payment'}</h2><p>{confirmStep === 1 ? `You are about to mark ${selected.invoiceNumber} as fully paid.` : confirmStep === 2 ? `Are you sure the full outstanding payment of ${money(invoiceOutstanding(selected))} has been received?` : `${selected.invoiceNumber} · ${money(invoiceOutstanding(selected))} outstanding`}</p>{!confirmStep && <label>Amount received<input className="input" type="number" min="0.01" max={invoiceOutstanding(selected)} step="0.01" value={payment} onChange={event => setPayment(event.target.value)} /></label>}<div className="modal-actions"><button className="btn btn-ghost" type="button" onClick={() => { setSelected(null); setConfirmStep(null) }}>{confirmStep === 2 ? 'Go Back' : 'Cancel'}</button>{confirmStep === 1 && <button className="btn btn-primary" type="button" onClick={() => setConfirmStep(2)}>Continue</button>}{confirmStep === 2 && <button className="btn btn-primary" type="button" onClick={async () => { await onRecordPayment(selected, invoiceOutstanding(selected)); setSelected(null); setConfirmStep(null) }}>Yes, Payment Has Been Received</button>}{!confirmStep && <button className="btn btn-primary" type="button" onClick={async () => { const amount = Number(payment); if (!Number.isFinite(amount) || amount <= 0 || amount > invoiceOutstanding(selected)) return; await onRecordPayment(selected, amount); setSelected(null) }}>Save Payment</button>}</div></div></div>}
   </div>
 }

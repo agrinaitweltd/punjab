@@ -97,6 +97,13 @@ export function DashboardHome({
   const totalBusiness = invoices.reduce((s, i) => s + i.amount, 0)
   const totalPaid     = invoices.reduce((s, i) => s + (i.amountPaid ?? (i.status === "Paid" ? i.amount : 0)), 0)
   const totalOutstanding = Math.max(0, totalBusiness - totalPaid)
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const nextWeek = new Date(); nextWeek.setDate(nextWeek.getDate() + 7)
+  const nextWeekKey = nextWeek.toISOString().slice(0, 10)
+  const outstandingFor = (invoice: Invoice) => Math.max(0, invoice.amount - (invoice.amountPaid ?? (invoice.status === 'Paid' ? invoice.amount : 0)))
+  const dueTodayTotal = invoices.filter(invoice => invoice.dueDate === todayKey).reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
+  const dueNextSevenTotal = invoices.filter(invoice => invoice.dueDate > todayKey && invoice.dueDate <= nextWeekKey).reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
+  const overdueTotal = invoices.filter(invoice => invoice.dueDate < todayKey).reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
   const paidPct = totalBusiness > 0 ? Math.round((totalPaid / totalBusiness) * 100) : 0
   const month = new Date().toISOString().slice(0, 7)
   const monthPayments = payments.filter(p => p.date.startsWith(month)).reduce((s,p) => s + p.amount, 0)
@@ -299,6 +306,9 @@ export function DashboardHome({
         <>
           <div className="ho-stats">
             <HoStat label="Outstanding Payments" value={<CountUp value={totalOutstanding} prefix="£" decimals={2} />} delta={`${invoices.filter(i => i.status !== 'Paid').length} invoices`} />
+            <HoStat label="Due Today" value={<CountUp value={dueTodayTotal} prefix="£" decimals={2} />} delta="outstanding today" />
+            <HoStat label="Due Next 7 Days" value={<CountUp value={dueNextSevenTotal} prefix="£" decimals={2} />} delta="upcoming" />
+            <HoStat label="Overdue" value={<CountUp value={overdueTotal} prefix="£" decimals={2} />} delta="requires attention" />
             <HoStat label="Payments Received" value={<CountUp value={monthPayments} prefix="£" decimals={2} />} delta="this month" up />
             <HoStat label="Total Invoiced" value={<CountUp value={monthInvoiced} prefix="£" decimals={2} />} delta="this month" up />
             <HoStat label="Expenses" value={<CountUp value={monthExpenses} prefix="£" decimals={2} />} delta="this month" />

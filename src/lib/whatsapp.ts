@@ -99,6 +99,27 @@ export async function sendWhatsAppMessage(
   })
 }
 
+export async function sendWhatsAppDocument(
+  phone: string,
+  message: string,
+  fileName: string,
+  base64: string,
+  opts: { customerId?: string; customerName?: string; createdBy: string },
+): Promise<WhatsAppLog> {
+  const normalized = normalizePhone(phone)
+  if (!normalized) return createWhatsAppLog({ customerId: opts.customerId, customerName: opts.customerName, phone, message, type: 'Invoice Created', status: 'Failed', response: 'Invalid phone number', createdBy: opts.createdBy })
+  await throttle()
+  let status: WhatsAppLog['status'] = 'Failed'
+  let response = ''
+  try {
+    const request = await fetch('/api/send-whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalized, message, filename: fileName, document: `data:application/pdf;base64,${base64}` }) })
+    const data = await request.json().catch(() => ({}))
+    response = JSON.stringify(data)
+    status = request.ok && data?.sent !== false && !data?.error ? 'Sent' : 'Failed'
+  } catch (error) { response = String(error) }
+  return createWhatsAppLog({ customerId: opts.customerId, customerName: opts.customerName, phone: normalized, message, type: 'Invoice Created', status, response, sentAt: status === 'Sent' ? new Date().toISOString() : undefined, createdBy: opts.createdBy })
+}
+
 export async function retryWhatsAppMessage(log: WhatsAppLog, createdBy: string): Promise<void> {
   const result = await sendWhatsAppMessage(log.phone, log.message, {
     type: log.type, customerId: log.customerId, customerName: log.customerName, createdBy,
