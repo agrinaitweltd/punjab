@@ -2094,6 +2094,18 @@ tbody tr:hover td { background: #fafbfc; }
   backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
   background: rgba(13, 43, 30, 0.45) !important;
 }
+.modal-card {
+  width: min(440px, calc(100vw - 32px)); background: #fff; border-radius: 14px;
+  padding: 24px; box-shadow: 0 24px 70px rgba(0,0,0,.28); border-top: 4px solid #1f7a3a;
+}
+.modal-card h2 { margin: 0 0 8px; color: #123b26; }
+.modal-card p { color: #667085; margin: 0 0 20px; }
+.modal-card label { display: grid; gap: 7px; font-size: 13px; font-weight: 700; color: #344054; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.status-badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.status-badge.danger { background: #fee4e2; color: #b42318; }
+.status-badge.warning { background: #fff1cc; color: #9a6700; }
+.status-badge.info { background: #e0f2fe; color: #075985; }
 .modal {
   border-radius: 18px !important;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28) !important;

@@ -106,6 +106,7 @@ import { CustomersPage } from './CustomersPage'
 import { DashboardHome } from './DashboardHome'
 import { DeliveryAreasPage } from './DeliveryAreasPage'
 import { InvoicesPage } from './InvoicesPage'
+import { OutstandingInvoicesPage } from './OutstandingInvoicesPage'
 import { InvoiceNumbersPage } from './InvoiceNumbersPage'
 import { SalesLoginPage } from './SalesLoginPage'
 import { AnalyticsPage } from './AnalyticsPage'
@@ -719,6 +720,16 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onOpenCreditNote={(id) => { setOpenCreditNoteId(id); navigate('credit-notes') }}
         />
       )
+    }
+
+    if (current === 'outstanding') {
+      return <OutstandingInvoicesPage invoices={invoices} customers={customers} onRecordPayment={async (invoice, amount) => {
+        const newPaid = Math.min(invoice.amount, (invoice.amountPaid ?? 0) + amount)
+        await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
+        await updateInvoice(invoice.id, { amountPaid: newPaid, status: newPaid >= invoice.amount ? 'Paid' : 'Part Paid' })
+        void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
+        await load()
+      }} />
     }
 
     if (current === 'day-trade') {
