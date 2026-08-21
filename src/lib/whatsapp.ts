@@ -87,6 +87,7 @@ export async function sendWhatsAppMessage(
       body: JSON.stringify({ phone: normalized, message }),
     })
     const data = await r.json().catch(() => ({}))
+    if (data.simulated) window.dispatchEvent(new CustomEvent('test-mode-simulation', { detail: data.message }))
     response = JSON.stringify(data)
     status = r.ok && data?.sent !== false && !data?.error ? "Sent" : "Failed"
   } catch (e) {
@@ -115,6 +116,7 @@ export async function sendWhatsAppDocument(
   try {
     const request = await authenticatedFetch('/api/send-whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalized, message, filename: fileName, document: `data:application/pdf;base64,${base64}` }) })
     const data = await request.json().catch(() => ({}))
+    if (data.simulated) window.dispatchEvent(new CustomEvent('test-mode-simulation', { detail: data.message }))
     response = JSON.stringify(data)
     status = request.ok && data?.sent !== false && !data?.error ? 'Sent' : 'Failed'
   } catch (error) { response = String(error) }

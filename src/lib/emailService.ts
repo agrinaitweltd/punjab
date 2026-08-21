@@ -4,15 +4,17 @@ import { authenticatedFetch } from './apiFetch'
    Works on the Vercel deployment; in local dev the call fails gracefully
    and callers can fall back (e.g. show the OTP code on screen). */
 
-export async function sendEmail(to: string | string[], subject: string, html: string, attachments?: { filename: string; content: string }[]): Promise<{ ok: boolean; error?: string }> {
+export async function sendEmail(to: string | string[], subject: string, html: string, attachments?: { filename: string; content: string }[]): Promise<{ ok: boolean; error?: string; simulated?: boolean }> {
   try {
     const r = await authenticatedFetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to, subject, html, attachments }),
     })
-    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
-    return { ok: true }
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` }
+    if (data.simulated) window.dispatchEvent(new CustomEvent('test-mode-simulation', { detail: data.message }))
+    return { ok: true, simulated: Boolean(data.simulated) }
   } catch (e) {
     return { ok: false, error: String(e) }
   }

@@ -1,4 +1,4 @@
-import { Component, useState } from 'react'
+import { Component, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import './App.css'
 import { loginUser, logoutUser } from './api/authApi'
@@ -12,6 +12,8 @@ import { CookieConsent } from './components/CookieConsent'
 import { RememberDeviceModal } from './components/RememberDeviceModal'
 import { getDeviceAccount, hasBeenPromptedToRemember, markPromptedToRemember } from './lib/deviceAuth'
 import type { User } from './types'
+import { getSystemMode } from './lib/secureAdminApi'
+import { setRuntimeTestMode } from './lib/runtimeMode'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   constructor(props: { children: ReactNode }) {
@@ -64,11 +66,26 @@ function loadStoredUser(): User | null {
 
 function App() {
   const [user, setUser] = useState<User | null>(() => loadStoredUser())
+  const [modeReady, setModeReady] = useState(() => !loadStoredUser())
   const [error, setError] = useState('')
   const [showSwitcher, setShowSwitcher] = useState(false)
   const [rememberPrompt, setRememberPrompt] = useState<{
     role: 'admin' | 'customer'; displayName: string; usernameOrEmail: string; password: string
   } | null>(null)
+
+  useEffect(() => {
+    let active = true
+    if (!user) {
+      setRuntimeTestMode(false)
+      setModeReady(true)
+      return () => { active = false }
+    }
+    setModeReady(false)
+    getSystemMode()
+      .then(mode => { if (active) { setRuntimeTestMode(mode.testMode); setModeReady(true) } })
+      .catch(() => { if (active) { setRuntimeTestMode(false); setModeReady(true) } })
+    return () => { active = false }
+  }, [user])
 
   if (isPasswordRecoveryUrl()) {
     return <SetPasswordPage onDone={() => window.location.reload()} />
@@ -116,6 +133,10 @@ function App() {
         <QuickUnlock account={deviceAccount} onUnlocked={handleQuickUnlock} onSwitchAccount={() => setShowSwitcher(true)} />
       </ErrorBoundary>
     )
+  }
+
+  if (user && !modeReady) {
+    return <div className="portal-boot"><img src="/logo.png" alt="" /><strong>Preparing your workspace</strong><span>Loading the correct data environment...</span></div>
   }
 
   return (

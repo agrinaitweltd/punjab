@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Customer, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
-import { createInvoice } from '../../services/invoiceService'
+import { createInvoice, updateInvoice } from '../../services/invoiceService'
 import { saveInvoiceItems } from '../../services/invoiceItemService'
 import { createNotificationLog } from '../../services/notificationService'
 import { createCustomer, updateCustomer } from '../../api/customersApi'
@@ -85,10 +85,12 @@ export function CreateInvoicePage({ customers, invoices, userName, onCreated }: 
     if (!savedCustomer) savedCustomer = await createCustomer({ companyName: generated.manual.name, contactPerson: '', email: generated.manual.email || `${generated.manual.accountNumber}@pending.punjab.local`, phone: generated.manual.phone, customerNumber: generated.manual.accountNumber, password: `pending-${Math.random().toString(36).slice(2, 12)}`, address: generated.manual.address, deliveryArea: '', paymentTerms: `${terms} Days`, creditDays: Math.max(0, Number(terms) || 0) })
     const savedInvoice = await createInvoice({ customerId: savedCustomer.id, invoiceNumber: generated.invoiceNumber, amount: Math.round(totals.total * 100) / 100, amountPaid: 0, status: 'Unpaid', date: invoiceDate, dueDate: generated.dueDate })
     await saveInvoiceItems(savedInvoice.id, lines.map(line => ({ line: line.line, quantity: Number(line.qty) || 0, product: line.product, variety: line.variety, size: line.size, price: Number(line.price) || 0, goodsValue: (Number(line.qty) || 0) * (Number(line.price) || 0), vatCode: line.vatCode, vatRate: Number(line.vatRate) || 0 })))
-    await uploadFile(generated.pdfFileName, 'application/pdf', generated.pdf.size, generated.pdfDataUri, `Invoices: ${generated.invoiceNumber}`, savedCustomer.id, savedCustomer.companyName)
+    const official = await uploadFile(generated.pdfFileName, 'application/pdf', generated.pdf.size, generated.pdfDataUri, `Invoices: ${generated.invoiceNumber}`, savedCustomer.id, savedCustomer.companyName, { invoiceId: savedInvoice.id, invoiceNumber: savedInvoice.invoiceNumber, documentRole: 'canonical_invoice' })
+    const linkedInvoice = await updateInvoice(savedInvoice.id, { canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
+    if (!linkedInvoice) throw new Error('The invoice PDF was saved but could not be linked to the invoice record.')
     const previousOutstanding = invoices.filter(invoice => invoice.customerId === savedCustomer.id).reduce((sum, invoice) => sum + Math.max(0, invoice.amount - (invoice.amountPaid ?? 0)), 0)
     await updateCustomer(savedCustomer.id, { balance: previousOutstanding + totals.total })
-    const next = { ...generated, customer: savedCustomer, savedInvoice }; setGenerated(next); await onCreated(); return next
+    const next = { ...generated, customer: savedCustomer, savedInvoice: linkedInvoice }; setGenerated(next); await onCreated(); return next
   }
 
   const send = async () => {

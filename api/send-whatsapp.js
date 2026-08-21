@@ -4,6 +4,7 @@
 // (UltraMsg instance186201) ever sends — this endpoint is the only thing
 // that talks to UltraMsg, so no staff member's own WhatsApp is ever used.
 import { guardApi, requireUser, safeError } from '../server/security.js'
+import { globalTestMode, simulatedResult } from '../server/runtime-mode.js'
 
 const ULTRAMSG_BASE = 'https://api.ultramsg.com/instance186201'
 
@@ -19,6 +20,7 @@ export default async function handler(req, res) {
   if (document && (!String(document).startsWith('data:application/pdf;base64,') || String(document).length > 4_000_000)) return res.status(400).json({ error: 'Only PDF attachments up to 3 MB are allowed' })
 
   try {
+    if (await globalTestMode()) return res.status(200).json(simulatedResult('WhatsApp message'))
     const body = document
       ? new URLSearchParams({ token, to: phone, filename: filename || 'Punjab-Invoice.pdf', document, caption: message })
       : new URLSearchParams({ token, to: phone, body: message })

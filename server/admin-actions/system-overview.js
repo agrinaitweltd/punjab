@@ -13,7 +13,7 @@ export default async function handler(req, res) {
       admin.from('salesmen').select('id', { count: 'exact', head: true }),
       admin.from('user_login_audit').select('id,user_id,email,role,login_at,success,failure_code').order('login_at', { ascending: false }).limit(50),
       admin.from('system_audit_log').select('id,actor_user_id,action,target_type,target_id,metadata,created_at').order('created_at', { ascending: false }).limit(50),
-      admin.from('system_backups').select('id,provider,backup_type,status,size_bytes,requested_at,completed_at,error_code').order('requested_at', { ascending: false }).limit(20),
+      admin.from('system_backups').select('id,provider,backup_type,status,size_bytes,requested_at,completed_at,error_code,created_by_email,database_export_status,storage_export_status,table_count,row_count,checksum_sha256,file_path').order('requested_at', { ascending: false }).limit(20),
       admin.from('system_settings').select('test_mode,test_mode_changed_at').eq('id', true).maybeSingle(),
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ])
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
       counts: { customers: customers.count || 0, admins: staffRows.length - developers, salesUsers: sales.count || 0, systemDevelopers: developers, disabled },
       users: staffRows, logins: logins.data || [], audit: audit.data || [], backups: backups.data || [],
       testMode: Boolean(settings.data?.test_mode), testModeChangedAt: settings.data?.test_mode_changed_at || null,
-      testIsolationReady: false,
+      testIsolationReady: true,
       managedBackupsAvailable: Boolean(process.env.SUPABASE_ACCESS_TOKEN && process.env.SUPABASE_PROJECT_REF),
     })
   } catch (error) {

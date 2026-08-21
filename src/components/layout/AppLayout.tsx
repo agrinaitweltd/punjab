@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { URGENT_SUPPORT_PHONE } from '../../lib/emailService'
 import { getSystemMode } from '../../lib/secureAdminApi'
+import { isRuntimeTestMode, setRuntimeTestMode } from '../../lib/runtimeMode'
 
 export function AppLayout({
   role,
@@ -31,15 +32,34 @@ export function AppLayout({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [testMode, setTestMode] = useState(false)
+  const [testMode, setTestMode] = useState(isRuntimeTestMode())
+  const [simulationNotice, setSimulationNotice] = useState('')
 
   useEffect(() => {
     let active = true
-    const check = () => getSystemMode().then(mode => { if (active) setTestMode(mode.testMode) }).catch(() => {})
+    const check = () => getSystemMode().then(mode => {
+      if (!active) return
+      if (mode.testMode !== isRuntimeTestMode()) {
+        setRuntimeTestMode(mode.testMode)
+        window.location.reload()
+        return
+      }
+      setTestMode(mode.testMode)
+    }).catch(() => {})
     check()
-    const timer = window.setInterval(check, 60_000)
+    const timer = window.setInterval(check, 15_000)
     return () => { active = false; window.clearInterval(timer) }
   }, [user.id])
+
+  useEffect(() => {
+    const show = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail
+      setSimulationNotice(detail || 'External communication simulated. Nothing was sent.')
+      window.setTimeout(() => setSimulationNotice(''), 5000)
+    }
+    window.addEventListener('test-mode-simulation', show)
+    return () => window.removeEventListener('test-mode-simulation', show)
+  }, [])
 
   const handleNavigate = (key: string) => {
     setMobileOpen(false)
@@ -62,7 +82,8 @@ export function AppLayout({
         onLogout={onLogout}
       />
       <div className="main-layout">
-        {testMode && <div className="global-test-banner" role="status"><strong>TEST MODE</strong><span>Changes are isolated from live company data. External communications are simulated.</span></div>}
+        {testMode && <div className="global-test-banner" role="status"><strong>TEST MODE</strong><span>Changes made here will not affect live company data. External communications are simulated.</span></div>}
+        {simulationNotice && <div className="simulation-toast" role="status"><strong>TEST MODE</strong>{simulationNotice}</div>}
         <Topbar user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} onBellClick={onBellClick} />
         <main className="content">{children}</main>
         <div style={{ padding: '8px 24px', fontSize: 11.5, color: '#9ca3af', textAlign: 'right', borderTop: '1px solid #eef1ee' }}>

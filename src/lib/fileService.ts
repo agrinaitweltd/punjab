@@ -15,6 +15,9 @@ export type StoredFile = {
   dataUri: string
   customerId: string | null
   customerName: string
+  invoiceId?: string
+  invoiceNumber?: string
+  documentRole?: 'canonical_invoice' | 'legacy_source' | 'general'
 }
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -45,7 +48,7 @@ export async function listFiles(): Promise<StoredFile[]> {
     .order("created_at", { ascending: false })
   if (error) { console.error("listFiles", error); return [] }
   return (data ?? []).map(r => {
-    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string } = {}
+    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; documentRole?: StoredFile['documentRole'] } = {}
     try { meta = JSON.parse(r.timestamp ?? "{}") } catch { /* legacy row */ }
     return {
       id: r.id,
@@ -57,25 +60,30 @@ export async function listFiles(): Promise<StoredFile[]> {
       dataUri: r.action ?? "",
       customerId: meta.customerId ?? null,
       customerName: meta.customerName ?? "Internal only",
+      invoiceId: meta.invoiceId,
+      invoiceNumber: meta.invoiceNumber,
+      documentRole: meta.documentRole ?? 'general',
     }
   })
 }
 
 export async function listFilesForCustomer(customerId: string): Promise<StoredFile[]> {
   const all = await listFiles()
-  return all.filter(f => f.customerId === customerId)
+  return all.filter(f => f.customerId === customerId && f.documentRole !== 'legacy_source')
 }
 
 export async function findInvoicePdf(customerId: string, invoiceNumber: string): Promise<StoredFile | null> {
   const normalizedInvoice = invoiceNumber.trim().toLowerCase()
   if (!normalizedInvoice) return null
   const invoicePattern = new RegExp(`(^|[^a-z0-9])${normalizedInvoice.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`, 'i')
-  const files = await listFilesForCustomer(customerId)
-  return files.find(file => {
+  const files = (await listFiles()).filter(file => file.customerId === customerId)
+  const matches = files.filter(file => {
     if (file.type !== "application/pdf" && !file.dataUri.startsWith("data:application/pdf")) return false
+    if (file.documentRole === 'legacy_source' || /original source/i.test(file.note)) return false
     const searchable = `${file.name} ${file.note}`.toLowerCase()
-    return invoicePattern.test(searchable)
-  }) ?? null
+    return file.invoiceNumber?.toLowerCase() === normalizedInvoice || invoicePattern.test(searchable)
+  })
+  return matches.find(file => file.documentRole === 'canonical_invoice') ?? matches[0] ?? null
 }
 
 export function dataUriBase64(dataUri: string): string {
@@ -87,18 +95,20 @@ export function dataUriBase64(dataUri: string): string {
 export async function uploadFile(
   name: string, type: string, size: number, dataUri: string, note: string,
   customerId: string | null, customerName: string,
-): Promise<void> {
+  document: { invoiceId?: string; invoiceNumber?: string; documentRole?: StoredFile['documentRole'] } = {},
+): Promise<StoredFile> {
   const sanitizedName = safeFileName(name)
   if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_BYTES) throw new Error('File size is outside the allowed range.')
   if (!ALLOWED_TYPES.has(type) || !dataUri.startsWith(`data:${type};base64,`)) throw new Error('That file content type is not allowed.')
   const row = {
-    id: `f-${Date.now()}`,
+    id: `f-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
     customer_name: `FILE:${sanitizedName}`,
     action: dataUri,
-    timestamp: JSON.stringify({ type, size, note, uploadedAt: new Date().toISOString(), customerId, customerName }),
+    timestamp: JSON.stringify({ type, size, note, uploadedAt: new Date().toISOString(), customerId, customerName, ...document }),
   }
   const { error } = await db().from("activity_log").insert(row)
   if (error) throw error
+  return { id: row.id, name: sanitizedName, type, size, note, uploadedAt: new Date().toISOString(), dataUri, customerId, customerName, ...document }
 }
 
 export async function deleteFile(id: string): Promise<boolean> {

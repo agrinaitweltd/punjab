@@ -3231,6 +3231,36 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .security-checks { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }.security-checks > div { min-height: 54px; padding: 13px; display: flex; align-items: center; gap: 10px; border: 1px solid #dfe5e1; border-radius: 7px; color: #48574e; background: #fff; font-size: 12px; }.security-checks svg { color: #22804a; flex-shrink: 0; }
 .system-skeleton-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; }.system-skeleton-grid span { height: 92px; border-radius: 7px; background: linear-gradient(90deg,#edf1ee,#f8faf9,#edf1ee); background-size: 200% 100%; animation: skeleton 1.4s infinite; }
 .global-test-banner { min-height: 38px; padding: 8px 18px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #654306; background: #fff2c8; border-bottom: 1px solid #e6ce80; font-size: 11.5px; }.global-test-banner strong { padding: 2px 6px; border-radius: 4px; color: #fff; background: #a66a09; font-size: 10px; }
+.portal-boot { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #5f6e65; background: #f5f7f5; font-size: 13px; font-weight: 700; }
+.portal-boot img { width: 68px; height: 68px; margin-bottom: 8px; object-fit: contain; }
+.portal-boot span { color: #89948d; font-size: 11px; font-weight: 500; }
+.portal-boot::after { content: ""; width: 24px; height: 24px; margin-top: 8px; border: 3px solid #d8e5dc; border-top-color: #1f7741; border-radius: 50%; animation: spin .8s linear infinite; }
+.simulation-toast { position: fixed; right: 18px; bottom: 18px; z-index: 1200; width: min(360px,calc(100vw - 36px)); padding: 12px 14px; border: 1px solid #e3ca78; border-radius: 7px; color: #62450b; background: #fff8df; box-shadow: 0 12px 30px rgba(60,47,16,.16); font-size: 12px; line-height: 1.5; }
+.simulation-toast strong { display: block; margin-bottom: 2px; color: #7d5707; }
+.backup-types-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.backup-panel { min-height: 168px; align-items: flex-end; }
+.backup-panel .sys-status { align-self: flex-end; white-space: nowrap; }
+.restore-requirements { display: grid; gap: 9px; }
+.restore-requirements > p { margin-bottom: 4px; color: #68766e; font-size: 12px; line-height: 1.55; }
+.restore-requirements > div { min-height: 39px; padding: 9px 10px; display: flex; align-items: center; gap: 10px; border: 1px solid #e1e6e3; border-radius: 6px; color: #3e4d44; background: #fafbfa; font-size: 11.5px; }
+.restore-requirements > div span { padding: 3px 6px; border-radius: 4px; color: #1d6f3d; background: #e7f3ea; font-size: 9.5px; font-weight: 800; text-transform: uppercase; }
+.data-table-shell { overflow: hidden; border: 1px solid #e1e6e3; border-radius: 7px; background: #fff; }
+.data-table-toolbar, .data-table-footer { min-height: 50px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff; }
+.data-table-toolbar { border-bottom: 1px solid #e7ebe8; }
+.data-table-search { width: min(300px,100%); min-height: 34px; padding: 0 9px; display: flex; align-items: center; gap: 7px; border: 1px solid #dce2de; border-radius: 6px; color: #829087; background: #fafbfa; }
+.data-table-search:focus-within { border-color: #64a57a; box-shadow: 0 0 0 3px rgba(44,132,74,.09); }
+.data-table-search input { width: 100%; border: 0; outline: 0; color: #304037; background: transparent; font: inherit; font-size: 11.5px; }
+.data-table-count { color: #849087; font-size: 10.5px; }
+.data-table-shell .table-wrap { border: 0; border-radius: 0; }
+.table-sort { width: 100%; padding: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; color: inherit; background: transparent; font: inherit; font-weight: inherit; text-align: left; cursor: pointer; }
+.table-sort span { color: #a4ada7; font-size: 10px; }.table-sort.active span { color: #247544; }
+.data-table-empty { height: 96px; color: #89948d; text-align: center; }
+.data-table-footer { min-height: 46px; border-top: 1px solid #e7ebe8; color: #7c8981; font-size: 10.5px; }
+.data-table-footer label { display: flex; align-items: center; gap: 7px; }
+.data-table-footer select { min-height: 30px; padding: 4px 23px 4px 7px; border: 1px solid #dce2de; border-radius: 5px; color: #405047; background: #fff; font: inherit; }
+.data-table-footer > div { display: flex; gap: 5px; }
+.data-table-footer button { width: 30px; height: 30px; border: 1px solid #dce2de; border-radius: 5px; color: #415148; background: #fff; font-size: 17px; cursor: pointer; }
+.data-table-footer button:hover:not(:disabled) { border-color: #a9c7b3; background: #f3f8f4; }.data-table-footer button:disabled { opacity: .4; cursor: default; }
 .customer-welcome { padding: 4px 0 14px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
 .customer-welcome span { color: #237a42; font-size: 9.5px; font-weight: 850; }
 .customer-welcome h2 { margin-top: 3px; color: #17251d; font-size: 20px; letter-spacing: 0; }
@@ -3254,6 +3284,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .setup-visual { display: none; }
   .system-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .system-grid-two { grid-template-columns: 1fr; }
+  .backup-types-grid { grid-template-columns: 1fr; }
   .customer-finance-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 600px) {
@@ -3265,5 +3296,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .mode-indicator { width: 86px; height: 86px; }
   .security-checks { grid-template-columns: 1fr; }
   .global-test-banner { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .data-table-toolbar { align-items: stretch; flex-direction: column; }.data-table-search { width: 100%; }.data-table-count { padding-left: 2px; }
+  .data-table-footer { flex-wrap: wrap; }.data-table-footer > span { order: 3; width: 100%; }
   .customer-welcome { align-items: flex-start; flex-direction: column; }
 }

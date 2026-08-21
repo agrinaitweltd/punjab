@@ -66,6 +66,10 @@ function mapInvoice(r: any): Invoice {
     id: r.id, customerId: r.customer_id ?? "", invoiceNumber: r.invoice_number,
     amount: r.amount ?? 0, dueDate: r.due_date ?? "", status: r.status ?? "Unpaid",
     date: r.date ?? r.due_date ?? "", amountPaid: r.amount_paid ?? 0,
+    sourceDocumentId: r.source_document_id ?? undefined,
+    canonicalDocumentId: r.canonical_document_id ?? undefined,
+    canonicalPdfFileName: r.canonical_pdf_file_name ?? undefined,
+    canonicalPdfGeneratedAt: r.canonical_pdf_generated_at ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -448,6 +452,10 @@ class SupabaseDatabaseService {
     }
     if (input.date) row.date = input.date
     if (input.amountPaid !== undefined) row.amount_paid = input.amountPaid
+    if (input.sourceDocumentId !== undefined) row.source_document_id = input.sourceDocumentId || null
+    if (input.canonicalDocumentId !== undefined) row.canonical_document_id = input.canonicalDocumentId || null
+    if (input.canonicalPdfFileName !== undefined) row.canonical_pdf_file_name = input.canonicalPdfFileName || null
+    if (input.canonicalPdfGeneratedAt !== undefined) row.canonical_pdf_generated_at = input.canonicalPdfGeneratedAt || null
     let { data, error } = await db().from("invoices").insert(row).select().single()
     if (error && (error.code === "PGRST204" || /amount_paid/.test(error.message ?? "")) && "amount_paid" in row) {
       const { amount_paid: _ap, ...rest } = row
@@ -469,6 +477,10 @@ class SupabaseDatabaseService {
     if (input.amount !== undefined) row.amount = input.amount
     if (input.dueDate) row.due_date = input.dueDate
     if (input.amountPaid !== undefined) row.amount_paid = input.amountPaid
+    if (input.sourceDocumentId !== undefined) row.source_document_id = input.sourceDocumentId || null
+    if (input.canonicalDocumentId !== undefined) row.canonical_document_id = input.canonicalDocumentId || null
+    if (input.canonicalPdfFileName !== undefined) row.canonical_pdf_file_name = input.canonicalPdfFileName || null
+    if (input.canonicalPdfGeneratedAt !== undefined) row.canonical_pdf_generated_at = input.canonicalPdfGeneratedAt || null
     let { data, error } = await db().from("invoices").update(row).eq("id", id).select().single()
     if (error && (error.code === "PGRST204" || /amount_paid/.test(error.message ?? "")) && "amount_paid" in row) {
       const { amount_paid: _ap, ...rest } = row

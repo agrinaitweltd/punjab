@@ -23,6 +23,13 @@ assert.equal(synthetic.invoice.invoiceAccount, '2815')
 assert.equal(synthetic.invoice.invoiceNumber, '2815')
 assert.equal(synthetic.invoice.deliveryAccount, '1044')
 
+const explicitInvoiceAccount = parser.parseLegacyInvoiceLines([
+  'Invoice Acc: 2815',
+  'Delivery Acc     Invoice Acc     Salesman     Date/Tax Pt     Num',
+  '0/0              1044                             17           21/08/2026        828310       1/1',
+])
+assert.equal(explicitInvoiceAccount.invoice.invoiceNumber, '2815')
+
 async function pdfLines(filePath) {
   const document = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(filePath)) }).promise
   const lines = []

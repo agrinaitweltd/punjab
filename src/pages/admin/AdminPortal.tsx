@@ -5,7 +5,7 @@ import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
 import { ADMIN_NOTIFY_EMAIL, sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml, paymentReminderEmailHtml } from '../../lib/emailService'
 import { getCreditStatus } from '../../lib/creditControl'
 import { dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
-import { authenticatedFetch } from '../../lib/apiFetch'
+import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
 import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
@@ -135,7 +135,7 @@ import { GlobalSearchPage } from './GlobalSearchPage'
 import { CommunicationHistoryPage } from './CommunicationHistoryPage'
 import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
-import { inviteAdmin, manageAdmin } from '../../lib/secureAdminApi'
+import { inviteAdmin, inviteCustomer, manageAdmin } from '../../lib/secureAdminApi'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [current, setCurrent] = useState('dashboard')
@@ -312,27 +312,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
   const regenerateInvoicePdf = async (invoice: Invoice, customer: Customer) => {
     const items = await getInvoiceItems(invoice.id)
-    if (!items.length) throw new Error('Stored product rows are missing. Recreate the invoice before retrying.')
-    const totalGoods = items.reduce((sum, item) => sum + (item.goodsValue || item.quantity * item.price), 0)
-    const vatTotal = items.reduce((sum, item) => sum + (item.goodsValue || item.quantity * item.price) * item.vatRate / 100, 0)
-    const address = customer.address || customer.registeredAddress || ''
-    const addressParts = address.split(',').map(value => value.trim()).filter(Boolean)
-    const payload = {
-      customer: { name: customer.companyName, accountNumber: customer.customerNumber, address, addressLine1: addressParts[0] || '', addressLine2: addressParts.slice(1, -1).join(', '), postcode: addressParts.at(-1) || '', phone: customer.phone, balance: customer.balance ?? 0 },
-      invoice: { invoiceNumber: invoice.invoiceNumber, date: invoice.date, packages: 0, totalGoods, vatTotal, grandTotal: invoice.amount },
-      items: items.map(item => ({ line: item.line, qty: item.quantity, product: item.product, variety: item.variety, size: item.size, price: item.price, vatRate: item.vatRate })),
-    }
-    const wordResponse = await authenticatedFetch('/api/generate-invoice-docx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    if (!wordResponse.ok) throw new Error('Official invoice document could not be regenerated.')
-    const docx = await wordResponse.blob()
-    const docxDataUri = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(docx) })
-    const fileName = `Punjab-Invoice-${invoice.invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`
-    const pdfResponse = await authenticatedFetch('/api/convert-invoice-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docxBase64: docxDataUri.split(',')[1] || '', fileName, data: payload }) })
-    if (!pdfResponse.ok) throw new Error('Official invoice PDF conversion failed.')
-    const pdf = await pdfResponse.blob()
-    const pdfDataUri = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(pdf) })
-    const pdfName = `Punjab-Invoice-${invoice.invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}-${customer.customerNumber}.pdf`
-    await uploadFile(pdfName, 'application/pdf', pdf.size, pdfDataUri, `Invoices: ${invoice.invoiceNumber}`, customer.id, customer.companyName)
+    const pdf = await generateCanonicalInvoicePdf(invoice, customer, items)
+    const stored = await uploadFile(pdf.fileName, 'application/pdf', pdf.blob.size, pdf.dataUri, `Invoices: ${invoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, documentRole: 'canonical_invoice' })
+    const updated = await updateInvoice(invoice.id, { canonicalDocumentId: stored.id, canonicalPdfFileName: stored.name, canonicalPdfGeneratedAt: new Date().toISOString() })
+    if (!updated) throw new Error('The official PDF was generated but could not be linked to the invoice.')
     void logActivity(user.displayName, `regenerated official PDF for invoice ${invoice.invoiceNumber}`)
     await load()
   }
@@ -643,9 +626,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             if (data.invoice.invoiceNumber && invoices.some(i => i.invoiceNumber === data.invoice.invoiceNumber)) throw new Error('That invoice number already exists.')
             const createdInvoice = await createInvoice({ customerId: customer.id, invoiceNumber: data.invoice.invoiceNumber, date: issueDate, dueDate: due.toISOString().slice(0, 10), amount: data.invoice.grandTotal, amountPaid: 0, status: 'Unpaid' })
             await saveInvoiceItems(createdInvoice.id, data.items)
+            let sourceDocumentId: string | undefined
             if (data.source) {
-              await uploadFile(data.source.name, data.source.type, data.source.size, data.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName)
+              const source = await uploadFile(data.source.name, data.source.type, data.source.size, data.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, documentRole: 'legacy_source' })
+              sourceDocumentId = source.id
             }
+            const canonical = await generateCanonicalInvoicePdf(createdInvoice, customer, data.items)
+            const official = await uploadFile(canonical.fileName, 'application/pdf', canonical.blob.size, canonical.dataUri, `Invoices: ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, documentRole: 'canonical_invoice' })
+            const linked = await updateInvoice(createdInvoice.id, { sourceDocumentId, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
+            if (!linked) throw new Error('The invoice was imported, but its official PDF could not be linked. Retry PDF generation before sending it.')
             const previousOutstanding = invoices
               .filter(invoice => invoice.customerId === customer.id)
               .reduce((sum, invoice) => sum + Math.max(0, invoice.amount - (invoice.amountPaid ?? 0)), 0)
@@ -661,7 +650,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             const customer=customers.find(c=>c.customerNumber===accountNumber)
             if(!customer) throw new Error('Customer account not found')
             await updateCustomer(customer.id,{email,phone})
-            await sendEmail(email,'Welcome to the Punjab Exotic Foods Customer Portal',welcomeEmailHtml(customer.companyName,'customer',window.location.origin))
+            await inviteCustomer(customer.id, email)
             void logActivity(user.displayName,`sent portal invitation to ${customer.companyName} (${email})`)
             await load()
           }}

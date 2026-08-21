@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { guardApi } from '../server/security.js'
+import { globalTestMode } from '../server/runtime-mode.js'
 
 const genericResponse = res => res.status(200).json({ ok: true })
 
@@ -19,9 +20,14 @@ export default async function handler(req, res) {
   try {
     const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
     const table = role === 'admin' ? 'admin_staff' : 'customers'
-    const { data: account, error } = await admin.from(table).select('id,email,auth_user_id').ilike('email', email).maybeSingle()
+    const columns = role === 'admin' ? 'id,email,auth_user_id,role' : 'id,email,auth_user_id'
+    const { data: account, error } = await admin.from(table).select(columns).ilike('email', email).maybeSingle()
     if (error) throw error
     if (!account?.auth_user_id) return genericResponse(res)
+    if (await globalTestMode(admin)) {
+      const isDeveloper = role === 'admin' && account.role === 'System Developer'
+      if (!isDeveloper) return genericResponse(res)
+    }
 
     const { data: authUser, error: authError } = await admin.auth.admin.getUserById(account.auth_user_id)
     if (authError || !authUser.user?.email) throw authError || new Error('Linked Auth user is missing')

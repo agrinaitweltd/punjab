@@ -19,6 +19,15 @@ const overview = {
   testMode: false, testModeChangedAt: null, testIsolationReady: false, managedBackupsAvailable: false,
 }
 
+async function prepareSession(page) {
+  await page.addInitScript(({ user, session }) => {
+    localStorage.setItem('punjab-session-user', JSON.stringify(user))
+    localStorage.setItem('punjab-cookie-consent', JSON.stringify({ necessary: true }))
+    localStorage.setItem('sb-vqnnlorukpzsftfisjrm-auth-token', JSON.stringify(session))
+  }, { user, session })
+  await page.route('**/api/admin-security?action=system-mode', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ testMode: false, changedAt: null }) }))
+}
+
 for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
   test(`${viewport.name} login layout`, async ({ page }) => {
     await page.setViewportSize(viewport)
@@ -33,13 +42,8 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
 
   test(`${viewport.name} restricted dashboard layout`, async ({ page }) => {
     await page.setViewportSize(viewport)
-    await page.addInitScript(({ user, session }) => {
-      localStorage.setItem('punjab-session-user', JSON.stringify(user))
-      localStorage.setItem('punjab-cookie-consent', JSON.stringify({ necessary: true }))
-      localStorage.setItem('sb-vqnnlorukpzsftfisjrm-auth-token', JSON.stringify(session))
-    }, { user, session })
+    await prepareSession(page)
     await page.route('**/api/admin-security?action=system-overview', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(overview) }))
-    await page.route('**/api/admin-security?action=system-mode', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ testMode: false, changedAt: null }) }))
     await page.goto(origin, { waitUntil: 'domcontentloaded' })
 
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open menu' }).click()
@@ -53,3 +57,18 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.screenshot({ path: `test-results/${viewport.name}-system-dashboard.png`, fullPage: true })
   })
 }
+
+test('tablet invoice table controls and responsive layout', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 1180 })
+  await prepareSession(page)
+  await page.route('**/rest/v1/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]', headers: { 'content-range': '0-0/0' } }))
+  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.locator('.pn-parent').filter({ hasText: 'Invoices' }).click()
+  await page.getByRole('button', { name: 'Invoice History', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Invoices', exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Search table' })).toBeVisible()
+  await expect(page.getByText('Rows per page')).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: 'test-results/tablet-invoice-table.png', fullPage: true })
+})

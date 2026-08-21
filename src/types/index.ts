@@ -225,6 +225,12 @@ export interface Invoice {
   /** Total paid so far via payments and/or applied credit notes. amount -
       amountPaid is the outstanding balance shown on statements. */
   amountPaid?: number
+  /** Archived legacy upload and the regenerated official PDF used by every
+      customer download and reminder workflow. */
+  sourceDocumentId?: string
+  canonicalDocumentId?: string
+  canonicalPdfFileName?: string
+  canonicalPdfGeneratedAt?: string
 }
 
 export interface Payment {

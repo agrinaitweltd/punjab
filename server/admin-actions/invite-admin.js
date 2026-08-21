@@ -25,6 +25,12 @@ export default async function handler(req, res) {
   let createdAuthUserId = null
   let createdRosterId = null
   try {
+    const mode = await admin.from('system_settings').select('test_mode').eq('id', true).single()
+    if (mode.error) throw mode.error
+    if (mode.data.test_mode) {
+      await writeSystemAudit(admin, user.id, 'admin_invitation_simulated', 'admin_staff', 'test-mode', { email, role })
+      return res.status(200).json({ ok: true, simulated: true, message: 'TEST MODE - invitation simulated successfully. No account or email was created.' })
+    }
     const existing = await admin.from('admin_staff').select('id,active,auth_user_id').ilike('email', email).maybeSingle()
     if (existing.error) throw existing.error
     if (existing.data) return res.status(409).json({ error: 'An account with that email already exists. Use resend setup or password recovery instead.' })

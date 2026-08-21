@@ -1,6 +1,7 @@
 // Vercel serverless function — keeps the Resend API key off the client.
 // Set RESEND_API_KEY in Vercel → Project → Settings → Environment Variables.
 import { guardApi, requireUser, safeError } from '../server/security.js'
+import { globalTestMode, simulatedResult } from '../server/runtime-mode.js'
 
 export default async function handler(req, res) {
   if (!guardApi(req, res, { maxBytes: 4_200_000, limit: 12 })) return
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
   if (!recipients.length || recipients.length > 10 || recipients.some(value => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) || !String(subject || '').trim() || String(subject).length > 200 || !String(html || '').trim() || String(html).length > 250_000) return res.status(400).json({ error: 'Invalid email request' })
 
   try {
+    if (await globalTestMode()) return res.status(200).json(simulatedResult('Email'))
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

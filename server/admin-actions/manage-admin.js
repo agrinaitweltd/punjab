@@ -10,6 +10,12 @@ export default async function handler(req, res) {
   const action = String(req.body?.action || '')
   if (!id || !['update', 'set_active', 'remove'].includes(action)) return res.status(400).json({ error: 'Invalid administration request.' })
   try {
+    const mode = await admin.from('system_settings').select('test_mode').eq('id', true).single()
+    if (mode.error) throw mode.error
+    if (mode.data.test_mode) {
+      await writeSystemAudit(admin, user.id, 'admin_change_simulated', 'admin_staff', id, { action })
+      return res.status(200).json({ ok: true, simulated: true, message: 'TEST MODE - privileged account change simulated. Live access was not changed.' })
+    }
     const target = await admin.from('admin_staff').select('id,name,email,role,active,is_super_admin,auth_user_id').eq('id', id).maybeSingle()
     if (target.error || !target.data) return res.status(404).json({ error: 'Account not found.' })
     if (target.data.id === staff.id) return res.status(400).json({ error: 'You cannot disable or remove your own account here.' })
