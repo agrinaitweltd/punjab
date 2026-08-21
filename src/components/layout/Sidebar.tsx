@@ -13,7 +13,7 @@ const CUSTOMER_NAV_PERMISSION_KEY: Partial<Record<string, keyof SubAccountPermis
    admins. Items not listed here (Dashboard, Daily Session, Deliveries,
    Files, Settings) are operational pages every admin can see. */
 const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
-  products: "products", orders: "orders", customers: "customers", tickets: "tickets",
+  products: "products", orders: "orders", customers: "customers", "add-customer": "customers", tickets: "tickets",
   payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
   "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage",
   "payment-reminders": "payments",
@@ -22,18 +22,14 @@ const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
 }
 
 const adminMain = [
-  { key: "global-search", label: "Search", d: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z" },
   { key: "dashboard",  label: "Dashboard", d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
-  { key: "session",    label: "Buying Desk", d: "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zM12 6v6l4 2" },
-  { key: "suppliers",  label: "Suppliers", d: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" },
-  { key: "products",   label: "Product",   d: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" },
-  { key: "orders",     label: "Sale",     d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" },
-  { key: "customers",  label: "Customer",  d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },
-  { key: "tickets",    label: "Message",   d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
+  { key: "add-customer", label: "Add Customer", d: "M12 5v14M5 12h14" },
+  { key: "create-invoice", label: "Create Invoice", d: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" },
+  { key: "customers",  label: "Customers",  d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },
+  { key: "outstanding", label: "Outstanding", d: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" },
+  { key: "global-search", label: "Global Search", d: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z" },
 ]
 const adminTools = [
-  { key: "create-invoice", label: "Create Invoice", d: "M12 5v14M5 12h14", badge: undefined },
-  { key: "outstanding", label: "Outstanding Invoices", d: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z", badge: undefined },
   { key: "payments",      label: "Payments",    d: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", badge: undefined },
   { key: "expenses", label: "Expenses", d: "M4 7h16M4 12h16M4 17h10", badge: undefined },
   { key: "payment-proofs", label: "Payment Proofs", d: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", badge: undefined },
@@ -52,6 +48,11 @@ const adminTools = [
   { key: "whatsapp-logs", label: "WhatsApp Logs", d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: undefined },
 ]
 const adminWorkspace = [
+  { key: "session", label: "Buying Desk", dot: "#22913f" },
+  { key: "orders", label: "Sales", dot: "#2563eb" },
+  { key: "products", label: "Products", dot: "#7c3aed" },
+  { key: "suppliers", label: "Suppliers", dot: "#d97706" },
+  { key: "tickets", label: "Messages", dot: "#0891b2" },
   { key: "delivery-areas", label: "Deliveries", dot: "#22913f" },
   { key: "enquiries",      label: "Enquiries",  dot: "#e05c2a" },
 ]
@@ -130,7 +131,13 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
   const matches = <T extends { label: string }>(items: T[]) =>
     q ? items.filter(i => i.label.toLowerCase().includes(q)) : items
   const mainItems      = matches(isAdmin ? allowed(adminMain) : forSubAccount(customerMain))
-  const toolItems      = matches(allowed(adminTools))
+  const financeKeys = new Set(['payments', 'expenses', 'payment-proofs', 'credit-control', 'credit-notes', 'payment-reminders', 'day-trade', 'day-check', 'stats'])
+  const documentKeys = new Set(['files', 'invoice-numbers', 'data-extract'])
+  const communicationKeys = new Set(['communication-history', 'whatsapp-logs'])
+  const financeItems = matches(allowed(adminTools.filter(item => financeKeys.has(item.key))))
+  const documentItems = matches(allowed(adminTools.filter(item => documentKeys.has(item.key))))
+  const communicationItems = matches(allowed(adminTools.filter(item => communicationKeys.has(item.key))))
+  const systemToolItems = matches(allowed(adminTools.filter(item => !financeKeys.has(item.key) && !documentKeys.has(item.key) && !communicationKeys.has(item.key))))
   const workspaceItems = matches(allowed(adminWorkspace))
   const bottomItems    = matches(adminBottom)
   const badgeFor = (key: string) => { const n = badges?.[key] ?? 0; return n > 0 ? String(n > 99 ? "99+" : n) : undefined }
@@ -178,7 +185,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
       {/* Main menu */}
       {mainItems.length > 0 && (
         <div className="sb-section">
-          <p className="sb-section-label">Main Menu</p>
+          <p className="sb-section-label">Main</p>
           <nav>
             {mainItems.map(item => (
               <NavItem key={item.key} label={item.label} d={item.d} badge={badgeFor(item.key)}
@@ -189,21 +196,24 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
       )}
 
       {isAdmin && <>
-        {toolItems.length > 0 && (
+        {[
+          ['Finance', financeItems],
+          ['Documents', documentItems],
+          ['Communications', communicationItems],
+        ].map(([label, items]) => (items as typeof adminTools).length > 0 && (
+          <div className="sb-section" key={label as string}>
+            <p className="sb-section-label">{label as string}</p>
+            <nav>{(items as typeof adminTools).map(item => <NavItem key={item.key} label={item.label} d={item.d} active={current === item.key} onClick={() => onNavigate(item.key)} />)}</nav>
+          </div>
+        ))}
+        {(systemToolItems.length > 0 || workspaceItems.length > 0 || ((isSuperAdmin || permissions?.usersManage) && (!q || "admin users sales users".includes(q)))) && (
           <div className="sb-section">
-            <p className="sb-section-label">Tools</p>
+            <p className="sb-section-label">Operations &amp; System</p>
             <nav>
-              {toolItems.map(item => (
+              {systemToolItems.map(item => (
                 <NavItem key={item.key} label={item.label} d={item.d}
                   active={current === item.key} onClick={() => onNavigate(item.key)} />
               ))}
-            </nav>
-          </div>
-        )}
-        {(workspaceItems.length > 0 || ((isSuperAdmin || permissions?.usersManage) && (!q || "admin users sales users".includes(q)))) && (
-          <div className="sb-section">
-            <p className="sb-section-label">Workspace</p>
-            <nav>
               {workspaceItems.map(item => (
                 <NavItem key={item.key} label={item.label} dot={item.dot} badge={badgeFor(item.key)}
                   active={current === item.key} onClick={() => onNavigate(item.key)} />
@@ -252,7 +262,7 @@ export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, 
             </nav>
           </div>
         )}
-        {q && mainItems.length + toolItems.length + workspaceItems.length === 0 && (
+        {q && mainItems.length + financeItems.length + documentItems.length + communicationItems.length + systemToolItems.length + workspaceItems.length === 0 && (
           <p className="sb-no-results">No menu items match “{query}”</p>
         )}
       </>}

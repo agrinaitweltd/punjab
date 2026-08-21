@@ -102,12 +102,14 @@ function metadataSection(lines: string[]) {
   const deliveryAccount = cells[1] ?? ''
   const invoiceAccount = cells[2] ?? ''
   const salesman = cells[3] ?? ''
-  const forbidden = new Set([deliveryAccount, invoiceAccount, salesman, accountNumber].filter(Boolean))
-  let invoiceNumber = ''
+  const forbidden = new Set([deliveryAccount, salesman, accountNumber].filter(Boolean))
+  let explicitInvoiceNumber = ''
   for (const line of lines) {
     const explicit = line.match(/\bInvoice\s*(?:No\.?|Number)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,})\b/i)?.[1] ?? ''
-    if (explicit && !forbidden.has(explicit)) { invoiceNumber = explicit; break }
+    if (explicit && !forbidden.has(explicit)) { explicitInvoiceNumber = explicit; break }
   }
+  // Punjab's legacy invoice labels its invoice number as "Invoice Acc".
+  const invoiceNumber = invoiceAccount || explicitInvoiceNumber
   return { date: isoDate(dateToken), accountNumber, deliveryAccount, invoiceAccount, salesman, invoiceNumber }
 }
 

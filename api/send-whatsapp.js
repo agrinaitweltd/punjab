@@ -3,16 +3,20 @@
 // Only the single Punjab Exotic Foods Ltd WhatsApp Business account
 // (UltraMsg instance186201) ever sends — this endpoint is the only thing
 // that talks to UltraMsg, so no staff member's own WhatsApp is ever used.
+import { guardApi, requireUser, safeError } from '../server/security.js'
+
 const ULTRAMSG_BASE = 'https://api.ultramsg.com/instance186201'
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!guardApi(req, res, { maxBytes: 4_200_000, limit: 12 })) return
+  if (!(await requireUser(req, res, { adminOnly: true }))) return
 
   const token = process.env.ULTRAMSG_TOKEN
   if (!token) return res.status(500).json({ error: 'ULTRAMSG_TOKEN not configured' })
 
   const { phone, message, document, filename } = req.body ?? {}
-  if (!phone || !message) return res.status(400).json({ error: 'Missing phone/message' })
+  if (!/^\d{8,15}$/.test(String(phone || '')) || !String(message || '').trim() || String(message).length > 4000) return res.status(400).json({ error: 'Invalid WhatsApp request' })
+  if (document && (!String(document).startsWith('data:application/pdf;base64,') || String(document).length > 4_000_000)) return res.status(400).json({ error: 'Only PDF attachments up to 3 MB are allowed' })
 
   try {
     const body = document
@@ -30,6 +34,7 @@ export default async function handler(req, res) {
     const ok = r.ok && data?.sent !== false && !data?.error
     return res.status(ok ? 200 : 502).json(data)
   } catch (e) {
-    return res.status(502).json({ error: String(e) })
+    console.error('send-whatsapp failed', e instanceof Error ? e.message : 'Unknown error')
+    return res.status(502).json({ error: safeError })
   }
 }

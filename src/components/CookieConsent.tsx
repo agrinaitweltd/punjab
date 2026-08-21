@@ -30,16 +30,15 @@ export function CookieConsent() {
   if (!visible) return null
 
   return (
-    <div className="ck-card" role="dialog" aria-label="Cookie consent">
+    <div className={"ck-card" + (showDetails ? " ck-expanded" : "")} role="dialog" aria-label="Cookie consent">
       <button className="ck-close" aria-label="Close" onClick={() => save(prefs)}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
 
       <h3 className="ck-title">This website uses cookies</h3>
       <p className="ck-copy">
-        We use cookies to personalise content and to analyse our traffic. We also share
-        information about your use of our site with our analytics partners who may combine
-        it with other information that you've provided to them. <a href="/privacy" className="ck-link" target="_blank" rel="noopener">Privacy Policy</a>
+        Necessary cookies keep login secure. Optional cookies help us improve the portal
+        and tailor content. <a href="/privacy" className="ck-link" target="_blank" rel="noopener">Privacy Policy</a>
       </p>
 
       <div className="ck-options">

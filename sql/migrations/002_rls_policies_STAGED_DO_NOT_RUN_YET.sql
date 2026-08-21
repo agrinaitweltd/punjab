@@ -34,14 +34,36 @@ as $$
   select coalesce((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin', false)
 $$;
 
+create or replace function public.current_customer_ids() returns setof text
+language sql stable security definer
+set search_path = ''
+as $$
+  select id from public.customers where auth_user_id = auth.uid()
+  union
+  select customer_id from public.customer_sub_accounts
+  where auth_user_id = auth.uid() and active and status = 'Approved'
+$$;
+
 -- ── customers — each customer sees only their own row; admins see all ──
 alter table customers enable row level security;
 create policy "customers_select_own_or_admin" on customers for select
-  using (is_admin() or auth_user_id = auth.uid());
+  using (is_admin() or id in (select public.current_customer_ids()));
 create policy "customers_update_own_or_admin" on customers for update
-  using (is_admin() or auth_user_id = auth.uid());
+  using (is_admin() or id in (select public.current_customer_ids()));
 create policy "customers_admin_write" on customers for insert with check (is_admin());
 create policy "customers_admin_delete" on customers for delete using (is_admin());
+
+alter table customer_sub_accounts enable row level security;
+create policy "customer_sub_accounts_select" on customer_sub_accounts for select using (
+  is_admin() or auth_user_id = auth.uid() or customer_id in (select public.current_customer_ids())
+);
+create policy "customer_sub_accounts_customer_insert" on customer_sub_accounts for insert with check (
+  is_admin() or customer_id in (select public.current_customer_ids())
+);
+create policy "customer_sub_accounts_update" on customer_sub_accounts for update using (
+  is_admin() or auth_user_id = auth.uid() or customer_id in (select public.current_customer_ids())
+);
+create policy "customer_sub_accounts_admin_delete" on customer_sub_accounts for delete using (is_admin());
 
 -- ── admin_staff — admins only (nobody should browse the staff roster except staff) ──
 alter table admin_staff enable row level security;
@@ -53,7 +75,7 @@ create policy "admin_staff_admin_only" on admin_staff for all
 --    — each has a customer_id FK; a customer sees only rows for their own account ──
 alter table orders enable row level security;
 create policy "orders_select" on orders for select using (
-  is_admin() or customer_id in (select id from customers where auth_user_id = auth.uid())
+  is_admin() or customer_id in (select public.current_customer_ids())
 );
 create policy "orders_admin_write" on orders for insert with check (is_admin());
 create policy "orders_admin_update" on orders for update using (is_admin());
@@ -61,19 +83,19 @@ create policy "orders_admin_delete" on orders for delete using (is_admin());
 
 alter table invoices enable row level security;
 create policy "invoices_select" on invoices for select using (
-  is_admin() or customer_id in (select id from customers where auth_user_id = auth.uid())
+  is_admin() or customer_id in (select public.current_customer_ids())
 );
 create policy "invoices_admin_write" on invoices for all using (is_admin()) with check (is_admin());
 
 alter table payments enable row level security;
 create policy "payments_select" on payments for select using (
-  is_admin() or customer_id in (select id from customers where auth_user_id = auth.uid())
+  is_admin() or customer_id in (select public.current_customer_ids())
 );
 create policy "payments_admin_write" on payments for all using (is_admin()) with check (is_admin());
 
 alter table credit_notes enable row level security;
 create policy "credit_notes_select" on credit_notes for select using (
-  is_admin() or customer_id in (select id from customers where auth_user_id = auth.uid())
+  is_admin() or customer_id in (select public.current_customer_ids())
 );
 create policy "credit_notes_admin_write" on credit_notes for all using (is_admin()) with check (is_admin());
 
@@ -87,10 +109,10 @@ create policy "notification_logs_admin_only" on notification_logs for all
 
 alter table support_tickets enable row level security;
 create policy "support_tickets_select" on support_tickets for select using (
-  is_admin() or customer_id in (select id from customers where auth_user_id = auth.uid())
+  is_admin() or customer_id in (select public.current_customer_ids())
 );
 create policy "support_tickets_insert" on support_tickets for insert with check (
-  is_admin() or customer_id in (select id from customers where auth_user_id = auth.uid())
+  is_admin() or customer_id in (select public.current_customer_ids())
 );
 create policy "support_tickets_admin_update" on support_tickets for update using (is_admin());
 create policy "support_tickets_admin_delete" on support_tickets for delete using (is_admin());

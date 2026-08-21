@@ -1,13 +1,16 @@
 // Vercel serverless function — keeps the Ideal Postcodes API key off the client.
 // Set IDEAL_POSTCODES_API_KEY in Vercel -> Project -> Settings -> Environment Variables.
+import { guardApi, requireUser, safeError } from '../server/security.js'
+
 export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+  if (!guardApi(req, res, { methods: ['GET'], maxBytes: 0, limit: 30 })) return
+  if (!(await requireUser(req, res))) return
 
   const key = process.env.IDEAL_POSTCODES_API_KEY
   if (!key) return res.status(500).json({ error: 'IDEAL_POSTCODES_API_KEY not configured' })
 
   const postcode = (req.query.postcode || '').toString().trim()
-  if (!postcode) return res.status(400).json({ error: 'Missing postcode' })
+  if (!/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(postcode)) return res.status(400).json({ error: 'Invalid postcode' })
 
   try {
     const r = await fetch(
@@ -26,6 +29,7 @@ export default async function handler(req, res) {
     }))
     return res.status(200).json({ addresses })
   } catch (e) {
-    return res.status(502).json({ error: String(e), addresses: [] })
+    console.error('lookup-address failed', e instanceof Error ? e.message : 'Unknown error')
+    return res.status(502).json({ error: safeError, addresses: [] })
   }
 }

@@ -56,8 +56,16 @@ create index if not exists communication_logs_invoice_id_idx on communication_lo
 create index if not exists communication_logs_customer_id_idx on communication_logs(customer_id, created_at desc);
 create index if not exists communication_logs_failed_idx on communication_logs(created_at desc) where status = 'Failed';
 
--- Policies are created now but RLS remains disabled until the staged Supabase Auth
--- migration is approved. Enabling it earlier would block the app's legacy sessions.
+-- These new normalized tables are server/admin-only until Supabase Auth is live.
+-- Existing legacy workflows continue using their compatibility rows, so enabling
+-- RLS here does not lock out the current application and avoids anon-key exposure.
+alter table invoice_items enable row level security;
+alter table expenses enable row level security;
+alter table finance_settings enable row level security;
+alter table portal_invitations enable row level security;
+alter table generated_documents enable row level security;
+alter table communication_logs enable row level security;
+
 do $$ begin
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='expenses' and policyname='expenses_admin_all') then
     create policy expenses_admin_all on expenses for all using (is_admin()) with check (is_admin());

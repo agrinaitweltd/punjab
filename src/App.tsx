@@ -90,7 +90,7 @@ function App() {
     setUser(loggedInUser)
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(loggedInUser)) } catch { /* ignore */ }
     setShowSwitcher(false)
-    if (!hasBeenPromptedToRemember() && !getDeviceAccount()) {
+    if (role !== 'admin' && !hasBeenPromptedToRemember() && !getDeviceAccount()) {
       setRememberPrompt({ role, displayName: loggedInUser.displayName, usernameOrEmail: usernameOrEmail.trim(), password })
     }
   }

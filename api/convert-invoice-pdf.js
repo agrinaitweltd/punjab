@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { guardApi, requireUser } from '../server/security.js'
 
 const clean = value => String(value ?? '').replace(/[\r\n]+/g, ' ').trim()
 const money = value => `GBP ${Number(value || 0).toFixed(2)}`
@@ -41,9 +42,10 @@ async function renderFallback(data) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!guardApi(req, res, { maxBytes: 4_200_000, limit: 15 })) return
+  if (!(await requireUser(req, res, { adminOnly: true }))) return
   const { docxBase64, fileName, data } = req.body ?? {}
-  if (!docxBase64 || !data?.invoice?.invoiceNumber) return res.status(400).json({ error: 'DOCX and invoice data are required' })
+  if (!docxBase64 || String(docxBase64).length > 3_800_000 || !data?.invoice?.invoiceNumber || !Array.isArray(data?.items) || data.items.length > 100) return res.status(400).json({ error: 'Valid DOCX and invoice data are required' })
   const token = process.env.CONVERTAPI_TOKEN
   if (token) {
     try {

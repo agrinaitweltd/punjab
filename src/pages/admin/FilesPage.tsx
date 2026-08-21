@@ -165,7 +165,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
               </div>
               <input
                 ref={inputRef} type="file" style={{ display: "none" }}
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.csv"
                 onChange={e => onPick(e.target.files?.[0])}
               />
             </div>

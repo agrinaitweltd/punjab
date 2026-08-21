@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Customer, CreditNote, CreditNoteAllocation, DeliveryArea, Invoice, Payment, WhatsAppTemplate } from '../../types'
 import { parseStatementPdf, type PunjabStatement, type StatementRow } from '../../lib/statementImport'
@@ -60,6 +60,7 @@ export function CustomersPage({
   onCreateFromInvoice,
   onNavigate,
   onInviteCustomer,
+  openAddRequest = 0,
 }: {
   customers: Customer[]
   deliveryAreas: DeliveryArea[]
@@ -79,6 +80,7 @@ export function CustomersPage({
   onCreateFromInvoice?: (data: ImportedLegacyInvoice) => Promise<void>
   onNavigate?: (page: string) => void
   onInviteCustomer?: (accountNumber: string, email: string, phone: string) => Promise<void>
+  openAddRequest?: number
 }) {
   const [whatsappTarget, setWhatsappTarget] = useState<Customer | null>(null)
   const [whatsappBusy, setWhatsappBusy] = useState(false)
@@ -113,6 +115,12 @@ export function CustomersPage({
   const [importMsg, setImportMsg] = useState('')
   const [importProgress, setImportProgress] = useState('')
   const [importDone, setImportDone] = useState('')
+
+  useEffect(() => {
+    if (!openAddRequest) return
+    setNewEmail(''); setFullForm(initialFullForm); setAddMode('invoice'); setInvoiceReview(null)
+    setOnboardingCustomer(''); setOnboardingContact(false); setOnboardingAccount(''); setAddError(''); setShowAdd(true)
+  }, [openAddRequest])
 
   const filtered = useMemo(
     () =>
@@ -246,7 +254,11 @@ export function CustomersPage({
     if (!invoiceReview.customer.companyName.trim()) { setAddError('Company name is required.'); return }
     if (!invoiceReview.invoice.invoiceNumber.trim()) { setAddError('Enter the invoice number shown on the source invoice before saving.'); return }
     setAdding(true); setAddError('')
-    try { await onCreateFromInvoice(invoiceReview); setOnboardingCustomer(`${invoiceReview.customer.companyName} - ${invoiceReview.customer.accountNumber}`); setOnboardingAccount(invoiceReview.customer.accountNumber); setContactEmail(invoiceReview.customer.email); setContactPhone(invoiceReview.customer.phone); setInvoiceReview(null) } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not create the customer and invoice.') }
+    try {
+      await onCreateFromInvoice(invoiceReview)
+      setInvoiceReview(null)
+      setShowAdd(false)
+    } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not create the customer and invoice.') }
     setAdding(false)
   }
 
@@ -338,8 +350,7 @@ export function CustomersPage({
                 <Input label="Postcode" value={invoiceReview.customer.postcode} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, postcode: e.target.value.toUpperCase() } })} />
                 <Input label="Telephone" value={invoiceReview.customer.phone} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, phone: e.target.value } })} />
                 <Input label="Email" value={invoiceReview.customer.email} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, email: e.target.value } })} />
-                <Input label="Invoice Number" value={invoiceReview.invoice.invoiceNumber} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, invoiceNumber: e.target.value } })} />
-                <Input label="Invoice Account (reference only)" value={invoiceReview.invoice.invoiceAccount} disabled />
+                <Input label="Invoice Number (Invoice Acc)" value={invoiceReview.invoice.invoiceNumber} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, invoiceNumber: e.target.value, invoiceAccount: e.target.value } })} />
                 <Input label="Invoice Date" type="date" value={invoiceReview.invoice.date} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, date: e.target.value } })} />
                 <Input label="Total Goods" type="number" value={String(invoiceReview.invoice.totalGoods)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, totalGoods: Number(e.target.value) || 0 } })} />
                 <Input label="VAT" type="number" value={String(invoiceReview.invoice.vat)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, vat: Number(e.target.value) || 0 } })} />
@@ -349,7 +360,7 @@ export function CustomersPage({
               <div className="invoice-builder-table"><table><thead><tr>{['Line','Qty','Product','Variety','Size','Price','Goods','VAT %','Remove'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{invoiceReview.items.map((item,index)=><tr key={index}>{(['line','quantity','product','variety','size','price','goodsValue','vatRate'] as const).map(key=><td key={key}><input value={String(item[key])} onChange={e=>setInvoiceReview({...invoiceReview,items:invoiceReview.items.map((x,i)=>i===index?{...x,[key]:['quantity','price','goodsValue','vatRate'].includes(key)?Number(e.target.value):e.target.value}:x)})}/></td>)}<td><button className="icon-button" onClick={()=>setInvoiceReview({...invoiceReview,items:invoiceReview.items.filter((_,i)=>i!==index)})}>×</button></td></tr>)}</tbody></table></div>
               <Button variant="secondary" onClick={()=>setInvoiceReview({...invoiceReview,items:[...invoiceReview.items,{line:'',quantity:1,product:'',variety:'',size:'',price:0,goodsValue:0,vatCode:'',vatRate:0}]})}>+ Add Product</Button>
               {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber) && <p className="processing-message">Existing Customer Found: {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber)?.companyName}</p>}
-              {invoiceReview.confidence.invoiceNumber !== 'high' && !invoiceReview.invoice.invoiceNumber && <p className="error-message"><strong>Invoice number could not be detected. Please enter it manually.</strong> Invoice Acc {invoiceReview.invoice.invoiceAccount || 'was not found'} is a separate reference and will not be used.</p>}
+              {invoiceReview.confidence.invoiceNumber !== 'high' && !invoiceReview.invoice.invoiceNumber && <p className="error-message"><strong>Invoice Acc could not be detected.</strong> Please enter the invoice number manually.</p>}
               {invoiceReview.warnings.map(w => <p className="error-message" key={w}>{w}</p>)}
               {import.meta.env.DEV && <details><summary>Extraction diagnostics</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>{JSON.stringify(invoiceReview.debug, null, 2)}</pre></details>}
               <div className="actions-row"><Button onClick={submitInvoiceCustomer} disabled={adding}>{adding ? 'Saving...' : customers.some(c => c.customerNumber === invoiceReview.customer.accountNumber) ? 'Add Invoice to Existing Customer' : 'Create Customer & Add Invoice'}</Button></div>

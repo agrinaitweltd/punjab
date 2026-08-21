@@ -1,9 +1,9 @@
 import { useRef, useState } from "react"
 import type { FormEvent } from "react"
 import type { UserRole } from "../types"
-import { getCustomers, updateCustomer } from "../api/customersApi"
-import { getAdmins, updateAdmin, createCustomerApplication } from "../api/miscApi"
-import { sendEmail, otpEmailHtml, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
+import { updateCustomer } from "../api/customersApi"
+import { updateAdmin, createCustomerApplication } from "../api/miscApi"
+import { sendEmail, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
 
 function EyeIcon({ open }: { open: boolean }) {
   return open
@@ -126,42 +126,29 @@ type Found = {
 const isValidUkPhone = (phone: string) => /^\+44\d{9,10}$/.test(phone.replace(/\s+/g, ""))
 const OTP_TTL_MS = 5 * 60 * 1000 // codes last 5 minutes
 
-function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: string, role: UserRole) => void }) {
+function ActivateFlow({ role, onBack, onDone }: { role: UserRole; onBack: () => void; onDone: (email: string, role: UserRole) => void }) {
   const [stage, setStage]     = useState<"email" | "code" | "setup" | "done">("email")
   const [email, setEmail]     = useState("")
   const [account, setAccount] = useState<Found | null>(null)
-  const [code, setCode]       = useState("")
+  const [code]                = useState("")
   const [digits, setDigits]   = useState<string[]>(["", "", "", "", "", ""])
   const [pw, setPw]           = useState("")
   const [pw2, setPw2]         = useState("")
   const [profile, setProfile] = useState({ companyName: "", contactPerson: "", phone: "+44 ", address: "" })
   const [err, setErr]         = useState("")
   const [busy, setBusy]       = useState(false)
-  const [devCode, setDevCode] = useState("")
-  const [codeAt, setCodeAt]   = useState(0)
+  const [devCode]             = useState("")
+  const [codeAt]              = useState(0)
   const boxRefs = useRef<(HTMLInputElement | null)[]>([])
 
   const lookupAndSend = async (e: FormEvent) => {
     e.preventDefault(); setErr(""); setBusy(true)
     try {
       const em = email.trim().toLowerCase()
-      const [customers, admins] = await Promise.all([getCustomers(), getAdmins()])
-      const c = customers.find(x => x.email?.toLowerCase() === em)
-      const a = admins.find(x => x.email?.toLowerCase() === em)
-      const found: Found | null = c
-        ? {
-            kind: "customer", id: c.id, name: c.contactPerson || c.companyName, email: c.email,
-            pendingProfile: true, companyName: c.companyName === c.email.split("@")[0] ? "" : c.companyName,
-            contactPerson: c.contactPerson ?? "", phone: c.phone ?? "", address: c.address ?? "",
-          }
-        : a ? { kind: "admin", id: a.id, name: a.name, email: a.email } : null
-      if (!found) { setErr("We couldn't find an account with that email. Ask your admin to add you first."); setBusy(false); return }
-      const otp = String(Math.floor(100000 + Math.random() * 900000))
-      setCode(otp); setAccount(found); setDevCode(""); setCodeAt(Date.now())
-      const sent = await sendEmail(found.email, "Your Punjab Exotic Foods verification code", otpEmailHtml(otp))
-      if (!sent.ok && import.meta.env.DEV) setDevCode(otp) // local dev has no email server
-      setDigits(["", "", "", "", "", ""])
-      setStage("code")
+      const response = await fetch('/api/request-password-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, email: em }) })
+      if (!response.ok) throw new Error('Recovery request failed')
+      setAccount({ kind: role, id: '', name: '', email: em })
+      setStage("done")
     } catch { setErr("Something went wrong — please try again.") }
     setBusy(false)
   }
@@ -315,8 +302,8 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
           <div className="lx-done-ico">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           </div>
-          <h1 className="lx-title" style={{ marginBottom: 8 }}>You're all set!</h1>
-          <p className="lx-sub">Your account is active. Log in with your email and new password.</p>
+          <h1 className="lx-title" style={{ marginBottom: 8 }}>Check your email</h1>
+          <p className="lx-sub">If that account exists, we sent a secure one-time link to set your password.</p>
           <button type="button" className="lx-login-btn" onClick={() => onDone(account!.email, account!.kind === "admin" ? "admin" : "customer")}>
             Go to login
           </button>
@@ -329,37 +316,28 @@ function ActivateFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: 
 /* ── Forgot password: email → 5-minute code → new password ── */
 type ForgotAccount = { kind: "customer" | "admin"; id: string; name: string; email: string }
 
-function ForgotPasswordFlow({ onBack, onDone }: { onBack: () => void; onDone: (email: string, role: UserRole) => void }) {
+function ForgotPasswordFlow({ role, onBack, onDone }: { role: UserRole; onBack: () => void; onDone: (email: string, role: UserRole) => void }) {
   const [stage, setStage]     = useState<"email" | "code" | "reset" | "done">("email")
   const [email, setEmail]     = useState("")
   const [account, setAccount] = useState<ForgotAccount | null>(null)
-  const [code, setCode]       = useState("")
-  const [codeAt, setCodeAt]   = useState(0)
+  const [code]                = useState("")
+  const [codeAt]              = useState(0)
   const [digits, setDigits]   = useState<string[]>(["", "", "", "", "", ""])
   const [pw, setPw]           = useState("")
   const [pw2, setPw2]         = useState("")
   const [err, setErr]         = useState("")
   const [busy, setBusy]       = useState(false)
-  const [devCode, setDevCode] = useState("")
+  const [devCode]             = useState("")
   const boxRefs = useRef<(HTMLInputElement | null)[]>([])
 
   const lookupAndSend = async (e: FormEvent) => {
     e.preventDefault(); setErr(""); setBusy(true)
     try {
       const em = email.trim().toLowerCase()
-      const [customers, admins] = await Promise.all([getCustomers(), getAdmins()])
-      const c = customers.find(x => x.email?.toLowerCase() === em)
-      const a = admins.find(x => x.email?.toLowerCase() === em)
-      const found: ForgotAccount | null = c
-        ? { kind: "customer", id: c.id, name: c.contactPerson || c.companyName, email: c.email }
-        : a ? { kind: "admin", id: a.id, name: a.name, email: a.email } : null
-      if (!found) { setErr("We couldn't find an account with that email."); setBusy(false); return }
-      const otp = String(Math.floor(100000 + Math.random() * 900000))
-      setCode(otp); setAccount(found); setDevCode(""); setCodeAt(Date.now())
-      const sent = await sendEmail(found.email, "Reset your Punjab Exotic Foods password", otpEmailHtml(otp))
-      if (!sent.ok && import.meta.env.DEV) setDevCode(otp)
-      setDigits(["", "", "", "", "", ""])
-      setStage("code")
+      const response = await fetch('/api/request-password-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, email: em }) })
+      if (!response.ok) throw new Error('Recovery request failed')
+      setAccount({ kind: role, id: '', name: '', email: em })
+      setStage("done")
     } catch { setErr("Something went wrong — please try again.") }
     setBusy(false)
   }
@@ -468,8 +446,8 @@ function ForgotPasswordFlow({ onBack, onDone }: { onBack: () => void; onDone: (e
           <div className="lx-done-ico">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           </div>
-          <h1 className="lx-title" style={{ marginBottom: 8 }}>Password reset!</h1>
-          <p className="lx-sub">Log in with your email and new password.</p>
+          <h1 className="lx-title" style={{ marginBottom: 8 }}>Check your email</h1>
+          <p className="lx-sub">If that account exists, we sent a secure one-time password link.</p>
           <button type="button" className="lx-login-btn" onClick={() => onDone(account!.email, account!.kind === "admin" ? "admin" : "customer")}>
             Go to login
           </button>
@@ -609,11 +587,13 @@ export function LoginPage({ onLogin, error }: {
       <div className="lx-card-wrap">
         {mode === "activate" ? (
           <ActivateFlow
+            role={role}
             onBack={() => setMode("login")}
             onDone={(em, r) => { setUsername(em); setRole(r); setMode("login") }}
           />
         ) : mode === "forgot" ? (
           <ForgotPasswordFlow
+            role={role}
             onBack={() => setMode("login")}
             onDone={(em, r) => { setUsername(em); setRole(r); setMode("login") }}
           />

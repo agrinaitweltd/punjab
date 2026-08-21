@@ -10,15 +10,22 @@ import { supabase, supabaseReady } from "../lib/supabase"
 const passwordMatches = (stored: string, attempt: string) =>
   stored.startsWith("$2") ? bcrypt.compareSync(attempt, stored) : stored === attempt
 
-// Accounts are being migrated to real Supabase Auth (see
-// scripts/backfill-auth-users.mjs) one at a time as each person sets a real
-// password via the recovery link. Until then this always fails harmlessly
-// and the caller falls back to the legacy password check below — nobody's
-// login can be broken by this.
-async function trySupabaseAuth(email: string, password: string): Promise<boolean> {
+async function trySupabaseAuth(role: UserRole, identifier: string, password: string): Promise<boolean> {
   if (!supabase) return false
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
-  return !error
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, identifier, password }),
+    })
+    if (!response.ok) return false
+    const session = await response.json() as { accessToken?: string; refreshToken?: string }
+    if (!session.accessToken || !session.refreshToken) return false
+    const { error } = await supabase.auth.setSession({ access_token: session.accessToken, refresh_token: session.refreshToken })
+    return !error
+  } catch {
+    return false
+  }
 }
 
 class AuthService {
@@ -28,18 +35,19 @@ class AuthService {
     await new Promise(r => setTimeout(r, 200))
 
     if (role === "admin") {
-      // Prefer the live Supabase admin roster; the built-in owner
-      // credentials remain as a fallback so the portal is never locked out.
+      // Production logins must come from the live roster. Mock accounts are
+      // available only when Supabase is not configured (local/offline use).
       let roster = mockAdmins
       if (supabaseReady) {
+        if (!(await trySupabaseAuth(role, usernameOrEmail, password))) return null
         try {
           const dbAdmins = await databaseService.getAdmins()
-          if (dbAdmins.length > 0) roster = [...dbAdmins, ...mockAdmins]
-        } catch { /* offline — use fallback roster */ }
+          roster = dbAdmins
+        } catch { roster = [] }
       }
-      const candidate = roster.find(a => a.email === usernameOrEmail && a.active)
+      const candidate = roster.find(a => a.email.toLowerCase() === usernameOrEmail.trim().toLowerCase() && a.active)
       const candidateOk = candidate
-        ? (await trySupabaseAuth(candidate.email, password)) || passwordMatches(candidate.password, password)
+        ? supabaseReady || passwordMatches(candidate.password, password)
         : false
       const admin = candidateOk ? candidate : undefined
       if (admin) {
@@ -56,12 +64,10 @@ class AuthService {
       }
     } else {
       if (supabaseReady) {
+        if (!(await trySupabaseAuth(role, usernameOrEmail, password))) return null
         const data = await databaseService.getCustomers()
         const customerCandidate = data.find(c => c.customerNumber === usernameOrEmail || c.email === usernameOrEmail)
-        const customerOk = customerCandidate
-          ? (customerCandidate.email && await trySupabaseAuth(customerCandidate.email, password)) || passwordMatches(customerCandidate.password, password)
-          : false
-        const customer = customerOk ? customerCandidate : undefined
+        const customer = customerCandidate
         if (customer) {
           this.currentUser = {
             id: customer.id,

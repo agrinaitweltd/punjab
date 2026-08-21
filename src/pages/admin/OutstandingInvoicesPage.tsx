@@ -3,6 +3,7 @@ import type { Customer, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
 import { invoiceOutstanding } from '../../lib/creditNotes'
+import { findInvoicePdf } from '../../lib/fileService'
 
 const dayStart = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
 const money = (value: number) => `£${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -29,7 +30,11 @@ export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment, 
   }).filter(group => group.rows.length > 0).filter(group => `${group.customer.companyName} ${group.customer.customerNumber}`.toLowerCase().includes(query.toLowerCase())), [customers, outstandingInvoices, query, today])
   const selectedGroup = groups.find(group => group.customer.id === customerId) ?? (() => { const customer = customers.find(item => item.id === customerId); if (!customer) return undefined; const rows = outstandingInvoices.filter(invoice => invoice.customerId === customer.id); return { customer, rows, outstanding: total(rows), overdue: rows.filter(invoice => due(invoice) < today).length, nextDue: rows[0]?.dueDate ?? '' } })()
   const openPayment = (invoice: Invoice, fullyPaid = false) => { setSelected(invoice); setPayment(invoiceOutstanding(invoice).toFixed(2)); setConfirmStep(fullyPaid ? 1 : null) }
-  const downloadDuePdf = async (invoice: Invoice, customer: Customer) => { const response = await fetch('/api/generate-payment-due-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer: { name: customer.companyName, accountNumber: customer.customerNumber, email: customer.email, phone: customer.phone }, invoice: { number: invoice.invoiceNumber, date: invoice.date, dueDate: invoice.dueDate, total: invoice.amount, paid: invoice.amountPaid, outstanding: invoiceOutstanding(invoice) } }) }); if (!response.ok) return; const blob = await response.blob(), url = URL.createObjectURL(blob), anchor = document.createElement('a'); anchor.href = url; anchor.download = `Payment-Due-${invoice.invoiceNumber}.pdf`; anchor.click(); URL.revokeObjectURL(url) }
+  const downloadDuePdf = async (invoice: Invoice, customer: Customer) => {
+    const file = await findInvoicePdf(customer.id, invoice.invoiceNumber)
+    if (!file) { setNotice(`Official PDF for invoice ${invoice.invoiceNumber} is missing. Upload or regenerate it before retrying.`); return }
+    const anchor = document.createElement('a'); anchor.href = file.dataUri; anchor.download = file.name; anchor.click()
+  }
   const dueToday = outstandingInvoices.filter(invoice => due(invoice) === today)
   const nextSeven = outstandingInvoices.filter(invoice => due(invoice) > today && due(invoice) <= today + 7 * 86400000)
   const overdue = outstandingInvoices.filter(invoice => due(invoice) < today)

@@ -1,0 +1,96 @@
+import bcrypt from 'bcryptjs'
+import { createClient } from '@supabase/supabase-js'
+import { guardApi, safeError } from '../server/security.js'
+
+const customerAuthEmail = id => `info+${String(id).replace(/[^a-zA-Z0-9]/g, '')}@punjabexoticfoods.co.uk`
+const passwordMatches = (stored, attempt) =>
+  String(stored || '').startsWith('$2') ? bcrypt.compare(attempt, stored) : String(stored || '') === attempt
+
+export default async function handler(req, res) {
+  if (!guardApi(req, res, { maxBytes: 8_192, limit: 8, windowMs: 15 * 60_000 })) return
+
+  const role = req.body?.role
+  const identifier = String(req.body?.identifier || '').trim()
+  const password = String(req.body?.password || '')
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)
+  if (!['admin', 'customer'].includes(role) || !identifier || identifier.length > 254 || !password || password.length > 256) {
+    return res.status(400).json({ error: 'Invalid login request' })
+  }
+  if (role === 'admin' && !isEmail) return res.status(400).json({ error: 'Invalid login request' })
+
+  const url = process.env.VITE_SUPABASE_URL
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !anonKey || !serviceKey) return res.status(500).json({ error: 'Authentication is not configured' })
+
+  const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  const authClient = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false } })
+
+  try {
+    let account = null
+    let table = ''
+    if (role === 'admin') {
+      table = 'admin_staff'
+      const { data, error } = await admin.from(table).select('id,email,password,active,auth_user_id').ilike('email', identifier).maybeSingle()
+      if (error) throw error
+      if (data?.active) account = data
+    } else {
+      table = 'customers'
+      const byNumber = await admin.from(table).select('id,email,password,status,blocked,auth_user_id').eq('customer_number', identifier).maybeSingle()
+      if (byNumber.error) throw byNumber.error
+      account = byNumber.data
+      if (!account && isEmail) {
+        const byEmail = await admin.from(table).select('id,email,password,status,blocked,auth_user_id').ilike('email', identifier).maybeSingle()
+        if (byEmail.error) throw byEmail.error
+        account = byEmail.data
+      }
+      if (!account && isEmail) {
+        table = 'customer_sub_accounts'
+        const subAccount = await admin.from(table).select('id,email,password,status,active,auth_user_id,customer_id').ilike('email', identifier).maybeSingle()
+        if (subAccount.error) throw subAccount.error
+        if (subAccount.data?.active && subAccount.data.status === 'Approved') account = subAccount.data
+      }
+      if (account?.blocked || String(account?.status || '').toLowerCase() === 'inactive') account = null
+    }
+
+    if (!account) return res.status(401).json({ error: 'Invalid credentials' })
+
+    let authUser = null
+    if (account.auth_user_id) {
+      const { data, error } = await admin.auth.admin.getUserById(account.auth_user_id)
+      if (error) throw error
+      authUser = data.user
+    } else {
+      if (!(await passwordMatches(account.password, password))) {
+        return res.status(401).json({ error: 'Invalid credentials' })
+      }
+      const authEmail = role === 'admin' ? account.email : customerAuthEmail(account.id)
+      const { data, error } = await admin.auth.admin.createUser({
+        email: authEmail,
+        password,
+        email_confirm: true,
+        app_metadata: { role, legacy_id: account.id },
+      })
+      if (error) throw error
+      authUser = data.user
+      const linked = await admin.from(table).update({
+        auth_user_id: authUser.id,
+        password: await bcrypt.hash(password, 12),
+      }).eq('id', account.id).is('auth_user_id', null)
+      if (linked.error) throw linked.error
+    }
+
+    if (!authUser?.email) throw new Error('Linked Auth user has no email address')
+    const { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password })
+    if (signInError || !signedIn.session) return res.status(401).json({ error: 'Invalid credentials' })
+
+    res.setHeader('Cache-Control', 'no-store')
+    return res.status(200).json({
+      accessToken: signedIn.session.access_token,
+      refreshToken: signedIn.session.refresh_token,
+    })
+  } catch (error) {
+    console.error('login failed', error instanceof Error ? error.message : 'Unknown error')
+    return res.status(500).json({ error: safeError })
+  }
+}

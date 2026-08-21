@@ -6,6 +6,7 @@
 import type { Customer, Invoice, Order, WhatsAppLog, WhatsAppMessageType, WhatsAppTemplate } from "../types"
 import { getCustomers } from "../api/customersApi"
 import { getWhatsAppTemplates, createWhatsAppLog, updateWhatsAppLog, getWhatsAppLogs } from "../api/miscApi"
+import { authenticatedFetch } from './apiFetch'
 
 /** Fallback copy — used if the whatsapp_templates migration hasn't run yet,
     or a template was deleted, so sending never hard-fails on missing copy. */
@@ -80,7 +81,7 @@ export async function sendWhatsAppMessage(
   let status: WhatsAppLog["status"] = "Failed"
   let response = ""
   try {
-    const r = await fetch("/api/send-whatsapp", {
+    const r = await authenticatedFetch("/api/send-whatsapp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: normalized, message }),
@@ -112,7 +113,7 @@ export async function sendWhatsAppDocument(
   let status: WhatsAppLog['status'] = 'Failed'
   let response = ''
   try {
-    const request = await fetch('/api/send-whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalized, message, filename: fileName, document: `data:application/pdf;base64,${base64}` }) })
+    const request = await authenticatedFetch('/api/send-whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalized, message, filename: fileName, document: `data:application/pdf;base64,${base64}` }) })
     const data = await request.json().catch(() => ({}))
     response = JSON.stringify(data)
     status = request.ok && data?.sent !== false && !data?.error ? 'Sent' : 'Failed'

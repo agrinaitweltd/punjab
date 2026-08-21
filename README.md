@@ -18,15 +18,10 @@ npm run build
 npm run preview
 ```
 
-## ?? Demo Credentials
+## Authentication
 
-### Admin Login
-- **Username:** `admin`
-- **Password:** `admin123`
-
-### Customer Login
-- **Customer Number:** `CUST-001` or `buyer@greenmarket.co.uk`
-- **Password:** `customer123`
+Accounts are managed in the connected Supabase project. This repository does
+not ship demo or fallback credentials.
 
 ## ?? Features
 
@@ -64,12 +59,12 @@ npm run preview
 src/
 +-- api/              # API wrappers (swap point for Supabase)
 +-- components/       # Reusable UI components
-¦   +-- layout/      # AppLayout, Sidebar, Topbar
-¦   +-- ui/          # Button, Card, Input, Modal, Table
+|   +-- layout/      # AppLayout, Sidebar, Topbar
+|   +-- ui/          # Button, Card, Input, Modal, Table
 +-- data/            # Mock seed data
 +-- pages/           # Route pages
-¦   +-- admin/       # Admin portal modules
-¦   +-- customer/    # Customer portal modules
+|   +-- admin/       # Admin portal modules
+|   +-- customer/    # Customer portal modules
 +-- services/        # Mock auth and database services
 +-- types/           # TypeScript domain models
 +-- App.tsx          # Application root
@@ -99,7 +94,7 @@ const supabase = createClient(url, key)
 ```
 
 ### 3. API Layer Stays Same
-The `src/api/` modules already provide the swap boundary — pages call these, not services directly.
+The `src/api/` modules already provide the swap boundary; pages call these, not services directly.
 
 ## ?? Styling
 

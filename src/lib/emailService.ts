@@ -1,10 +1,12 @@
+import { authenticatedFetch } from './apiFetch'
+
 /* Sends email through the /api/send-email serverless function (Resend).
    Works on the Vercel deployment; in local dev the call fails gracefully
    and callers can fall back (e.g. show the OTP code on screen). */
 
 export async function sendEmail(to: string | string[], subject: string, html: string, attachments?: { filename: string; content: string }[]): Promise<{ ok: boolean; error?: string }> {
   try {
-    const r = await fetch("/api/send-email", {
+    const r = await authenticatedFetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to, subject, html, attachments }),

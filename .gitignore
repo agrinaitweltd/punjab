@@ -25,6 +25,10 @@ dist-ssr
 
 # env
 .env
+.env.*
+!.env.example
+test-results/
+playwright-report/
 .env.local
 .env*.local
 

@@ -22,12 +22,12 @@ export function PaymentProofsPage({ proofs, onApprove, onReject, canRecord = tru
 
   const approve = async (proof: PaymentProof) => {
     setBusyId(proof.id)
-    try { await onApprove(proof) } finally { setBusyId(null) }
+    try { await onApprove(proof); setPreview(null) } finally { setBusyId(null) }
   }
   const reject = async (proof: PaymentProof) => {
     const reason = window.prompt("Why is this being rejected? (this is included in the email to the customer, optional)") ?? ""
     setBusyId(proof.id)
-    try { await onReject(proof, reason) } finally { setBusyId(null) }
+    try { await onReject(proof, reason); setPreview(null) } finally { setBusyId(null) }
   }
 
   return (

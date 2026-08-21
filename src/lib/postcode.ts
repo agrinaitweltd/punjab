@@ -1,6 +1,8 @@
 /* UK postcode lookup via Postcodes.io — a free, public API that requires
    no API key (any key supplied to it is simply ignored by the real service). */
 
+import { authenticatedFetch } from './apiFetch'
+
 export type PostcodeResult = {
   postcode: string
   region: string | null
@@ -100,7 +102,7 @@ export async function lookupFullAddresses(rawPostcode: string): Promise<{ ok: tr
   const postcode = rawPostcode.trim()
   if (!postcode) return { ok: false, error: "Enter a postcode." }
   try {
-    const res = await fetch(`/api/lookup-address?postcode=${encodeURIComponent(postcode)}`)
+    const res = await authenticatedFetch(`/api/lookup-address?postcode=${encodeURIComponent(postcode)}`)
     const body = await res.json()
     if (!res.ok || !Array.isArray(body.addresses) || body.addresses.length === 0) {
       return { ok: false, error: "We couldn't find any addresses for that postcode." }

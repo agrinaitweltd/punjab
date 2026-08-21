@@ -7,6 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:finance": "node scripts/test-finance-workflows.mjs",
+    "test:invoice-parser": "node scripts/test-invoice-parser.mjs",
+    "test:security": "node scripts/test-security.mjs",
+    "test:live-auth": "node scripts/test-live-login.mjs",
+    "test:production-smoke": "node scripts/test-production-smoke.mjs",
+    "test:live-rls": "node scripts/test-live-rls.mjs",
+    "test:production-ui": "playwright test tests/production-ui.spec.js --reporter=line",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -22,6 +28,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",

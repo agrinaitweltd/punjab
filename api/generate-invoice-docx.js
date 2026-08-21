@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import PizZip from 'pizzip'
+import { guardApi, requireUser, safeError } from '../server/security.js'
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]))
 const money = (value) => Number(value || 0).toFixed(2)
@@ -10,7 +11,8 @@ const replaceToken = (xml, token, value) => {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!guardApi(req, res, { maxBytes: 500_000, limit: 20 })) return
+  if (!(await requireUser(req, res, { adminOnly: true }))) return
   const body = req.body ?? {}
   if (!body.customer?.name || !/^\d{6}$/.test(String(body.customer?.accountNumber ?? ''))) return res.status(400).json({ error: 'A customer name and six-digit account number are required' })
   if (!body.invoice?.invoiceNumber || !Array.isArray(body.items) || body.items.length === 0 || body.items.length > 100) return res.status(400).json({ error: 'Invoice number and 1-100 product rows are required' })
@@ -56,6 +58,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Disposition', `attachment; filename="Punjab-Invoice-${safeNumber}.docx"`)
     return res.status(200).send(output)
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+    console.error('generate-invoice-docx failed', error instanceof Error ? error.message : 'Unknown error')
+    return res.status(500).json({ error: safeError })
   }
 }

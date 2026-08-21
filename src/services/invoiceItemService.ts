@@ -18,8 +18,8 @@ export async function saveInvoiceItems(invoiceId: string, items: ImportedInvoice
   }))
   const { error } = await supabase.from('invoice_items').insert(rows)
   if (!error) return
-  const tableMissing = error.code === 'PGRST205' || error.code === '42P01' || /invoice_items.*schema cache|relation.*invoice_items/i.test(error.message)
-  if (!tableMissing) throw new Error(`Could not store invoice products: ${error.message}`)
+  const compatibilityRequired = error.code === 'PGRST205' || error.code === '42P01' || error.code === '42501' || /invoice_items.*schema cache|relation.*invoice_items|row-level security|permission denied/i.test(error.message)
+  if (!compatibilityRequired) throw new Error(`Could not store invoice products: ${error.message}`)
 
   const fallback = {
     id: `invoice-items-${invoiceId}`,
@@ -29,4 +29,16 @@ export async function saveInvoiceItems(invoiceId: string, items: ImportedInvoice
   }
   const { error: fallbackError } = await supabase.from('activity_log').upsert(fallback)
   if (fallbackError) throw new Error(`Could not store invoice products: ${fallbackError.message}`)
+}
+
+export async function getInvoiceItems(invoiceId: string): Promise<ImportedInvoiceItem[]> {
+  if (!supabase) throw new Error('Not connected to the database')
+  const { data, error } = await supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId).order('created_at')
+  if (!error && data?.length) return data.map(row => ({
+    line: row.line_number ?? '', quantity: Number(row.quantity) || 0, product: row.product ?? '', variety: row.variety ?? '', size: row.size ?? '',
+    price: Number(row.price) || 0, goodsValue: Number(row.goods_value) || 0, vatCode: row.vat_code ?? '', vatRate: Number(row.vat_rate) || 0,
+  }))
+  const { data: fallback, error: fallbackError } = await supabase.from('activity_log').select('timestamp').eq('id', `invoice-items-${invoiceId}`).maybeSingle()
+  if (fallbackError) throw new Error(`Could not load invoice products: ${fallbackError.message}`)
+  try { return (JSON.parse(fallback?.timestamp || '{}').items ?? []) as ImportedInvoiceItem[] } catch { return [] }
 }

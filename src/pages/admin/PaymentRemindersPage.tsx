@@ -5,7 +5,7 @@ import { Modal } from "../../components/ui/Modal"
 import { invoiceOutstanding } from "../../lib/creditNotes"
 
 export function PaymentRemindersPage({
-  invoices, customers, notificationLogs, canManage = true, onSendNow, onSchedule, onResend,
+  invoices, customers, notificationLogs, canManage = true, onSendNow, onSchedule, onResend, onRetryPdf,
 }: {
   invoices: Invoice[]
   customers: Customer[]
@@ -15,6 +15,7 @@ export function PaymentRemindersPage({
   onSendNow: (invoice: Invoice, customer: Customer) => Promise<void>
   onSchedule: (invoice: Invoice, customer: Customer, scheduledFor: string) => Promise<void>
   onResend: (log: NotificationLog) => Promise<void>
+  onRetryPdf?: (invoice: Invoice, customer: Customer) => Promise<void>
 }) {
   const [query, setQuery] = useState("")
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -166,10 +167,9 @@ export function PaymentRemindersPage({
                     </td>
                     <td style={{ color: "#6b7280" }}>{(log.sentAt ?? log.scheduledFor ?? "").slice(0, 16).replace("T", " ")}</td>
                     <td>
-                      {canManage && invoice && (
-                        <Button className="btn-sm" variant="secondary" onClick={() => resend(log)} disabled={busyId === log.id}>
-                          {busyId === log.id ? "Resending…" : "Resend"}
-                        </Button>
+                      {canManage && invoice && (log.error?.includes('PDF') && onRetryPdf ?
+                        <Button className="btn-sm" variant="secondary" onClick={async () => { const customer = customers.find(item => item.id === log.customerId); if (!customer) return; setBusyId(log.id); try { await onRetryPdf(invoice, customer) } finally { setBusyId(null) } }} disabled={busyId === log.id}>{busyId === log.id ? "Generating…" : "Retry PDF Generation"}</Button>
+                        : <Button className="btn-sm" variant="secondary" onClick={() => resend(log)} disabled={busyId === log.id}>{busyId === log.id ? "Resending…" : "Resend"}</Button>
                       )}
                     </td>
                   </tr>

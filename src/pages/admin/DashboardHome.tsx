@@ -94,20 +94,23 @@ export function DashboardHome({
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
 
-  const totalBusiness = invoices.reduce((s, i) => s + i.amount, 0)
-  const totalPaid     = invoices.reduce((s, i) => s + (i.amountPaid ?? (i.status === "Paid" ? i.amount : 0)), 0)
-  const totalOutstanding = Math.max(0, totalBusiness - totalPaid)
+  const outstandingFor = (invoice: Invoice) => Math.max(0, invoice.amount - (invoice.amountPaid ?? (invoice.status === 'Paid' ? invoice.amount : 0)))
+  const totalBusiness = invoices.reduce((sum, invoice) => sum + Math.max(0, invoice.amount), 0)
+  const totalPaid = invoices.reduce((sum, invoice) => {
+    const invoiceTotal = Math.max(0, invoice.amount)
+    return sum + Math.min(invoiceTotal, Math.max(0, invoice.amountPaid ?? (invoice.status === 'Paid' ? invoiceTotal : 0)))
+  }, 0)
+  const totalOutstanding = invoices.reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
   const todayKey = new Date().toISOString().slice(0, 10)
   const nextWeek = new Date(); nextWeek.setDate(nextWeek.getDate() + 7)
   const nextWeekKey = nextWeek.toISOString().slice(0, 10)
-  const outstandingFor = (invoice: Invoice) => Math.max(0, invoice.amount - (invoice.amountPaid ?? (invoice.status === 'Paid' ? invoice.amount : 0)))
   const dueTodayTotal = invoices.filter(invoice => invoice.dueDate === todayKey).reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
   const dueNextSevenTotal = invoices.filter(invoice => invoice.dueDate > todayKey && invoice.dueDate <= nextWeekKey).reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
   const overdueTotal = invoices.filter(invoice => invoice.dueDate < todayKey).reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
   const paidPct = totalBusiness > 0 ? Math.round((totalPaid / totalBusiness) * 100) : 0
   const month = new Date().toISOString().slice(0, 7)
   const monthPayments = payments.filter(p => p.date.startsWith(month)).reduce((s,p) => s + p.amount, 0)
-  const monthInvoiced = invoices.filter(i => (i.date ?? '').startsWith(month)).reduce((s,i) => s + i.amount, 0)
+  const monthInvoiced = invoices.filter(i => (i.date ?? '').startsWith(month)).reduce((sum, invoice) => sum + Math.max(0, invoice.amount), 0)
   const monthExpenses = expenses.filter(e => e.expenseDate.startsWith(month)).reduce((s,e) => s + e.amount, 0)
   const netPosition = monthPayments - monthExpenses
 
@@ -305,7 +308,7 @@ export function DashboardHome({
       {tab === "overview" && (
         <>
           <div className="ho-stats">
-            <HoStat label="Outstanding Payments" value={<CountUp value={totalOutstanding} prefix="£" decimals={2} />} delta={`${invoices.filter(i => i.status !== 'Paid').length} invoices`} />
+            <HoStat label="Outstanding Payments" value={<CountUp value={totalOutstanding} prefix="£" decimals={2} />} delta={`${invoices.filter(i => outstandingFor(i) > 0).length} invoices`} />
             <HoStat label="Due Today" value={<CountUp value={dueTodayTotal} prefix="£" decimals={2} />} delta="outstanding today" />
             <HoStat label="Due Next 7 Days" value={<CountUp value={dueNextSevenTotal} prefix="£" decimals={2} />} delta="upcoming" />
             <HoStat label="Overdue" value={<CountUp value={overdueTotal} prefix="£" decimals={2} />} delta="requires attention" />

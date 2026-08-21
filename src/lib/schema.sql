@@ -57,20 +57,8 @@ on conflict (name) do nothing;
 
 alter table admin_roles disable row level security;
 
--- Seed owner login (email: info@punjabexoticfoods.com  password: admin123)
-insert into admin_staff (id, name, username, email, password, role, job_title, active, is_super_admin, permissions)
-values (
-  'adm-owner',
-  'Punjab Exotic Foods',
-  'admin',
-  'info@punjabexoticfoods.com',
-  'admin123',
-  'Owner',
-  'Owner',
-  true,
-  true,
-  '{"customers":true,"prices":true,"stock":true,"orders":true,"enquiries":true,"tickets":true,"payments":true,"complaints":true,"extracts":true,"stats":true,"admins":true,"products":true,"customersCreate":true,"customersDelete":true,"invoicesDelete":true,"paymentsRecord":true,"paymentsDelete":true,"paymentsAllocate":true,"buyingPricesEdit":true,"creditNotesIssue":true,"applicationsManage":true,"usersManage":true}'::jsonb
-) on conflict (id) do nothing;
+-- Administrators are provisioned through the authenticated administration
+-- workflow. Never seed a production password in schema source.
 
 -- CUSTOMERS
 create table if not exists customers (
