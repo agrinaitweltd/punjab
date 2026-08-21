@@ -6,6 +6,7 @@ import { importStatementInvoices } from '../../api/miscApi'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Input, Select } from '../../components/ui/Input'
+import { confirmAction } from '../../lib/appDialogs'
 import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
@@ -220,7 +221,7 @@ export function CustomersPage({
   }
 
   const archiveCustomer = async (customer: Customer) => {
-    if (!window.confirm(`Archive ${customer.companyName}? They'll be hidden from the customer list but can be restored at any time.`)) return
+    if (!await confirmAction(`Archive ${customer.companyName}? They'll be hidden from the customer list but can be restored at any time.`)) return
     setDeletingId(customer.id)
     try { await onUpdate(customer.id, { archived: true }) } finally { setDeletingId(null) }
   }
@@ -231,7 +232,7 @@ export function CustomersPage({
   }
 
   const confirmDelete = async (customer: Customer) => {
-    if (!window.confirm(`Permanently delete ${customer.companyName}? This removes their login and cannot be undone.`)) return
+    if (!await confirmAction(`Permanently delete ${customer.companyName}? This removes their login and cannot be undone.`)) return
     setDeletingId(customer.id)
     try { await onDelete(customer.id) } finally { setDeletingId(null) }
   }

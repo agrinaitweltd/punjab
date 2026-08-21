@@ -14,6 +14,7 @@ import { getDeviceAccount, hasBeenPromptedToRemember, markPromptedToRemember } f
 import type { User } from './types'
 import { getSystemMode } from './lib/secureAdminApi'
 import { setRuntimeTestMode } from './lib/runtimeMode'
+import { AppDialogs } from './components/AppDialogs'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   constructor(props: { children: ReactNode }) {
@@ -141,6 +142,7 @@ function App() {
 
   return (
     <ErrorBoundary>
+      <AppDialogs />
       {!user ? <LoginPage onLogin={handleLogin} error={error} /> : null}
       {user?.role === 'admin' ? <AdminPortal user={user} onLogout={handleLogout} /> : null}
       {user?.role === 'customer' ? <CustomerPortal user={user} onLogout={handleLogout} /> : null}

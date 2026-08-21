@@ -6,6 +6,7 @@ import { createTicket, getInvoices, getPayments, getTickets, getCreditNotes, get
 import { currentTradingDate } from "../../lib/tradingDate"
 import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
+import { showNotice } from "../../lib/appDialogs"
 import { getCreditStatus } from "../../lib/creditControl"
 import { invoiceOutstanding } from "../../lib/creditNotes"
 import { sendEmail, URGENT_SUPPORT_PHONE, ADMIN_NOTIFY_EMAIL, paymentProofSubmittedEmailHtml, paymentProofAdminAlertEmailHtml } from "../../lib/emailService"
@@ -211,7 +212,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       let photoNote = ""
       if (photo) {
         if (photo.size > MAX_FILE_BYTES) {
-          window.alert("That photo is too large — please choose one under 2 MB.")
+          showNotice("That photo is too large - please choose one under 2 MB.")
           setIssueBusy(null)
           return
         }

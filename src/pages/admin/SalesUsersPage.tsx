@@ -3,6 +3,7 @@ import type { Salesman } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { Input } from "../../components/ui/Input"
+import { confirmAction } from "../../lib/appDialogs"
 
 const emptyForm = { number: "", username: "", name: "", code: "" }
 
@@ -48,7 +49,7 @@ export function SalesUsersPage({
   }
 
   const remove = async (s: Salesman) => {
-    if (!window.confirm(`Delete sales user ${s.name} (#${s.number})? This cannot be undone.`)) return
+    if (!await confirmAction(`Delete sales user ${s.name} (#${s.number})? This cannot be undone.`)) return
     setBusy(true)
     try { await onDelete(s.id) } finally { setBusy(false) }
   }

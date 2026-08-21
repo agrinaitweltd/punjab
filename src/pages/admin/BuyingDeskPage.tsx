@@ -5,6 +5,7 @@ import { Modal } from "../../components/ui/Modal"
 import { Input, Select } from "../../components/ui/Input"
 import { CAT_COLORS, type CatalogItem } from "./SessionPage"
 import { brandsFor, rememberBrand } from "../../lib/brandHistory"
+import { confirmAction } from "../../lib/appDialogs"
 
 type Tab = "current" | "best" | "confirmed" | "history" | "analytics" | "suppliers"
 
@@ -214,7 +215,7 @@ export function BuyingDeskPage({
 
   const endDailyBuying = async () => {
     if (!session) return
-    if (!window.confirm(`End daily buying for ${date}? This moves ${confirmed.length} confirmed item${confirmed.length !== 1 ? "s" : ""} into Stock — you'll set quantity and selling price there before it goes live.`)) return
+    if (!await confirmAction(`End daily buying for ${date}? This moves ${confirmed.length} confirmed item${confirmed.length !== 1 ? "s" : ""} into Stock. You'll set quantity and selling price there before it goes live.`)) return
     setBusy(true)
     try { await onEndDailyBuying(session, confirmed) } finally { setBusy(false) }
   }

@@ -3,6 +3,7 @@ import type { Customer, Invoice } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { listFiles, uploadFile, deleteFile, renameFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
+import { confirmAction } from "../../lib/appDialogs"
 
 const fmtSize = (b: number) => b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`
 
@@ -86,7 +87,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
   }
 
   const remove = async (f: StoredFile) => {
-    if (!window.confirm(`Delete "${f.name}"? This cannot be undone.`)) return
+    if (!await confirmAction(`Delete "${f.name}"? This cannot be undone.`)) return
     await deleteFile(f.id)
     await load()
   }

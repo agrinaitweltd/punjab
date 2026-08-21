@@ -5,6 +5,7 @@ import { Modal } from "../../components/ui/Modal"
 import { COLLECTION_ADDRESS } from "../../lib/emailService"
 import { NewSaleModal } from "./NewSaleModal"
 import { EditSaleModal } from "./EditSaleModal"
+import { confirmAction } from "../../lib/appDialogs"
 
 const STATUS_COLORS: Record<OrderStatus, { bg: string; color: string }> = {
   Pending:   { bg: "#fef9c3", color: "#a16207" },
@@ -82,7 +83,7 @@ export function OrdersPage({ orders, products, invoices = [], customers, stock, 
   }
 
   const cancel = async (order: Order) => {
-    if (!window.confirm(`Cancel sale ${order.orderNumber}? This cannot be undone.`)) return
+    if (!await confirmAction(`Cancel sale ${order.orderNumber}? This cannot be undone.`)) return
     setBusy(true)
     await onUpdateOrder(order.id, { status: "Cancelled" })
     setDetail(d => d && d.id === order.id ? { ...d, status: "Cancelled" } : d)

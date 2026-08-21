@@ -3,6 +3,7 @@ import type { Customer, Invoice } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { getCreditStatus, creditWarningLabel, type CreditStatus } from "../../lib/creditControl"
+import { confirmAction } from "../../lib/appDialogs"
 
 export function CreditControlPage({ customers, invoices, onSendReminder, onToggleBlock }: {
   customers: Customer[]
@@ -32,7 +33,7 @@ export function CreditControlPage({ customers, invoices, onSendReminder, onToggl
 
   const toggleBlock = async (s: CreditStatus) => {
     const next = !s.customer.blocked
-    if (next && !window.confirm(`Block ${s.customer.companyName}? They won't be able to place orders until unblocked, and should be chased for payment.`)) return
+    if (next && !await confirmAction(`Block ${s.customer.companyName}? They won't be able to place orders until unblocked, and should be chased for payment.`)) return
     setBusy(s.customer.id)
     try { await onToggleBlock(s.customer, next) } finally { setBusy(null) }
   }

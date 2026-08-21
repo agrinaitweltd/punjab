@@ -6,6 +6,7 @@ import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { EmptyState } from "../../components/ui/EmptyState"
 import { exportToCsv } from "../../lib/exportCsv"
+import { confirmAction, showNotice } from "../../lib/appDialogs"
 
 const PAGE_SIZE = 10
 
@@ -104,7 +105,7 @@ export function ProductsPage({
 
   const bulkEditInfo = () => {
     if (selected.size !== 1) {
-      window.alert("Select exactly one product to edit its info.")
+      showNotice("Select exactly one product to edit its information.")
       return
     }
     const product = products.find(p => p.id === [...selected][0])
@@ -112,7 +113,7 @@ export function ProductsPage({
   }
 
   const bulkDelete = async () => {
-    if (!window.confirm(`Delete ${selected.size} selected product(s)? This cannot be undone.`)) return
+    if (!await confirmAction(`Delete ${selected.size} selected product(s)? This cannot be undone.`)) return
     await Promise.all([...selected].map(id => onDelete(id)))
     setSelected(new Set())
   }

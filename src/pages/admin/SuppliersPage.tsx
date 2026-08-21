@@ -3,6 +3,7 @@ import type { BuyingPrice, Supplier } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { Input } from "../../components/ui/Input"
+import { confirmAction } from "../../lib/appDialogs"
 
 function todayIso() { return new Date().toISOString().slice(0, 10) }
 
@@ -86,7 +87,7 @@ export function SuppliersPage({
   }
 
   const remove = async (supplier: Supplier) => {
-    if (!window.confirm(`Delete supplier ${supplier.name}? This cannot be undone.`)) return
+    if (!await confirmAction(`Delete supplier ${supplier.name}? This cannot be undone.`)) return
     setBusy(true)
     try { await onDelete(supplier.id) } finally { setBusy(false) }
   }

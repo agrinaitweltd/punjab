@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { Input, Select, TextArea } from "../../components/ui/Input"
 import { invoiceOutstanding } from "../../lib/creditNotes"
+import { confirmAction, showNotice } from "../../lib/appDialogs"
 
 type IssueMode = "invoice" | "account"
 
@@ -137,10 +138,10 @@ export function CreditNotesPage({
 
   const voidNote = async (note: CreditNote) => {
     if (note.remainingBalance !== note.amount) {
-      window.alert("This credit note has already been applied to an invoice and can't be voided. Contact support if it needs reversing.")
+      showNotice("This credit note has already been applied to an invoice and can't be voided. Contact support if it needs reversing.")
       return
     }
-    if (!window.confirm(`Void credit note ${note.creditNumber}? This cannot be undone.`)) return
+    if (!await confirmAction(`Void credit note ${note.creditNumber}? This cannot be undone.`)) return
     setBusy(true)
     try { await onVoid(note); setDetail(null) } finally { setBusy(false) }
   }

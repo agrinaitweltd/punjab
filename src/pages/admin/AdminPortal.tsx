@@ -6,6 +6,7 @@ import { ADMIN_NOTIFY_EMAIL, sendEmail, welcomeEmailHtml, paymentReceivedEmailHt
 import { getCreditStatus } from '../../lib/creditControl'
 import { dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
 import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
+import { confirmAction, showNotice } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
 import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
@@ -323,11 +324,11 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const dayEnd = async () => {
     const closingDate = tradingDate
     if (dayTrades.some(dt => dt.date === closingDate)) {
-      window.alert(`${closingDate} has already been closed as a Day Trade.`)
+      showNotice(`${closingDate} has already been closed as a Day Trade.`)
       return
     }
     const todaysSales = completedSales(orders).filter(o => o.date === closingDate)
-    if (!window.confirm(`Close trading for ${closingDate}? This archives ${todaysSales.length} sale(s) as a permanent Day Trade record, ends buying for that date, and moves new sales/buying to the next day. This cannot be undone.`)) return
+    if (!await confirmAction(`Close trading for ${closingDate}? This archives ${todaysSales.length} sale(s) as a permanent Day Trade record, ends buying for that date, and moves new sales/buying to the next day. This cannot be undone.`)) return
     const productsById = toProductsById(products)
     try {
       // Credit-term sales aren't invoiced at confirm time (only "pay before
@@ -363,7 +364,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       await load()
       navigate('day-trade')
     } catch {
-      window.alert("Couldn't close the trading day — please try again. If this keeps happening, the day_trades database migration in src/lib/schema.sql may not have been run yet.")
+      showNotice("Couldn't close the trading day. Please try again or contact support if the problem continues.")
     }
   }
 
@@ -948,7 +949,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onToggleBlock={async (customer, blocked) => {
             const updated = await updateCustomer(customer.id, { blocked })
             if (!updated) {
-              window.alert("Couldn't update the account — if this keeps happening, the credit-control database migration in src/lib/schema.sql may not have been run yet.")
+              showNotice("Couldn't update the account. Please try again or contact support if the problem continues.")
             } else {
               void (blocked ? sendAccountSuspended(customer, user.displayName) : sendAccountApproved(customer, user.displayName))
             }
