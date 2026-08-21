@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { EMPTY_PERMISSIONS, FALLBACK_ROLE_TEMPLATES } from "../../lib/permissions"
+import { SensitiveActionDialog } from "../../components/SensitiveActionDialog"
 
 const ALL_PERMISSIONS = Object.keys(EMPTY_PERMISSIONS) as (keyof PermissionSet)[]
 
@@ -106,21 +107,21 @@ export function AdminsPage({
   onDelete,
   onToggleActive,
   loadRoles,
+  currentUserIsSystemDeveloper = false,
 }: {
   admins: AdminStaff[]
   salesmen?: Salesman[]
-  onCreate: (name: string, email: string, password: string, role: string, jobTitle: string, permissions: PermissionSet, isSalesman: boolean, salesmanIds: string[]) => Promise<void>
-  onUpdate?: (id: string, data: Partial<AdminStaff>) => Promise<void>
-  onDelete?: (id: string) => Promise<void>
-  onToggleActive?: (id: string, active: boolean) => Promise<void>
+  onCreate: (name: string, email: string, role: string, jobTitle: string, permissions: PermissionSet, isSalesman: boolean, salesmanIds: string[], sensitiveToken: string) => Promise<void>
+  onUpdate?: (id: string, data: Partial<AdminStaff>, sensitiveToken: string) => Promise<void>
+  onDelete?: (id: string, sensitiveToken: string) => Promise<void>
+  onToggleActive?: (id: string, active: boolean, sensitiveToken: string) => Promise<void>
   loadRoles?: () => Promise<AdminRole[]>
+  currentUserIsSystemDeveloper?: boolean
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing]       = useState<AdminStaff | null>(null)
   const [name, setName]             = useState("")
   const [email, setEmail]           = useState("")
-  const [password, setPassword]     = useState("")
-  const [phone, setPhone]           = useState("")
   const [jobTitle, setJobTitle]     = useState("")
   const [role, setRole]             = useState("Staff")
   const [perms, setPerms]           = useState<PermissionSet>(basePermissions)
@@ -128,13 +129,16 @@ export function AdminsPage({
   const [salesmanIds, setSalesmanIds] = useState<string[]>([])
   const [roleTemplates, setRoleTemplates] = useState<AdminRole[]>(FALLBACK_ROLE_TEMPLATES)
   const [formError, setFormError]   = useState("")
+  const [sensitiveAction, setSensitiveAction] = useState<null | {
+    title: string; warning?: string; actionLabel: string; run: (token: string) => Promise<void>
+  }>(null)
 
   useEffect(() => {
     loadRoles?.().then(setRoleTemplates).catch(() => setRoleTemplates(FALLBACK_ROLE_TEMPLATES))
   }, [loadRoles])
 
   const resetForm = () => {
-    setName(""); setEmail(""); setPassword(""); setPhone(""); setJobTitle(""); setRole("Staff"); setPerms(basePermissions)
+    setName(""); setEmail(""); setJobTitle(""); setRole("Staff"); setPerms(basePermissions)
     setIsSalesman(false); setSalesmanIds([]); setFormError("")
   }
 
@@ -149,22 +153,32 @@ export function AdminsPage({
     }
   }
 
-  const submitCreate = async (e: FormEvent) => {
+  const submitCreate = (e: FormEvent) => {
     e.preventDefault()
     setFormError("")
-    if (!name.trim() || !email.trim() || !password.trim()) { setFormError("Name, email and password are required."); return }
-    if (password.trim().length < 8) { setFormError("Password must be at least 8 characters."); return }
+    if (!name.trim() || !email.trim()) { setFormError("Name and email are required."); return }
     if (admins.some(a => a.email.toLowerCase() === email.trim().toLowerCase())) { setFormError("An admin with that email already exists."); return }
-    await onCreate(name.trim(), email.trim(), password, role, jobTitle.trim(), perms, isSalesman, salesmanIds)
-    resetForm(); setShowCreate(false)
+    setSensitiveAction({
+      title: "Send administrator invitation",
+      warning: "A one-time account setup link will be emailed to " + email.trim() + ". No password will be created or sent by you.",
+      actionLabel: "Verify & Send Invitation",
+      run: async token => {
+        await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, isSalesman, salesmanIds, token)
+        resetForm(); setShowCreate(false); setSensitiveAction(null)
+      },
+    })
   }
 
-  const submitEdit = async (e: FormEvent) => {
+  const submitEdit = (e: FormEvent) => {
     e.preventDefault()
     if (!editing || !onUpdate) return
     if (!editing.name.trim() || !editing.email.trim()) return
-    await onUpdate(editing.id, editing)
-    setEditing(null)
+    setSensitiveAction({
+      title: "Update administrator access",
+      warning: "This changes the account's role or permissions and takes effect across the system.",
+      actionLabel: "Verify & Save Changes",
+      run: async token => { await onUpdate(editing.id, editing, token); setEditing(null); setSensitiveAction(null) },
+    })
   }
 
   return (
@@ -174,7 +188,7 @@ export function AdminsPage({
         <p className="control-centre-label">Punjab Exotic Foods Control Centre</p>
         <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>Admin Users</h2>
         <p style={{ fontSize: 13.5, color: "#6b7280", marginTop: 3 }}>
-          Super-admin only. Create and manage staff login accounts and permissions.
+          Invite and manage staff accounts through secure, one-time setup links.
         </p>
       </div>
 
@@ -190,7 +204,7 @@ export function AdminsPage({
           <h3>Admin Accounts ({admins.length})</h3>
           <Button onClick={() => { resetForm(); setShowCreate(true) }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Admin
+            Invite Admin
           </Button>
         </div>
         <div style={{ padding: 0 }}>
@@ -248,7 +262,15 @@ export function AdminsPage({
                             type="checkbox"
                             checked={admin.active !== false}
                             disabled={admin.isSuperAdmin}
-                            onChange={e => onToggleActive?.(admin.id, e.target.checked)}
+                            onChange={e => {
+                              const active = e.target.checked
+                              setSensitiveAction({
+                                title: active ? "Enable administrator account" : "Disable administrator account",
+                                warning: active ? "The user will regain access immediately." : "The user's Supabase Auth access will be revoked.",
+                                actionLabel: active ? "Verify & Enable" : "Verify & Disable",
+                                run: async token => { await onToggleActive?.(admin.id, active, token); setSensitiveAction(null) },
+                              })
+                            }}
                             style={{ display: "none" }}
                           />
                           <div className={"adm-toggle" + (admin.active !== false ? " on" : "")}>
@@ -266,7 +288,12 @@ export function AdminsPage({
                               <button className="ps-action-btn" title="Edit" onClick={() => setEditing({ ...admin })}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                               </button>
-                              <button className="ps-action-btn ps-action-danger" title="Delete" onClick={() => onDelete?.(admin.id)}>
+                              <button className="ps-action-btn ps-action-danger" title="Remove access" onClick={() => setSensitiveAction({
+                                title: "Remove administrator access",
+                                warning: "This safely disables the account and revokes sign-in access. Historical audit records are preserved.",
+                                actionLabel: "Verify & Remove Access",
+                                run: async token => { await onDelete?.(admin.id, token); setSensitiveAction(null) },
+                              })}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                               </button>
                             </>
@@ -286,16 +313,15 @@ export function AdminsPage({
       </div>
 
       {/* Create modal */}
-      <Modal open={showCreate} title="Create Admin Account" onClose={() => setShowCreate(false)}>
+      <Modal open={showCreate} title="Invite Admin" onClose={() => setShowCreate(false)}>
         <form className="form-grid" onSubmit={submitCreate}>
           <SalesmanLinker salesmen={salesmen} isSalesman={isSalesman} salesmanIds={salesmanIds}
             onChange={(v, ids) => { setIsSalesman(v); setSalesmanIds(ids) }} />
           <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Warehouse Manager" required />
           <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabexoticfoods.com" required />
-          <Input label="Username / Login" value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. warehouse1" />
-          <Input label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimum 8 characters" required />
           <Input label="Job Title" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Sales Executive" />
-          <Select label="Role" options={["Staff", "Manager", "Supervisor", "Owner"]} value={role} onChange={setRole} />
+          <Select label="Role" options={currentUserIsSystemDeveloper ? ["Staff", "Manager", "Supervisor", "Owner", "System Developer"] : ["Staff", "Manager", "Supervisor", "Owner"]} value={role} onChange={setRole} />
+          <p className="wide invite-explainer">The recipient will receive a secure one-time link and choose their own password. Passwords are never created by administrators.</p>
           <div className="wide">
             <label className="form-control">
               <span>Apply Role Template (optional — fills permissions below, still editable)</span>
@@ -308,7 +334,7 @@ export function AdminsPage({
           <PermGrid perms={perms} onChange={setPerms} />
           {formError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{formError}</p>}
           <div className="wide actions-row">
-            <Button type="submit">Create Admin</Button>
+            <Button type="submit">Continue to Verification</Button>
             <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
           </div>
         </form>
@@ -322,9 +348,8 @@ export function AdminsPage({
               onChange={(v, ids) => setEditing({ ...editing, isSalesman: v, salesmanIds: ids })} />
             <Input label="Full Name" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} required />
             <Input label="Email" type="email" value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })} required />
-            <Input label="New Password" type="password" value={editing.password} onChange={e => setEditing({ ...editing, password: e.target.value })} placeholder="Leave blank to keep current" />
             <Input label="Job Title" value={editing.jobTitle ?? ""} onChange={e => setEditing({ ...editing, jobTitle: e.target.value })} placeholder="e.g. Sales Executive" />
-            <Select label="Role" options={["Staff", "Manager", "Supervisor", "Owner"]} value={editing.role} onChange={v => setEditing({ ...editing, role: v })} />
+            <Select label="Role" options={currentUserIsSystemDeveloper ? ["Staff", "Manager", "Supervisor", "Owner", "System Developer"] : ["Staff", "Manager", "Supervisor", "Owner"]} value={editing.role} onChange={v => setEditing({ ...editing, role: v })} />
             <div className="wide">
               <label className="form-control">
                 <span>Apply Role Template (optional — fills permissions below, still editable)</span>
@@ -342,6 +367,14 @@ export function AdminsPage({
           </form>
         )}
       </Modal>
+      <SensitiveActionDialog
+        open={Boolean(sensitiveAction)}
+        title={sensitiveAction?.title ?? "Sensitive action"}
+        warning={sensitiveAction?.warning}
+        actionLabel={sensitiveAction?.actionLabel}
+        onClose={() => setSensitiveAction(null)}
+        onVerified={async token => sensitiveAction?.run(token)}
+      />
     </div>
   )
 }

@@ -15,6 +15,9 @@ const PAGE_LABELS: Record<string, string> = {
   "whatsapp-logs": "WhatsApp Logs", suppliers: "Suppliers", "sales-users": "Sales Users",
   "assign-task": "Assign Task", "sub-accounts": "Sub-Account Approvals", "whatsapp-send": "Send WhatsApp",
   settings: "Settings", documents: "Documents", team: "Team",
+  "system-overview": "System Overview", "system-users": "System Users", "login-activity": "Login Activity",
+  "audit-logs": "Audit Logs", "test-mode": "Test Mode", "backup-recovery": "Backup & Recovery",
+  "system-health": "Integrations & Health", security: "Security",
 }
 
 export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBellClick }: {

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-/** True once Supabase's recovery-link redirect has landed here and the
-    client has parsed a session out of the URL — checked before rendering
-    so we never show this page for an ordinary visit. */
 export function isPasswordRecoveryUrl() {
-  return /type=recovery/.test(window.location.hash) || /type=recovery/.test(window.location.search)
+  const authType = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type')
+    || new URLSearchParams(window.location.search).get('type')
+  return authType === 'recovery' || authType === 'invite' || new URLSearchParams(window.location.search).get('setup') === 'password'
 }
+
+const validPassword = (value: string) =>
+  value.length >= 10 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value)
 
 export function SetPasswordPage({ onDone }: { onDone: () => void }) {
   const [password, setPassword] = useState('')
@@ -14,57 +16,56 @@ export function SetPasswordPage({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [ready, setReady] = useState(false)
+  const [complete, setComplete] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) setReady(true)
     })
-    // The event can fire before this listener is attached — recheck the
-    // current session directly as a fallback.
     supabase.auth.getSession().then(({ data }) => { if (data.session) setReady(true) })
     return () => sub.subscription.unsubscribe()
   }, [])
 
-  const submit = async () => {
-    setError('')
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setError('')
+    if (!validPassword(password)) { setError('Use at least 10 characters with uppercase, lowercase, a number and a symbol.'); return }
     if (password !== confirm) { setError("Passwords don't match."); return }
-    if (!supabase) { setError('Not connected to Supabase.'); return }
+    if (!supabase) { setError('Secure account setup is temporarily unavailable.'); return }
     setBusy(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
-    setBusy(false)
-    if (updateError) { setError(updateError.message); return }
-    // Clean the recovery params out of the URL, then hand back to the app.
+    if (updateError) { setBusy(false); setError('Your password could not be saved. The link may have expired; request a new one.'); return }
+    const { data } = await supabase.auth.getSession()
+    if (data.session?.access_token) {
+      await fetch('/api/complete-account-setup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token }, body: '{}' }).catch(() => null)
+    }
     window.history.replaceState(null, '', window.location.pathname)
-    onDone()
+    setBusy(false); setComplete(true)
   }
 
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f7f2', padding: 24 }}>
-      <div style={{ background: '#fff', borderRadius: 16, padding: '36px 40px', maxWidth: 400, width: '100%', boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#111827', marginBottom: 6 }}>Set your password</h2>
-        <p style={{ fontSize: 13.5, color: '#6b7280', marginBottom: 20 }}>
-          {ready
-            ? "You're switching to secure login — pick a password you'll use going forward."
-            : 'Verifying your recovery link…'}
-        </p>
-        {ready && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <input type="password" placeholder="New password" value={password}
-              onChange={e => setPassword(e.target.value)}
-              style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14 }} />
-            <input type="password" placeholder="Confirm password" value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              style={{ padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e5e7eb', fontSize: 14 }} />
-            {error && <p style={{ color: '#b91c1c', fontSize: 13, background: '#fef2f2', borderRadius: 8, padding: '8px 12px', margin: 0 }}>{error}</p>}
-            <button onClick={submit} disabled={busy}
-              style={{ marginTop: 4, padding: '10px 20px', background: '#22913f', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
-              {busy ? 'Saving…' : 'Save password'}
-            </button>
-          </div>
-        )}
+  return <main className="setup-page">
+    <section className="setup-shell">
+      <div className="setup-form-side">
+        <div className="setup-brand"><img src="/logo.png" alt="" /><span><strong>Punjab Exotic Foods</strong><small>Secure account access</small></span></div>
+        {complete ? <div className="setup-success"><span>✓</span><h1>Password saved</h1><p>Your one-time setup is complete. You can now sign in securely.</p><button onClick={onDone}>Continue to login</button></div> : <>
+          <div className="setup-heading"><span>ACCOUNT SECURITY</span><h1>Create your password</h1><p>Choose a strong password for your Punjab Exotic Foods account.</p></div>
+          {!ready ? <div className="setup-verifying"><span /><div><strong>Verifying secure link</strong><small>This should only take a moment.</small></div></div> :
+          <form onSubmit={submit} className="setup-form">
+            <label>New Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" required autoFocus /></label>
+            <label>Confirm Password<input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} autoComplete="new-password" required /></label>
+            <ul className="password-rules"><li className={password.length >= 10 ? 'met' : ''}>At least 10 characters</li><li className={/[A-Z]/.test(password) && /[a-z]/.test(password) ? 'met' : ''}>Uppercase and lowercase letters</li><li className={/\d/.test(password) && /[^A-Za-z0-9]/.test(password) ? 'met' : ''}>A number and a symbol</li></ul>
+            {error && <div className="form-error" role="alert">{error}</div>}
+            <button className="setup-submit" type="submit" disabled={busy}>{busy ? 'Saving securely…' : 'Save password'}</button>
+          </form>}
+        </>}
       </div>
-    </div>
-  )
+      <div className="setup-visual" aria-hidden="true">
+        <div className="setup-preview">
+          <header><span /><span /><span /></header>
+          <div className="setup-preview-body"><aside>{Array.from({ length: 6 }, (_, i) => <i key={i} />)}</aside><div><div className="preview-stats"><i/><i/><i/></div><div className="preview-chart"><span/><span/><span/><span/><span/><span/></div><div className="preview-table">{Array.from({ length: 5 }, (_, i) => <i key={i} />)}</div></div></div>
+        </div>
+        <div className="setup-visual-copy"><h2>One secure place for your account</h2><p>Invoices, payments, stock and customer operations protected by verified access.</p></div>
+      </div>
+    </section>
+  </main>
 }

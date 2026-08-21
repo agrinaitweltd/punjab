@@ -344,6 +344,9 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     [creditNoteAllocations, myCreditNotes],
   )
   const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + invoiceOutstanding(i), 0)
+  const outstandingInvoices = myInvoices.filter(i => invoiceOutstanding(i) > 0)
+  const nextPaymentDue = [...outstandingInvoices].filter(i => i.dueDate).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate
+  const availableCredit = Math.max(0, (me?.creditLimit ?? 0) - myBalance)
   const totalCreditApplied = myCreditAllocations.reduce((s, a) => s + a.amount, 0)
   const remainingCredit = myCreditNotes.filter(c => c.status === "Active").reduce((s, c) => s + c.remainingBalance, 0)
   const stockMap   = useMemo(() => { const m: Record<string, StockItem> = {}; for (const s of stock) m[s.productId] = s; return m }, [stock])
@@ -410,6 +413,16 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       // ── OVERVIEW — Shopall style ─────────────────────────
       case "overview": return (
         <div className="cd-content">
+          <div className="customer-welcome">
+            <div><span>ACCOUNT OVERVIEW</span><h2>Welcome back, {user.displayName}</h2><p>{me?.contactPerson ? `Account contact: ${me.contactPerson}` : `Customer account ${user.customerNumber ?? ""}`}</p></div>
+            <Button onClick={() => switchTab("balance")}>View Account</Button>
+          </div>
+          <div className="customer-finance-summary">
+            <button onClick={() => switchTab("balance")}><span>Current Balance</span><strong>£{myBalance.toFixed(2)}</strong><small>{outstandingInvoices.length} outstanding invoice{outstandingInvoices.length === 1 ? "" : "s"}</small></button>
+            <button onClick={() => switchTab("balance")}><span>Available Credit</span><strong>£{availableCredit.toFixed(2)}</strong><small>Limit £{(me?.creditLimit ?? 0).toFixed(2)}</small></button>
+            <button onClick={() => switchTab("balance")}><span>Next Payment Due</span><strong className="date-value">{nextPaymentDue ? new Date(`${nextPaymentDue}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "None"}</strong><small>{nextPaymentDue ? "Open balance due" : "No payment scheduled"}</small></button>
+            <button onClick={() => switchTab("documents")}><span>Documents</span><strong>{myFiles.length}</strong><small>Invoices, statements and receipts</small></button>
+          </div>
           {/* promo banner */}
           <div className="sh-banner">
             <div className="sh-banner-left">
@@ -439,10 +452,10 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
 
           {/* stat cards — non-financial */}
           <div className="sh-stats">
-            <StatCard label="Total Orders" value={String(myOrders.length)} delta="+12%" positive
+            <StatCard label="Total Orders" value={String(myOrders.length)} delta="all time" positive
               iconBg="#ecfeff" iconColor="#0891b2"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>} />
-            <StatCard label="Boxes Ordered" value={String(totalBoxes)} delta="+8%" positive
+            <StatCard label="Boxes Ordered" value={String(totalBoxes)} delta="across all orders" positive
               iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
             <StatCard label="Pending Orders" value={String(myOrders.filter(o => o.status === "Pending").length)} delta="in review" positive
@@ -477,7 +490,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <div className="sh-chart-card">
               <div className="sh-chart-title">Order Activity</div>
               <div className="sh-chart-big">{myOrders.length ? `${myOrders.length} orders` : "No orders yet"}</div>
-              <div className="sh-chart-sub"><strong>{myOrders.length ? "+20.1%" : ""}</strong>{myOrders.length ? " from last month" : "Your order history will appear here"}</div>
+              <div className="sh-chart-sub">{myOrders.length ? "Based on your recorded order history" : "Your order history will appear here"}</div>
               {barData.length > 0 ? (
                 <div className="sh-bars">
                   {barData.map((b, i) => (
@@ -494,7 +507,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
             <div className="sh-chart-card">
               <div className="sh-chart-title">Boxes Ordered</div>
               <div className="sh-chart-big">{totalBoxes.toLocaleString("en-GB")} boxes</div>
-              <div className="sh-chart-sub"><strong>{cumulative.length > 1 ? "+20.1%" : ""}</strong>{cumulative.length > 1 ? " from last month" : "Cumulative boxes over time"}</div>
+              <div className="sh-chart-sub">Cumulative boxes over recorded orders</div>
               <RevenueLine points={cumulative} />
             </div>
           </div>
@@ -571,7 +584,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       case "stock": return (
         <div className="cd-content">
           <div className="sh-stats" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-            <StatCard label="Available Products" value={String(stock.filter(s => s.status !== "out").length)} delta="+7%" positive
+            <StatCard label="Available Products" value={String(stock.filter(s => s.status !== "out").length)} delta={stockFresh ? "updated today" : "awaiting update"} positive={stockFresh}
               iconBg="#f0fdf4" iconColor="#16a34a"
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>} />
             <StatCard label="Low Stock Items" value={String(stock.filter(s => s.status === "low").length)}

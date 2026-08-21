@@ -26,17 +26,14 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 const AVATAR_COLORS = ["#22913f", "#3b82f6", "#8b5cf6", "#e05c2a", "#0ea5e9"]
 
 /* Hostay-style stat card with delta chip */
-function HoStat({ label, value, delta, up }: { label: string; value: React.ReactNode; delta: string; up?: boolean }) {
+function HoStat({ label, value, delta }: { label: string; value: React.ReactNode; delta: string; up?: boolean }) {
   return (
     <div className="ho-stat">
       <p className="ho-stat-label">{label}</p>
       <div className="ho-stat-value">{value}</div>
       <div className="ho-stat-foot">
-        <span className={"ho-chip " + (up ? "up" : "down")}>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">{up ? <polyline points="18 15 12 9 6 15"/> : <polyline points="6 9 12 15 18 9"/>}</svg>
-          {delta}
-        </span>
-        <span className="ho-foot-note">from last week</span>
+        <span className="ho-chip neutral">{delta}</span>
+        <span className="ho-foot-note">Live data</span>
       </div>
     </div>
   )
@@ -504,7 +501,7 @@ export function DashboardHome({
                     <th>Customer</th>
                     <th>Status</th>
                     <th>About</th>
-                    <th>Team</th>
+                    <th>Owner</th>
                     <th>Sale Value</th>
                     <th>Fulfilment</th>
                     <th className="ps-th-plus">+</th>
@@ -538,15 +535,7 @@ export function DashboardHome({
                           {order.items.length} product{order.items.length !== 1 ? "s" : ""} ordered
                           <div style={{ fontSize: 12, color: "#9ca3af" }}>Placed {order.date}</div>
                         </td>
-                        <td>
-                          <div style={{ display: "flex", alignItems: "center" }}>
-                            {[0, 1, 2].map(i => (
-                              <div key={i} style={{ width: 26, height: 26, borderRadius: "50%", background: AVATAR_COLORS[i], border: "2px solid #fff", marginLeft: i ? -8 : 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff", fontWeight: 700 }}>
-                                {String.fromCharCode(65 + i)}
-                              </div>
-                            ))}
-                          </div>
-                        </td>
+                        <td style={{ color: order.salesmanName ? "#374151" : "#9ca3af", fontSize: 12.5 }}>{order.salesmanName || "Unassigned"}</td>
                         <td><strong>£{order.amount.toFixed(2)}</strong></td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

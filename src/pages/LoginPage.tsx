@@ -581,6 +581,17 @@ export function LoginPage({ onLogin, error }: {
           <button type="button" className="lx-pill" onClick={() => setRole("customer")}>Customer Portal</button>
           <button type="button" className="lx-pill lx-pill-ghost" onClick={() => setRole("admin")}>Staff &amp; Admin</button>
         </div>
+        <div className="lx-dashboard-preview" aria-hidden="true">
+          <div className="lx-preview-top"><span /><span /><span /></div>
+          <div className="lx-preview-body">
+            <aside>{[0,1,2,3,4].map(item => <i key={item} />)}</aside>
+            <div className="lx-preview-main">
+              <div className="lx-preview-metrics"><i /><i /><i /></div>
+              <div className="lx-preview-chart">{[42,58,46,72,66,88,76,94].map((height, item) => <i key={item} style={{ height: `${height}%` }} />)}</div>
+              <div className="lx-preview-rows">{[0,1,2,3].map(item => <i key={item} />)}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ─── GLASS LOGIN CARD ─── */}
@@ -601,7 +612,9 @@ export function LoginPage({ onLogin, error }: {
           <ApplyFlow onBack={() => setMode("login")} />
         ) : (
         <form className="lx-card" onSubmit={submit}>
-          <h1 className="lx-title">Log In to Punjab™</h1>
+          <div className="lx-form-brand"><img src="/logo.png" alt="" /><span><strong>Punjab Exotic Foods</strong><small>Business Management Portal</small></span></div>
+          <h1 className="lx-title">Welcome back</h1>
+          <p className="lx-login-subtitle">Sign in to manage your account securely.</p>
 
           <div className="lx-role-row">
             <button type="button" className={"lx-role" + (role === "customer" ? " on" : "")} onClick={() => setRole("customer")}>Customer</button>
@@ -642,13 +655,13 @@ export function LoginPage({ onLogin, error }: {
               <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
               Remember
             </label>
-            <button type="button" className="lx-forgot" onClick={() => setMode("forgot")}>Forgotten?</button>
+            <button type="button" className="lx-forgot" onClick={() => setMode("forgot")}>Forgot password?</button>
           </div>
 
           {error && <p className="lx-error">{error}</p>}
 
           <button type="submit" className="lx-login-btn" disabled={loading}>
-            {loading ? "Signing in…" : "Log In"}
+            {loading ? "Signing in…" : "Log in"}
           </button>
 
           <p className="lx-signup-note">First time here?</p>

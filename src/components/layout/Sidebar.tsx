@@ -34,7 +34,7 @@ const ICON_PATHS = {
 } as const
 
 type IconName = keyof typeof ICON_PATHS
-type NavigationItem = { key: string; label: string; icon: IconName; badgeKey?: string; access?: "users" | "superAdmin" }
+type NavigationItem = { key: string; label: string; icon: IconName; badgeKey?: string; access?: "users" | "superAdmin" | "systemDeveloper" }
 type NavigationGroup = { key: string; label: string; icon: IconName; children: NavigationItem[] }
 
 const adminNavigation: NavigationGroup[] = [
@@ -71,6 +71,16 @@ const adminNavigation: NavigationGroup[] = [
   { key: "admin-group", label: "Users & Administration", icon: "admin", children: [
     { key: "admins", label: "Admin Users", icon: "admin", access: "users" }, { key: "sales-users", label: "Sales Users", icon: "team", access: "users" },
     { key: "assign-task", label: "Assign Task", icon: "order", access: "users" }, { key: "sub-accounts", label: "Sub-Account Approvals", icon: "team", access: "superAdmin" },
+  ] },
+  { key: "system-group", label: "System Management", icon: "settings", children: [
+    { key: "system-overview", label: "System Overview", icon: "dashboard", access: "systemDeveloper" },
+    { key: "system-users", label: "Users", icon: "admin", access: "systemDeveloper" },
+    { key: "login-activity", label: "Login Activity", icon: "clock", access: "systemDeveloper" },
+    { key: "audit-logs", label: "Audit Logs", icon: "documents", access: "systemDeveloper" },
+    { key: "test-mode", label: "Test Mode", icon: "settings", access: "systemDeveloper" },
+    { key: "backup-recovery", label: "Backup & Recovery", icon: "documents", access: "systemDeveloper" },
+    { key: "system-health", label: "Integrations & Health", icon: "communications", access: "systemDeveloper" },
+    { key: "security", label: "Security", icon: "help", access: "systemDeveloper" },
   ] },
 ]
 
@@ -112,6 +122,7 @@ export function Sidebar({ user, current, onNavigate, mobileOpen, collapsed, onCo
       if (isAdmin) {
         if (item.access === "superAdmin" && !user.isSuperAdmin) return false
         if (item.access === "users" && !user.isSuperAdmin && !user.permissions?.usersManage) return false
+        if (item.access === "systemDeveloper" && !user.isSystemDeveloper) return false
         if (user.isSuperAdmin) return true
         const permission = NAV_PERMISSION_KEY[item.key]
         return !permission || Boolean(user.permissions?.[permission])
@@ -121,7 +132,7 @@ export function Sidebar({ user, current, onNavigate, mobileOpen, collapsed, onCo
       const permission = CUSTOMER_NAV_PERMISSION_KEY[item.key]
       return !permission || Boolean(user.subAccount.permissions[permission])
     }) })).filter(group => group.children.length > 0)
-  }, [isAdmin, user.isSuperAdmin, user.permissions, user.subAccount])
+  }, [isAdmin, user.isSuperAdmin, user.isSystemDeveloper, user.permissions, user.subAccount])
 
   const activeGroup = groups.find(group => group.children.some(item => item.key === current))
   const activeGroupKey = activeGroup?.key
@@ -201,7 +212,7 @@ export function Sidebar({ user, current, onNavigate, mobileOpen, collapsed, onCo
           <button type="button" role="menuitem" className="danger" onClick={onLogout}><Icon name="logout" size={16} />Sign Out</button>
         </div>}
         <button className="pn-profile-button" type="button" onClick={() => setProfileOpen(value => !value)} aria-expanded={profileOpen} aria-haspopup="menu">
-          <span className="pn-avatar">{initials}</span><span className="pn-profile-copy"><strong>{user.displayName}</strong><small>{isAdmin ? (user.isSuperAdmin ? "System administrator" : "Administrator") : "Customer account"}</small></span><Chevron open={profileOpen} />
+          <span className="pn-avatar">{initials}</span><span className="pn-profile-copy"><strong>{user.displayName}</strong><small>{isAdmin ? (user.isSystemDeveloper ? "System Developer" : user.isSuperAdmin ? "System administrator" : "Administrator") : "Customer account"}</small></span><Chevron open={profileOpen} />
         </button>
       </div>
     </div>

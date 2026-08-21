@@ -58,6 +58,7 @@ class AuthService {
           email: admin.email,
           displayName: admin.name,
           isSuperAdmin: admin.isSuperAdmin ?? false,
+          isSystemDeveloper: admin.role === "System Developer",
           permissions: admin.permissions ?? {},
         }
         return this.currentUser

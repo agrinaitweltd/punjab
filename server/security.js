@@ -36,7 +36,7 @@ export async function requireUser(req, res, { adminOnly = false } = {}) {
     const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
     const { data, error } = await client.auth.getUser(match[1])
     if (error || !data.user) { res.status(401).json({ error: 'Authentication required' }); return null }
-    if (adminOnly && data.user.app_metadata?.role !== 'admin') { res.status(403).json({ error: 'Administrator access required' }); return null }
+    if (adminOnly && !['admin', 'system_developer'].includes(data.user.app_metadata?.role)) { res.status(403).json({ error: 'Administrator access required' }); return null }
     return data.user
   } catch {
     res.status(401).json({ error: 'Authentication required' })

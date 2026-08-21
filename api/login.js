@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { guardApi, safeError } from '../server/security.js'
 
@@ -53,7 +54,18 @@ export default async function handler(req, res) {
       if (account?.blocked || String(account?.status || '').toLowerCase() === 'inactive') account = null
     }
 
-    if (!account) return res.status(401).json({ error: 'Invalid credentials' })
+    const recordLogin = async (success, failureCode, userId) => {
+      const ip = String(req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim()
+      await admin.from('user_login_audit').insert({
+        user_id: userId || null, account_id: account?.id || null,
+        email: isEmail ? identifier.toLowerCase() : null, role, success,
+        failure_code: failureCode || null,
+        ip_hash: ip ? createHash('sha256').update(`${process.env.SENSITIVE_ACTION_SECRET || 'audit'}:${ip}`).digest('hex') : null,
+        user_agent_summary: String(req.headers?.['user-agent'] || '').slice(0, 180) || null,
+      }).then(() => {}).catch(() => {})
+    }
+
+    if (!account) { await recordLogin(false, 'invalid_credentials'); return res.status(401).json({ error: 'Invalid credentials' }) }
 
     let authUser = null
     if (account.auth_user_id) {
@@ -62,6 +74,7 @@ export default async function handler(req, res) {
       authUser = data.user
     } else {
       if (!(await passwordMatches(account.password, password))) {
+        await recordLogin(false, 'invalid_credentials')
         return res.status(401).json({ error: 'Invalid credentials' })
       }
       const authEmail = role === 'admin' ? account.email : customerAuthEmail(account.id)
@@ -82,7 +95,9 @@ export default async function handler(req, res) {
 
     if (!authUser?.email) throw new Error('Linked Auth user has no email address')
     const { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password })
-    if (signInError || !signedIn.session) return res.status(401).json({ error: 'Invalid credentials' })
+    if (signInError || !signedIn.session) { await recordLogin(false, 'invalid_credentials', authUser.id); return res.status(401).json({ error: 'Invalid credentials' }) }
+
+    await recordLogin(true, null, authUser.id)
 
     res.setHeader('Cache-Control', 'no-store')
     return res.status(200).json({

@@ -50,6 +50,7 @@ export interface User {
   displayName: string
   customerNumber?: string
   isSuperAdmin?: boolean
+  isSystemDeveloper?: boolean
   permissions?: PermissionSet
   /** Set when this session is a customer's sub-account rather than the main
       login — `id` above is still the parent customer's id (so all data

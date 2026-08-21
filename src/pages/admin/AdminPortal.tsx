@@ -13,10 +13,8 @@ import { createProduct, deleteProduct, getProducts, updateProduct } from '../../
 import { getStock, updateStock } from '../../api/stockApi'
 import { getOrders, updateOrder } from '../../api/ordersApi'
 import {
-  createAdmin,
   createDeliveryArea,
   createTicket,
-  deleteAdmin,
   deleteDeliveryArea,
   getActivity,
   getAdmins,
@@ -24,8 +22,6 @@ import {
   getInvoices,
   getPayments,
   getTickets,
-  toggleAdminActive,
-  updateAdmin,
   updateDeliveryArea,
   updateTicketStatus,
   createInvoice,
@@ -137,7 +133,9 @@ import { TicketsPage } from './TicketsPage'
 import { ExpensesPage } from './ExpensesPage'
 import { GlobalSearchPage } from './GlobalSearchPage'
 import { CommunicationHistoryPage } from './CommunicationHistoryPage'
+import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
+import { inviteAdmin, manageAdmin } from '../../lib/secureAdminApi'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [current, setCurrent] = useState('dashboard')
@@ -412,6 +410,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'global-search') return <GlobalSearchPage customers={customers} invoices={invoices} onNavigate={navigate} />
+    if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
+      return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage />
+    }
     if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
     if (current === 'session') {
@@ -1169,30 +1170,27 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         <AdminsPage
           admins={admins}
           salesmen={salesmen}
+          currentUserIsSystemDeveloper={user.isSystemDeveloper}
           loadRoles={getAdminRoles}
-          onCreate={async (name, email, password, role, jobTitle, permissions, isSalesman, salesmanIds) => {
-            await createAdmin({ name, email, password, role, jobTitle, active: true, isSuperAdmin: false, permissions, isSalesman, salesmanIds })
-            if (email) {
-              void sendEmail(email, "Your Punjab Exotic Foods admin account",
-                welcomeEmailHtml(name, "admin", window.location.origin))
-            }
-            void logActivity(user.displayName, `created admin account for ${name} (${role})`)
+          onCreate={async (name, email, role, jobTitle, permissions, isSalesman, salesmanIds, sensitiveToken) => {
+            await inviteAdmin({ name, email, role, jobTitle, permissions, isSalesman, salesmanIds }, sensitiveToken)
+            void logActivity(user.displayName, `invited admin account for ${name} (${role})`)
             await load()
           }}
-          onUpdate={async (id, data) => {
-            await updateAdmin(id, data)
+          onUpdate={async (id, data, sensitiveToken) => {
+            await manageAdmin({ action: 'update', id, data }, sensitiveToken)
             void logActivity(user.displayName, `updated admin account for ${data.name ?? id}`)
             await load()
           }}
-          onDelete={async (id) => {
+          onDelete={async (id, sensitiveToken) => {
             const target = admins.find(a => a.id === id)
-            await deleteAdmin(id)
-            void logActivity(user.displayName, `deleted admin account${target ? ` for ${target.name}` : ""}`)
+            await manageAdmin({ action: 'remove', id }, sensitiveToken)
+            void logActivity(user.displayName, `removed admin access${target ? ` for ${target.name}` : ""}`)
             await load()
           }}
-          onToggleActive={async (id, active) => {
+          onToggleActive={async (id, active, sensitiveToken) => {
             const target = admins.find(a => a.id === id)
-            await toggleAdminActive(id, active)
+            await manageAdmin({ action: 'set_active', id, active }, sensitiveToken)
             void logActivity(user.displayName, `${active ? "activated" : "deactivated"} admin account${target ? ` for ${target.name}` : ""}`)
             await load()
           }}
