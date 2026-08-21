@@ -531,10 +531,11 @@ class SupabaseDatabaseService {
 
   // ── ACTIVITY ──────────────────────────────────────────────────────
   async getActivity(): Promise<ActivityLog[]> {
-    // FILE:/PAYPROOF:-prefixed rows are stored documents and payment proofs
+    // FILE:/PAYPROOF:/INVOICE_ITEMS:-prefixed rows are internal document data
     // (see lib/fileService, lib/paymentProofService) — not real activity.
     const { data, error } = await db().from("activity_log").select("*")
       .not("customer_name", "like", "FILE:%")
+      .not("customer_name", "like", "INVOICE_ITEMS:%")
       .not("customer_name", "like", "PAYPROOF:%")
       .order("created_at", { ascending: false }).limit(50)
     if (error) { console.error("getActivity", error); return [] }

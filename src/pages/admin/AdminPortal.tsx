@@ -4,6 +4,8 @@ import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
 import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml, paymentReminderEmailHtml } from '../../lib/emailService'
 import { getCreditStatus } from '../../lib/creditControl'
+import { uploadFile } from '../../lib/fileService'
+import { saveInvoiceItems } from '../../services/invoiceItemService'
 import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
@@ -560,19 +562,30 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           }}
           onCreateFromInvoice={async (data) => {
             let customer = customers.find(c => c.customerNumber === data.customer.accountNumber)
+            const existingCustomer = Boolean(customer)
             if (!customer) {
               customer = await createCustomer({
                 companyName: data.customer.companyName, contactPerson: '', email: data.customer.email || `${data.customer.accountNumber}@pending.punjab.local`,
                 phone: data.customer.phone, customerNumber: data.customer.accountNumber, password: `pending-${Math.random().toString(36).slice(2, 12)}`,
-                address: data.customer.address, deliveryArea: '', paymentTerms: '14 Days', creditDays: 14,
+                address: [data.customer.address, data.customer.postcode].filter(Boolean).join(', '), deliveryArea: '', paymentTerms: '14 Days', creditDays: 14,
               })
               void logActivity(user.displayName, `created customer ${customer.companyName} from invoice`)
             }
             const issueDate = data.invoice.date || new Date().toISOString().slice(0, 10)
             const due = new Date(`${issueDate}T00:00:00`); due.setDate(due.getDate() + (customer.creditDays ?? 14))
             if (data.invoice.invoiceNumber && invoices.some(i => i.invoiceNumber === data.invoice.invoiceNumber)) throw new Error('That invoice number already exists.')
-            await createInvoice({ customerId: customer.id, ...(data.invoice.invoiceNumber ? { invoiceNumber: data.invoice.invoiceNumber } : {}), date: issueDate, dueDate: due.toISOString().slice(0, 10), amount: data.invoice.grandTotal, amountPaid: 0, status: 'Unpaid' })
-            await updateCustomer(customer.id, { balance: data.customer.ledgerBalance || Math.max(0, (customer.balance ?? 0) + data.invoice.grandTotal) })
+            const createdInvoice = await createInvoice({ customerId: customer.id, invoiceNumber: data.invoice.invoiceNumber, date: issueDate, dueDate: due.toISOString().slice(0, 10), amount: data.invoice.grandTotal, amountPaid: 0, status: 'Unpaid' })
+            await saveInvoiceItems(createdInvoice.id, data.items)
+            if (data.source) {
+              await uploadFile(data.source.name, data.source.type, data.source.size, data.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName)
+            }
+            const previousOutstanding = invoices
+              .filter(invoice => invoice.customerId === customer.id)
+              .reduce((sum, invoice) => sum + Math.max(0, invoice.amount - (invoice.amountPaid ?? 0)), 0)
+            const balance = existingCustomer
+              ? previousOutstanding + data.invoice.grandTotal
+              : data.customer.ledgerBalance > 0 ? data.customer.ledgerBalance : data.invoice.grandTotal
+            await updateCustomer(customer.id, { balance: Math.max(0, balance) })
             void logActivity(user.displayName, `uploaded first invoice for ${customer.companyName}`)
             await load()
           }}
