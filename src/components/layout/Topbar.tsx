@@ -1,14 +1,20 @@
 import type { User } from "../../types"
 
 const PAGE_LABELS: Record<string, string> = {
-  dashboard: "Overview", products: "Product", orders: "Sale", customers: "Customer",
-  tickets: "Message", stock: "Stock", payments: "Payments", stats: "Analytics",
+  dashboard: "Overview", products: "Products", orders: "Sales & Orders", customers: "Customers",
+  tickets: "Messages", stock: "Stock", payments: "Payments", stats: "Analytics",
   "delivery-areas": "Deliveries", enquiries: "Enquiries", complaints: "Complaints",
   "credit-control": "Credit Control", "payment-proofs": "Payment Proofs", "credit-notes": "Credit Notes",
   "customer-applications": "Customer Applications", "payment-reminders": "Payment Reminders",
   admins: "Admin Users", "data-extract": "Data Extract", files: "Files",
   session: "Produce Buying Desk", "place-order": "Place Order",
   "invoice-numbers": "Invoice Numbers", "day-trade": "Day Trade",
+  "add-customer": "Add Customer", "create-invoice": "Create Invoice", invoices: "Invoices",
+  outstanding: "Outstandings", "global-search": "Global Search", expenses: "Expenses",
+  "day-check": "Day Check", "communication-history": "Communication History",
+  "whatsapp-logs": "WhatsApp Logs", suppliers: "Suppliers", "sales-users": "Sales Users",
+  "assign-task": "Assign Task", "sub-accounts": "Sub-Account Approvals", "whatsapp-send": "Send WhatsApp",
+  settings: "Settings", documents: "Documents", team: "Team",
 }
 
 export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBellClick }: {

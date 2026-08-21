@@ -29,6 +29,7 @@ export function AppLayout({
   onDayEnd?: () => void
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const handleNavigate = (key: string) => {
     setMobileOpen(false)
@@ -36,19 +37,19 @@ export function AppLayout({
   }
 
   return (
-    <div className="app-layout">
+    <div className={sidebarCollapsed ? "app-layout sidebar-is-collapsed" : "app-layout"}>
       {mobileOpen && <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />}
       <Sidebar
-        role={role}
+        user={user}
         current={current}
         onNavigate={handleNavigate}
-        userName={user.displayName}
-        isSuperAdmin={user.isSuperAdmin}
-        permissions={user.permissions}
-        subAccountPermissions={user.subAccount?.permissions}
         mobileOpen={mobileOpen}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+        onMobileClose={() => setMobileOpen(false)}
         badges={badges}
         onDayEnd={role === 'admin' ? onDayEnd : undefined}
+        onLogout={onLogout}
       />
       <div className="main-layout">
         <Topbar user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} onBellClick={onBellClick} />

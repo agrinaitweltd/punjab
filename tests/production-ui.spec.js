@@ -21,6 +21,29 @@ for (const viewport of [
     const outstanding = page.locator('.ho-stat').filter({ hasText: 'Outstanding Payments' })
     await expect(outstanding.locator('.ho-stat-value')).toHaveText('£37,103.73', { timeout: 20_000 })
     await expect(outstanding).toContainText('152 invoices')
+
+    const sidebarParent = name => page.locator('.pn-parent').filter({ hasText: name })
+    if (viewport.name === 'desktop') {
+      await sidebarParent('Customers').click()
+      await expect(page.getByRole('button', { name: 'Add Customer', exact: true })).toBeVisible()
+      await sidebarParent('Finance').click()
+      await expect(page.getByRole('button', { name: 'Add Customer', exact: true })).toHaveCount(0)
+      await page.getByRole('button', { name: 'Expenses', exact: true }).click()
+      await expect(page.locator('.topbar-title')).toHaveText('Expenses')
+      await page.getByRole('button', { name: 'Collapse navigation' }).click()
+      await expect(page.locator('.pn-panel')).toHaveCSS('width', '0px')
+      await page.locator('.pn-rail-button[aria-label="Customers"]').click()
+      await expect(page.getByRole('button', { name: 'All Customers', exact: true })).toBeVisible()
+      await page.locator('.pn-parent').filter({ hasText: 'Dashboard' }).click()
+    } else {
+      await page.getByRole('button', { name: 'Open menu' }).click()
+      await sidebarParent('Invoices').click()
+      await expect(page.getByRole('button', { name: 'Invoice History', exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Invoice History', exact: true }).click()
+      await expect(page.locator('.sidebar-overlay')).toHaveCount(0)
+      await expect(page.locator('.topbar-title')).toHaveText('Invoices')
+    }
+
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(1)
     await page.screenshot({ path: `test-results/${viewport.name}-dashboard.png`, fullPage: true })

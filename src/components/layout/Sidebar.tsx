@@ -1,299 +1,209 @@
-﻿import { useState, useEffect } from "react"
-import type { PermissionSet, SubAccountPermissions, UserRole } from "../../types"
+import { useEffect, useMemo, useRef, useState } from "react"
+import type { PermissionSet, SubAccountPermissions, User } from "../../types"
 
-/* Maps a customer nav item's key to the sub-account permission flag that
-   gates it — items not listed (Dashboard, Support pointer) stay visible to
-   every sub-account. The main customer login always sees everything. */
 const CUSTOMER_NAV_PERMISSION_KEY: Partial<Record<string, keyof SubAccountPermissions>> = {
   "place-order": "placeOrders", orders: "viewOrders", payments: "viewInvoicesBalance",
   documents: "viewDocuments", tickets: "raiseTickets", complaints: "raiseTickets",
 }
 
-/* Maps a nav item's key to the permission flag that gates it for non-super
-   admins. Items not listed here (Dashboard, Daily Session, Deliveries,
-   Files, Settings) are operational pages every admin can see. */
 const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
   products: "products", orders: "orders", customers: "customers", "add-customer": "customers", tickets: "tickets",
   payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
-  "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage",
-  "payment-reminders": "payments",
+  "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage", "payment-reminders": "payments",
   stats: "stats", "day-check": "stats", stock: "stock", "data-extract": "extracts",
   enquiries: "enquiries", complaints: "complaints",
 }
 
-const adminMain = [
-  { key: "dashboard",  label: "Dashboard", d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
-  { key: "add-customer", label: "Add Customer", d: "M12 5v14M5 12h14" },
-  { key: "create-invoice", label: "Create Invoice", d: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" },
-  { key: "customers",  label: "Customers",  d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },
-  { key: "outstanding", label: "Outstanding", d: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" },
-  { key: "global-search", label: "Global Search", d: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z" },
-]
-const adminTools = [
-  { key: "payments",      label: "Payments",    d: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", badge: undefined },
-  { key: "expenses", label: "Expenses", d: "M4 7h16M4 12h16M4 17h10", badge: undefined },
-  { key: "payment-proofs", label: "Payment Proofs", d: "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z", badge: undefined },
-  { key: "credit-control", label: "Credit Control", d: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z", badge: undefined },
-  { key: "credit-notes", label: "Credit Notes", d: "M9 14l2 2 4-4M7 21h10a2 2 0 0 0 2-2V7l-5-5H7a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2z", badge: undefined },
-  { key: "customer-applications", label: "Customer Applications", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 8v6M23 11h-6", badge: undefined },
-  { key: "payment-reminders", label: "Payment Reminders", d: "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0", badge: undefined },
-  { key: "communication-history", label: "Communication History", d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: undefined },
-  { key: "invoice-numbers", label: "Invoice Numbers", d: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2-3 2z", badge: undefined },
-  { key: "day-trade", label: "Day Trade", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", badge: undefined },
-  { key: "day-check", label: "Day Check", d: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", badge: undefined },
-  { key: "stats",         label: "Analytics",   d: "M18 20V10M12 20V4M6 20v-6", badge: undefined },
-  { key: "stock",         label: "Stock",       d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", badge: undefined },
-  { key: "files",         label: "Files",       d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", badge: undefined },
-  { key: "data-extract",  label: "Integration", d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3", badge: undefined },
-  { key: "whatsapp-logs", label: "WhatsApp Logs", d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: undefined },
-]
-const adminWorkspace = [
-  { key: "session", label: "Buying Desk", dot: "#22913f" },
-  { key: "orders", label: "Sales", dot: "#2563eb" },
-  { key: "products", label: "Products", dot: "#7c3aed" },
-  { key: "suppliers", label: "Suppliers", dot: "#d97706" },
-  { key: "tickets", label: "Messages", dot: "#0891b2" },
-  { key: "delivery-areas", label: "Deliveries", dot: "#22913f" },
-  { key: "enquiries",      label: "Enquiries",  dot: "#e05c2a" },
-]
-const adminBottom = [
-  { key: "complaints", label: "Help centre",  d: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01" },
-  { key: "settings",   label: "Settings",     d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" },
-]
-const customerMain = [
-  { key: "dashboard",   label: "Dashboard",  d: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", badge: undefined },
-  { key: "stock",       label: "Daily Stock", d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", badge: undefined },
-  { key: "place-order", label: "Place Order", d: "M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0", badge: undefined },
-  { key: "orders",      label: "My Orders",  d: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z", badge: undefined },
-  { key: "payments",    label: "Balance",    d: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", badge: undefined },
-  { key: "documents",   label: "Documents",  d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", badge: undefined },
-  { key: "team",        label: "Team",       d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75", badge: undefined },
-  { key: "tickets",     label: "Support",    d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", badge: undefined },
-  { key: "complaints",  label: "Complaints", d: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01", badge: undefined },
+const ICON_PATHS = {
+  dashboard: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  customers: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87",
+  invoices: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16",
+  finance: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+  stock: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
+  sales: "M3 3v18h18M7 16l4-4 3 3 5-7",
+  communications: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+  documents: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7",
+  admin: "M12 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5.5 21a6.5 6.5 0 0 1 13 0M19 8v6M22 11h-6",
+  search: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z",
+  help: "M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2 3.46-.08-.02a1.7 1.7 0 0 0-1.8-.25l-.52.3a1.7 1.7 0 0 0-.86 1.69V22h-4l-.02-.08a1.7 1.7 0 0 0-.86-1.49l-.52-.3a1.7 1.7 0 0 0-1.8.25l-.08.02-2-3.46.06-.06A1.7 1.7 0 0 0 4.6 15v-.6a1.7 1.7 0 0 0-1.2-1.63L3.32 12l2-3.46.08.02a1.7 1.7 0 0 0 1.8-.25l.52-.3a1.7 1.7 0 0 0 .86-1.69V6h4l.02.08a1.7 1.7 0 0 0 .86 1.49l.52.3a1.7 1.7 0 0 0 1.8-.25l.08-.02 2 3.46-.06.06a1.7 1.7 0 0 0-.34 1.88z",
+  clock: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  order: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6v4H9z",
+  team: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+} as const
+
+type IconName = keyof typeof ICON_PATHS
+type NavigationItem = { key: string; label: string; icon: IconName; badgeKey?: string; access?: "users" | "superAdmin" }
+type NavigationGroup = { key: string; label: string; icon: IconName; children: NavigationItem[] }
+
+const adminNavigation: NavigationGroup[] = [
+  { key: "customers-group", label: "Customers", icon: "customers", children: [
+    { key: "customers", label: "All Customers", icon: "customers" }, { key: "add-customer", label: "Add Customer", icon: "customers" },
+    { key: "customer-applications", label: "Customer Applications", icon: "customers" }, { key: "outstanding", label: "Outstandings", icon: "clock" },
+    { key: "credit-control", label: "Credit Control", icon: "finance" },
+  ] },
+  { key: "invoices-group", label: "Invoices", icon: "invoices", children: [
+    { key: "invoices", label: "Invoice History", icon: "invoices" }, { key: "create-invoice", label: "Create Invoice", icon: "invoices" },
+    { key: "invoice-numbers", label: "Invoice Numbers", icon: "invoices" }, { key: "credit-notes", label: "Credit Notes", icon: "documents" },
+    { key: "payment-reminders", label: "Payment Reminders", icon: "clock" },
+  ] },
+  { key: "finance-group", label: "Finance", icon: "finance", children: [
+    { key: "payments", label: "Payments", icon: "finance" }, { key: "expenses", label: "Expenses", icon: "finance" },
+    { key: "payment-proofs", label: "Payment Proofs", icon: "documents" }, { key: "day-trade", label: "Day Trades", icon: "clock" },
+    { key: "day-check", label: "Day Check", icon: "clock" }, { key: "stats", label: "Analytics", icon: "sales" },
+  ] },
+  { key: "stock-group", label: "Stock & Products", icon: "stock", children: [
+    { key: "stock", label: "Stock", icon: "stock" }, { key: "session", label: "Buying Desk", icon: "finance" },
+    { key: "products", label: "Products", icon: "stock" }, { key: "suppliers", label: "Suppliers", icon: "customers" },
+  ] },
+  { key: "sales-group", label: "Sales & Orders", icon: "sales", children: [
+    { key: "orders", label: "Sales & Orders", icon: "order", badgeKey: "orders" }, { key: "delivery-areas", label: "Deliveries", icon: "stock" },
+    { key: "enquiries", label: "Enquiries", icon: "communications" },
+  ] },
+  { key: "communications-group", label: "Communications", icon: "communications", children: [
+    { key: "tickets", label: "Messages", icon: "communications", badgeKey: "tickets" }, { key: "communication-history", label: "Communication History", icon: "clock" },
+    { key: "whatsapp-logs", label: "WhatsApp Logs", icon: "communications" }, { key: "whatsapp-send", label: "Send WhatsApp", icon: "communications", access: "superAdmin" },
+  ] },
+  { key: "documents-group", label: "Documents", icon: "documents", children: [
+    { key: "files", label: "Files", icon: "documents" }, { key: "data-extract", label: "Integration", icon: "documents" },
+  ] },
+  { key: "admin-group", label: "Users & Administration", icon: "admin", children: [
+    { key: "admins", label: "Admin Users", icon: "admin", access: "users" }, { key: "sales-users", label: "Sales Users", icon: "team", access: "users" },
+    { key: "assign-task", label: "Assign Task", icon: "order", access: "users" }, { key: "sub-accounts", label: "Sub-Account Approvals", icon: "team", access: "superAdmin" },
+  ] },
 ]
 
-function Icon({ d }: { d: string }) {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
-  )
+const customerNavigation: NavigationGroup[] = [
+  { key: "ordering-group", label: "Orders", icon: "order", children: [
+    { key: "stock", label: "Daily Stock", icon: "stock" }, { key: "place-order", label: "Place Order", icon: "order" },
+    { key: "orders", label: "My Orders", icon: "invoices", badgeKey: "orders" },
+  ] },
+  { key: "account-group", label: "Account", icon: "customers", children: [
+    { key: "payments", label: "Balance", icon: "finance" }, { key: "documents", label: "Documents", icon: "documents" },
+    { key: "team", label: "Team", icon: "team" },
+  ] },
+  { key: "support-group", label: "Support", icon: "communications", children: [
+    { key: "tickets", label: "Messages", icon: "communications", badgeKey: "tickets" }, { key: "complaints", label: "Complaints", icon: "help" },
+  ] },
+]
+
+function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON_PATHS[name]} /></svg>
 }
 
-type NavItemProps = { label: string; d?: string; active: boolean; badge?: string; dot?: string; onClick: () => void }
-function NavItem({ label, d, active, badge, dot, onClick }: NavItemProps) {
-  return (
-    <button className={active ? "sb-item active" : "sb-item"} onClick={onClick} type="button">
-      {dot
-        ? <span className="sb-dot" style={{ background: dot }} />
-        : d ? <Icon d={d} /> : null
-      }
-      <span className="sb-label">{label}</span>
-      {badge && <span className="sb-badge">{badge}</span>}
-    </button>
-  )
+function Chevron({ open }: { open: boolean }) {
+  return <svg className={open ? "pn-chevron open" : "pn-chevron"} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
 }
 
-export function Sidebar({ role, current, onNavigate, isSuperAdmin, permissions, subAccountPermissions, mobileOpen, badges, onDayEnd }: {
-  role: UserRole; current: string; onNavigate: (k: string) => void; userName?: string; isSuperAdmin?: boolean
-  permissions?: PermissionSet; mobileOpen?: boolean
-  /** Set when the logged-in customer is a team sub-account, not the main
-      login — narrows which customer nav items show. */
-  subAccountPermissions?: SubAccountPermissions
-  badges?: Record<string, number>
-  /** Closes the trading day and archives it to Day Trade. */
-  onDayEnd?: () => void
+export function Sidebar({ user, current, onNavigate, mobileOpen, collapsed, onCollapsedChange, onMobileClose, badges, onDayEnd, onLogout }: {
+  user: User; current: string; onNavigate: (key: string) => void; mobileOpen?: boolean; collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void; onMobileClose: () => void; badges?: Record<string, number>
+  onDayEnd?: () => void; onLogout: () => void
 }) {
-  const [query, setQuery] = useState("")
-  const [collapsed, setCollapsed] = useState(false)
-  const isAdmin = role === "admin"
+  const isAdmin = user.role === "admin"
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
 
-  // Super admins see every nav item; everyone else only sees items their
-  // permissions actually grant (items with no mapped permission — dashboard,
-  // daily session, deliveries, files, settings — stay visible to all admins).
-  const allowed = <T extends { key: string }>(items: T[]) =>
-    isSuperAdmin ? items : items.filter(i => {
-      const permKey = NAV_PERMISSION_KEY[i.key]
-      return !permKey || Boolean(permissions?.[permKey])
-    })
+  const groups = useMemo(() => {
+    const source = isAdmin ? adminNavigation : customerNavigation
+    return source.map(group => ({ ...group, children: group.children.filter(item => {
+      if (isAdmin) {
+        if (item.access === "superAdmin" && !user.isSuperAdmin) return false
+        if (item.access === "users" && !user.isSuperAdmin && !user.permissions?.usersManage) return false
+        if (user.isSuperAdmin) return true
+        const permission = NAV_PERMISSION_KEY[item.key]
+        return !permission || Boolean(user.permissions?.[permission])
+      }
+      if (!user.subAccount) return true
+      if (item.key === "team") return false
+      const permission = CUSTOMER_NAV_PERMISSION_KEY[item.key]
+      return !permission || Boolean(user.subAccount.permissions[permission])
+    }) })).filter(group => group.children.length > 0)
+  }, [isAdmin, user.isSuperAdmin, user.permissions, user.subAccount])
 
-  // Sub-accounts never manage the team, and otherwise only see what their
-  // granted permissions allow — the main customer login always sees everything.
-  const forSubAccount = <T extends { key: string }>(items: T[]) =>
-    !subAccountPermissions ? items : items.filter(i => {
-      if (i.key === "team") return false
-      const permKey = CUSTOMER_NAV_PERMISSION_KEY[i.key]
-      return !permKey || Boolean(subAccountPermissions[permKey])
-    })
-
-  const q = query.trim().toLowerCase()
-  const matches = <T extends { label: string }>(items: T[]) =>
-    q ? items.filter(i => i.label.toLowerCase().includes(q)) : items
-  const mainItems      = matches(isAdmin ? allowed(adminMain) : forSubAccount(customerMain))
-  const financeKeys = new Set(['payments', 'expenses', 'payment-proofs', 'credit-control', 'credit-notes', 'payment-reminders', 'day-trade', 'day-check', 'stats'])
-  const documentKeys = new Set(['files', 'invoice-numbers', 'data-extract'])
-  const communicationKeys = new Set(['communication-history', 'whatsapp-logs'])
-  const financeItems = matches(allowed(adminTools.filter(item => financeKeys.has(item.key))))
-  const documentItems = matches(allowed(adminTools.filter(item => documentKeys.has(item.key))))
-  const communicationItems = matches(allowed(adminTools.filter(item => communicationKeys.has(item.key))))
-  const systemToolItems = matches(allowed(adminTools.filter(item => !financeKeys.has(item.key) && !documentKeys.has(item.key) && !communicationKeys.has(item.key))))
-  const workspaceItems = matches(allowed(adminWorkspace))
-  const bottomItems    = matches(adminBottom)
-  const badgeFor = (key: string) => { const n = badges?.[key] ?? 0; return n > 0 ? String(n > 99 ? "99+" : n) : undefined }
+  const activeGroup = groups.find(group => group.children.some(item => item.key === current))
+  const activeGroupKey = activeGroup?.key
+  useEffect(() => { if (activeGroupKey) setOpenGroup(activeGroupKey) }, [activeGroupKey])
 
   useEffect(() => {
-    const main = document.querySelector('.main-layout') as HTMLElement
-    if (main) main.style.paddingLeft = collapsed ? '74px' : '220px'
-  }, [collapsed])
+    const close = (event: MouseEvent) => { if (!profileRef.current?.contains(event.target as Node)) setProfileOpen(false) }
+    document.addEventListener("mousedown", close)
+    return () => document.removeEventListener("mousedown", close)
+  }, [])
 
-  const asideClass = [
-    "sidebar",
-    collapsed ? "sidebar-collapsed" : "",
-    mobileOpen ? "sidebar-mobile-open" : "",
-  ].filter(Boolean).join(" ")
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (isAdmin && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); onNavigate("global-search") }
+      if (event.key === "Escape" && mobileOpen) onMobileClose()
+    }
+    window.addEventListener("keydown", keydown)
+    return () => window.removeEventListener("keydown", keydown)
+  }, [isAdmin, mobileOpen, onMobileClose, onNavigate])
 
-  return (
-    <aside className={asideClass}>
-      {/* Brand */}
-      <div className="sb-brand">
-        <div className="sb-logo">
-          <img src="/logo.png" alt="Punjab Foods Logo" onError={(e) => {
-            console.error("Logo failed to load:", e);
-            (e.target as HTMLImageElement).style.display = 'none';
-          }} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-        </div>
-        <div>
-          <div className="sb-brand-name">Punjab Exotic Foods</div>
-          <div className="sb-brand-plan">{isAdmin ? "Admin Software" : "Customer Portal"}</div>
-        </div>
-        <button className="sb-collapse" title={collapsed ? "Expand" : "Collapse"} onClick={() => setCollapsed(c => !c)} type="button">
-          {collapsed
-            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
-            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
-          }
+  const badgeFor = (key?: string) => { const count = key ? badges?.[key] ?? 0 : 0; return count > 0 ? (count > 99 ? "99+" : String(count)) : undefined }
+  const selectGroup = (group: NavigationGroup) => { if (collapsed) onCollapsedChange(false); setOpenGroup(openGroup === group.key && !collapsed ? null : group.key) }
+  const navigate = (key: string) => { setProfileOpen(false); onNavigate(key) }
+  const asideClass = ["sidebar", "pn-sidebar", collapsed ? "pn-collapsed" : "", mobileOpen ? "sidebar-mobile-open" : ""].filter(Boolean).join(" ")
+  const initials = user.displayName.trim().split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "PF"
+
+  return <aside className={asideClass} aria-label="Primary navigation">
+    <div className="pn-rail">
+      <button className="pn-rail-brand" type="button" onClick={() => onCollapsedChange(false)} aria-label="Open Punjab Exotic Foods navigation" data-tooltip="Punjab Exotic Foods"><img src="/logo.png" alt="" /></button>
+      <div className="pn-rail-nav">
+        <button className={current === "dashboard" ? "pn-rail-button active" : "pn-rail-button"} type="button" onClick={() => navigate("dashboard")} aria-label="Dashboard" data-tooltip="Dashboard"><Icon name="dashboard" /></button>
+        {isAdmin && <button className={current === "global-search" ? "pn-rail-button active" : "pn-rail-button"} type="button" onClick={() => navigate("global-search")} aria-label="Global Search" data-tooltip="Global Search"><Icon name="search" /></button>}
+        <div className="pn-rail-divider" />
+        {groups.map(group => <button key={group.key} className={activeGroup?.key === group.key ? "pn-rail-button active" : "pn-rail-button"} type="button" onClick={() => selectGroup(group)} aria-label={group.label} aria-expanded={!collapsed && openGroup === group.key} data-tooltip={group.label}><Icon name={group.icon} /></button>)}
+      </div>
+      <div className="pn-rail-utilities">
+        {isAdmin && <button className={current === "complaints" ? "pn-rail-button active" : "pn-rail-button"} type="button" onClick={() => navigate("complaints")} aria-label="Help Centre" data-tooltip="Help Centre"><Icon name="help" /></button>}
+        {isAdmin && <button className={current === "settings" ? "pn-rail-button active" : "pn-rail-button"} type="button" onClick={() => navigate("settings")} aria-label="Settings" data-tooltip="Settings"><Icon name="settings" /></button>}
+        {onDayEnd && <button className="pn-rail-button pn-day-end" type="button" onClick={onDayEnd} aria-label="Day End" data-tooltip="Day End"><Icon name="clock" /></button>}
+        <button className="pn-rail-avatar" type="button" onClick={() => { onCollapsedChange(false); setProfileOpen(value => !value) }} aria-label={`Account menu for ${user.displayName}`} data-tooltip={user.displayName}>{initials}</button>
+      </div>
+    </div>
+
+    <div className="pn-panel">
+      <div className="pn-header">
+        <div className="pn-brand-copy"><strong>Punjab Exotic Foods</strong><span>{isAdmin ? "Admin dashboard" : "Customer portal"}</span></div>
+        <button className="pn-collapse-control" type="button" onClick={() => onCollapsedChange(true)} aria-label="Collapse navigation" title="Collapse navigation"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M14 8l-3 4 3 4"/></svg></button>
+        <button className="pn-mobile-close" type="button" onClick={onMobileClose} aria-label="Close navigation"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      {isAdmin && <button className={current === "global-search" ? "pn-search active" : "pn-search"} type="button" onClick={() => navigate("global-search")}><Icon name="search" size={19} /><span>Global Search</span><kbd>Ctrl K</kbd></button>}
+      <nav className="pn-menu" aria-label="Dashboard sections">
+        <span className="pn-menu-label">Menu</span>
+        <button className={current === "dashboard" ? "pn-parent active" : "pn-parent"} type="button" onClick={() => navigate("dashboard")}><Icon name="dashboard" /><span>Dashboard</span></button>
+        {groups.map(group => {
+          const isOpen = openGroup === group.key
+          const isActive = activeGroup?.key === group.key
+          return <div className="pn-group" key={group.key}>
+            <button className={isActive ? "pn-parent active" : "pn-parent"} type="button" onClick={() => selectGroup(group)} aria-expanded={isOpen}><Icon name={group.icon} /><span>{group.label}</span><Chevron open={isOpen} /></button>
+            <div className={isOpen ? "pn-children open" : "pn-children"} aria-hidden={!isOpen}>
+              {group.children.map(item => {
+                const badge = badgeFor(item.badgeKey)
+                return <button key={item.key} className={current === item.key ? "pn-child active" : "pn-child"} type="button" tabIndex={isOpen ? 0 : -1} onClick={() => navigate(item.key)} aria-current={current === item.key ? "page" : undefined}><span className="pn-child-line" /><span>{item.label}</span>{badge && <span className="pn-badge">{badge}</span>}</button>
+              })}
+            </div>
+          </div>
+        })}
+      </nav>
+      {isAdmin && <div className="pn-utilities">
+        <button className={current === "complaints" ? "pn-utility active" : "pn-utility"} type="button" onClick={() => navigate("complaints")}><Icon name="help" /><span>Help Centre</span></button>
+        <button className={current === "settings" ? "pn-utility active" : "pn-utility"} type="button" onClick={() => navigate("settings")}><Icon name="settings" /><span>Settings</span></button>
+        {onDayEnd && <button className="pn-utility pn-day-end" type="button" onClick={onDayEnd}><Icon name="clock" /><span>Day End</span></button>}
+      </div>}
+      <div className="pn-profile" ref={profileRef}>
+        {profileOpen && <div className="pn-profile-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => navigate(isAdmin ? "settings" : "dashboard")}><Icon name="customers" size={16} />Profile</button>
+          {isAdmin && <button type="button" role="menuitem" onClick={() => navigate("settings")}><Icon name="settings" size={16} />Settings</button>}
+          <button type="button" role="menuitem" className="danger" onClick={onLogout}><Icon name="logout" size={16} />Sign Out</button>
+        </div>}
+        <button className="pn-profile-button" type="button" onClick={() => setProfileOpen(value => !value)} aria-expanded={profileOpen} aria-haspopup="menu">
+          <span className="pn-avatar">{initials}</span><span className="pn-profile-copy"><strong>{user.displayName}</strong><small>{isAdmin ? (user.isSuperAdmin ? "System administrator" : "Administrator") : "Customer account"}</small></span><Chevron open={profileOpen} />
         </button>
       </div>
-
-      {/* Search */}
-      <div className="sb-search-wrap">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input className="sb-search" placeholder="Search" value={query} onChange={e => setQuery(e.target.value)} />
-        <div className="sb-kshortcut"><span>⌘</span> K</div>
-      </div>
-
-      {/* Main menu */}
-      {mainItems.length > 0 && (
-        <div className="sb-section">
-          <p className="sb-section-label">Main</p>
-          <nav>
-            {mainItems.map(item => (
-              <NavItem key={item.key} label={item.label} d={item.d} badge={badgeFor(item.key)}
-                active={current === item.key} onClick={() => onNavigate(item.key)} />
-            ))}
-          </nav>
-        </div>
-      )}
-
-      {isAdmin && <>
-        {[
-          ['Finance', financeItems],
-          ['Documents', documentItems],
-          ['Communications', communicationItems],
-        ].map(([label, items]) => (items as typeof adminTools).length > 0 && (
-          <div className="sb-section" key={label as string}>
-            <p className="sb-section-label">{label as string}</p>
-            <nav>{(items as typeof adminTools).map(item => <NavItem key={item.key} label={item.label} d={item.d} active={current === item.key} onClick={() => onNavigate(item.key)} />)}</nav>
-          </div>
-        ))}
-        {(systemToolItems.length > 0 || workspaceItems.length > 0 || ((isSuperAdmin || permissions?.usersManage) && (!q || "admin users sales users".includes(q)))) && (
-          <div className="sb-section">
-            <p className="sb-section-label">Operations &amp; System</p>
-            <nav>
-              {systemToolItems.map(item => (
-                <NavItem key={item.key} label={item.label} d={item.d}
-                  active={current === item.key} onClick={() => onNavigate(item.key)} />
-              ))}
-              {workspaceItems.map(item => (
-                <NavItem key={item.key} label={item.label} dot={item.dot} badge={badgeFor(item.key)}
-                  active={current === item.key} onClick={() => onNavigate(item.key)} />
-              ))}
-              {/* Only super-admins (or an explicit usersManage grant) see the Admins management link */}
-              {(isSuperAdmin || permissions?.usersManage) && (!q || "admin users".includes(q)) && (
-                <NavItem
-                  label="Admin Users"
-                  d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
-                  active={current === "admins"}
-                  onClick={() => onNavigate("admins")}
-                />
-              )}
-              {(isSuperAdmin || permissions?.usersManage) && (!q || "sales users".includes(q)) && (
-                <NavItem
-                  label="Sales Users"
-                  d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
-                  active={current === "sales-users"}
-                  onClick={() => onNavigate("sales-users")}
-                />
-              )}
-              {(isSuperAdmin || permissions?.usersManage) && (!q || "assign task".includes(q)) && (
-                <NavItem
-                  label="Assign Task"
-                  d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
-                  active={current === "assign-task"}
-                  onClick={() => onNavigate("assign-task")}
-                />
-              )}
-              {(isSuperAdmin) && (!q || "sub account approvals".includes(q)) && (
-                <NavItem
-                  label="Sub-Account Approvals"
-                  d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
-                  active={current === "sub-accounts"}
-                  onClick={() => onNavigate("sub-accounts")}
-                />
-              )}
-              {(isSuperAdmin) && (!q || "send whatsapp".includes(q)) && (
-                <NavItem
-                  label="Send WhatsApp"
-                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-                  active={current === "whatsapp-send"}
-                  onClick={() => onNavigate("whatsapp-send")}
-                />
-              )}
-            </nav>
-          </div>
-        )}
-        {q && mainItems.length + financeItems.length + documentItems.length + communicationItems.length + systemToolItems.length + workspaceItems.length === 0 && (
-          <p className="sb-no-results">No menu items match “{query}”</p>
-        )}
-      </>}
-
-      <div className="sb-spacer" />
-
-      {/* Bottom links */}
-      {isAdmin && (
-        <div className="sb-bottom">
-          {bottomItems.map(item => (
-            <NavItem key={item.key} label={item.label} d={item.d}
-              active={current === item.key} onClick={() => onNavigate(item.key)} />
-          ))}
-          {onDayEnd && (!q || "day end".includes(q)) && (
-            <button className="sb-item" type="button" onClick={onDayEnd} style={{ color: "#b91c1c" }}>
-              <Icon d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-              <span className="sb-label">Day End</span>
-            </button>
-          )}
-          <div className="sb-upgrade" onClick={() => onNavigate("admins")}>
-            <div className="sb-upgrade-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </div>
-            <div>
-              <div className="sb-upgrade-title">Upgrade &amp; unlock</div>
-              <div className="sb-upgrade-sub">all features</div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" style={{ marginLeft: "auto" }}><polyline points="9 18 15 12 9 6"/></svg>
-          </div>
-        </div>
-      )}
-    </aside>
-  )
+    </div>
+  </aside>
 }
