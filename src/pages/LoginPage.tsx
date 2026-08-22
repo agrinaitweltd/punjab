@@ -4,11 +4,10 @@ import type { UserRole } from "../types"
 import { updateCustomer } from "../api/customersApi"
 import { updateAdmin, createCustomerApplication } from "../api/miscApi"
 import { sendEmail, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
+import { Boxes, CreditCard, Eye, EyeOff, FileText, LockKeyhole, Mail, UsersRound } from "lucide-react"
 
 function EyeIcon({ open }: { open: boolean }) {
-  return open
-    ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-    : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-11-8-11-8a18 18 0 0 1 5.06-5.94M9.9 4.24A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+  return open ? <Eye size={17} /> : <EyeOff size={17} />
 }
 
 function AuthBrand() {
@@ -216,7 +215,7 @@ function ActivateFlow({ role, onBack, onDone }: { role: UserRole; onBack: () => 
   }
 
   return (
-    <div className="lx-card">
+    <div className="lx-card lx-card-signup">
       <AuthBrand />
       <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
 
@@ -513,7 +512,7 @@ function ApplyFlow({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="lx-card">
+    <div className="lx-card lx-card-signup">
       <AuthBrand />
       <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
       <form onSubmit={submit}>
@@ -575,22 +574,12 @@ export function LoginPage({ onLogin, error }: {
 
       {/* ─── LEFT BRAND SIDE ─── */}
       <div className="lx-brand">
-        <div className="lx-logo-row">
-          <div className="lx-logo-box">
-            <img src="/logo.png" alt="Punjab Exotic Foods" onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
-          </div>
-          <div>
-            <div className="lx-brand-name">PUNJAB <span>EXOTIC FOODS</span></div>
-            <div className="lx-brand-tag">Freshness Starts Here</div>
-          </div>
-        </div>
-        <p className="lx-brand-copy">
-          Wholesale exotic fruit &amp; veg for the UK's finest grocers.<br />
-          Daily stock, live ordering and account management — all in one portal.
-        </p>
-        <div className="lx-brand-btns">
-          <button type="button" className="lx-pill" onClick={() => setRole("customer")}>Customer Portal</button>
-          <button type="button" className="lx-pill lx-pill-ghost" onClick={() => setRole("admin")}>Staff &amp; Admin</button>
+        <div className="lx-integration-map" aria-hidden="true">
+          <span><UsersRound /></span>
+          <span><FileText /></span>
+          <span><CreditCard /></span>
+          <span><Boxes /></span>
+          <i />
         </div>
         <div className="lx-dashboard-preview" aria-hidden="true">
           <div className="lx-preview-top"><span /><span /><span /></div>
@@ -602,6 +591,10 @@ export function LoginPage({ onLogin, error }: {
               <div className="lx-preview-rows">{[0,1,2,3].map(item => <i key={item} />)}</div>
             </div>
           </div>
+        </div>
+        <div className="lx-visual-copy">
+          <h2>Punjab Exotic Foods</h2>
+          <p>Freshness starts here</p>
         </div>
       </div>
 
@@ -624,8 +617,10 @@ export function LoginPage({ onLogin, error }: {
         ) : (
         <form className="lx-card" onSubmit={submit}>
           <AuthBrand />
-          <h1 className="lx-title">Welcome back</h1>
-          <p className="lx-login-subtitle">Sign in to manage your account securely.</p>
+          <div className="lx-auth-heading">
+            <h1 className="lx-title">Welcome back</h1>
+            <p className="lx-login-subtitle">Glad to see you again. Select your portal and sign in.</p>
+          </div>
 
           <div className="lx-role-row">
             <button type="button" className={"lx-role" + (role === "customer" ? " on" : "")} onClick={() => setRole("customer")}>Customer</button>
@@ -635,22 +630,20 @@ export function LoginPage({ onLogin, error }: {
           <label className="lx-label">{role === "admin" ? "Your Email" : "Customer Number or Email"}</label>
           <div className="lx-input-wrap">
             <input
-              className="lx-input"
+              className="lx-input lx-input-leading"
               placeholder={role === "admin" ? "you@punjabexoticfoods.com" : "CUST-001"}
               value={username}
               onChange={e => setUsername(e.target.value)}
               required
               autoComplete="username"
             />
-            <span className="lx-input-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            </span>
+            <span className="lx-input-leading-icon">{role === "admin" ? <Mail size={16} /> : <UsersRound size={16} />}</span>
           </div>
 
           <label className="lx-label">Your Password</label>
           <div className="lx-input-wrap">
             <input
-              className="lx-input"
+              className="lx-input lx-input-leading"
               type={showPw ? "text" : "password"}
               placeholder="••••••••••••"
               value={password}
@@ -658,7 +651,8 @@ export function LoginPage({ onLogin, error }: {
               required
               autoComplete="current-password"
             />
-            <button type="button" className="lx-input-icon lx-eye" onClick={() => setShowPw(v => !v)}><EyeIcon open={showPw} /></button>
+            <span className="lx-input-leading-icon"><LockKeyhole size={16} /></span>
+            <button type="button" className="lx-input-icon lx-eye" onClick={() => setShowPw(v => !v)} aria-label={showPw ? "Hide password" : "Show password"}><EyeIcon open={showPw} /></button>
           </div>
 
           <div className="lx-row-between">
@@ -686,6 +680,7 @@ export function LoginPage({ onLogin, error }: {
           )}
         </form>
         )}
+        <small className="lx-auth-footer">Punjab Exotic Foods · Secure account access</small>
       </div>
     </div>
   )

@@ -53,6 +53,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.getByRole('button', { name: 'Apply For An Account' }).click()
     await expect(page.getByRole('heading', { name: 'Apply For An Account' })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: `test-results/${viewport.name}-signup.png`, fullPage: true })
   })
 
   test(`${viewport.name} restricted dashboard layout`, async ({ page }) => {
