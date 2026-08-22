@@ -17,8 +17,12 @@ export type StoredFile = {
   customerName: string
   invoiceId?: string
   invoiceNumber?: string
+  invoiceAmount?: number
   documentRole?: 'canonical_invoice' | 'legacy_source' | 'general'
+  templateId?: 'punjab-approved-letterhead-v1'
 }
+
+export const APPROVED_INVOICE_TEMPLATE_ID = 'punjab-approved-letterhead-v1' as const
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
 const ALLOWED_TYPES = new Set([
@@ -48,7 +52,7 @@ export async function listFiles(): Promise<StoredFile[]> {
     .order("created_at", { ascending: false })
   if (error) { console.error("listFiles", error); return [] }
   return (data ?? []).map(r => {
-    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; documentRole?: StoredFile['documentRole'] } = {}
+    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
     try { meta = JSON.parse(r.timestamp ?? "{}") } catch { /* legacy row */ }
     return {
       id: r.id,
@@ -62,7 +66,9 @@ export async function listFiles(): Promise<StoredFile[]> {
       customerName: meta.customerName ?? "Internal only",
       invoiceId: meta.invoiceId,
       invoiceNumber: meta.invoiceNumber,
+      invoiceAmount: meta.invoiceAmount,
       documentRole: meta.documentRole ?? 'general',
+      templateId: meta.templateId,
     }
   })
 }
@@ -72,7 +78,7 @@ export async function listFilesForCustomer(customerId: string): Promise<StoredFi
   return all.filter(f => f.customerId === customerId && f.documentRole !== 'legacy_source')
 }
 
-export async function findInvoicePdf(customerId: string, invoiceNumber: string): Promise<StoredFile | null> {
+export async function findInvoicePdf(customerId: string, invoiceNumber: string, invoiceId?: string, invoiceAmount?: number): Promise<StoredFile | null> {
   const normalizedInvoice = invoiceNumber.trim().toLowerCase()
   if (!normalizedInvoice) return null
   const invoicePattern = new RegExp(`(^|[^a-z0-9])${normalizedInvoice.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`, 'i')
@@ -80,6 +86,13 @@ export async function findInvoicePdf(customerId: string, invoiceNumber: string):
   const matches = files.filter(file => {
     if (file.type !== "application/pdf" && !file.dataUri.startsWith("data:application/pdf")) return false
     if (file.documentRole === 'legacy_source' || /original source/i.test(file.note)) return false
+    if (invoiceId && file.invoiceId === invoiceId) {
+      if (file.documentRole !== 'canonical_invoice' || file.templateId !== APPROVED_INVOICE_TEMPLATE_ID) return false
+      if (file.invoiceNumber?.trim().toLowerCase() !== normalizedInvoice) return false
+      if (invoiceAmount !== undefined && (file.invoiceAmount === undefined || Math.abs(file.invoiceAmount - invoiceAmount) > 0.005)) return false
+      return true
+    }
+    if (invoiceId) return false
     const searchable = `${file.name} ${file.note}`.toLowerCase()
     return file.invoiceNumber?.toLowerCase() === normalizedInvoice || invoicePattern.test(searchable)
   })
@@ -95,7 +108,7 @@ export function dataUriBase64(dataUri: string): string {
 export async function uploadFile(
   name: string, type: string, size: number, dataUri: string, note: string,
   customerId: string | null, customerName: string,
-  document: { invoiceId?: string; invoiceNumber?: string; documentRole?: StoredFile['documentRole'] } = {},
+  document: { invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {},
 ): Promise<StoredFile> {
   const sanitizedName = safeFileName(name)
   if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_BYTES) throw new Error('File size is outside the allowed range.')

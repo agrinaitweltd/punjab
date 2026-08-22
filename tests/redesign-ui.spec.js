@@ -38,6 +38,21 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(1)
     await page.screenshot({ path: `test-results/${viewport.name}-login.png`, fullPage: true })
+
+    await page.getByRole('button', { name: 'Forgot password?' }).click()
+    await expect(page.getByRole('heading', { name: 'Forgotten your password?' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.getByRole('button', { name: /Back to login/ }).click()
+
+    await page.getByRole('button', { name: 'Activate your account with email' }).click()
+    await expect(page.getByRole('heading', { name: 'First time here?' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.getByRole('button', { name: /Back to login/ }).click()
+
+    await page.getByRole('button', { name: 'Customer', exact: true }).click()
+    await page.getByRole('button', { name: 'Apply For An Account' }).click()
+    await expect(page.getByRole('heading', { name: 'Apply For An Account' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   })
 
   test(`${viewport.name} restricted dashboard layout`, async ({ page }) => {
@@ -57,6 +72,15 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: '
     await page.screenshot({ path: `test-results/${viewport.name}-system-dashboard.png`, fullPage: true })
   })
 }
+
+test('password link verification layout is responsive', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.addInitScript(() => localStorage.setItem('punjab-cookie-consent', JSON.stringify({ necessary: true })))
+  await page.goto(`${origin}/?type=recovery`, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByText('Verifying secure link')).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+})
 
 test('tablet invoice table controls and responsive layout', async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1180 })

@@ -3,6 +3,7 @@ import { brandedEmail, sendTransactionalEmail, summaryTable } from '../server/em
 
 const ULTRAMSG_BASE = 'https://api.ultramsg.com/instance186201'
 const OVERDUE_BUCKETS = [1, 3, 7, 14]
+const APPROVED_INVOICE_TEMPLATE_ID = 'punjab-approved-letterhead-v1'
 
 function normalizePhone(raw) {
   let digits = String(raw || '').replace(/[^\d+]/g, '')
@@ -17,8 +18,8 @@ function daysBetween(firstIso, secondIso) {
   return Math.round((second.getTime() - first.getTime()) / 86_400_000)
 }
 
-function reminderMessage(name, invoiceNumber, amount, daysOverdue) {
-  const timing = daysOverdue === -7 ? 'is due in 7 days' : daysOverdue === 0 ? 'is due today' : `is ${daysOverdue} day(s) overdue`
+function reminderMessage(name, invoiceNumber, amount, daysOverdue, stage) {
+  const timing = stage === 'day-14' ? 'is approaching its payment due date' : daysOverdue === 0 ? 'is due today' : `is ${daysOverdue} day(s) overdue`
   return `Hello ${name}, this is a reminder that invoice ${invoiceNumber} with an outstanding balance of GBP ${Number(amount).toFixed(2)} ${timing}. The official invoice is attached. Please arrange payment accordingly.`
 }
 
@@ -36,23 +37,35 @@ async function sendWhatsApp(token, phone, message, file, simulated) {
   return { ok: response.ok && data?.sent !== false && !data?.error, response: JSON.stringify(data) }
 }
 
-function storedInvoicePdf(files, customerId, invoiceNumber) {
-  const needle = String(invoiceNumber || '').trim().toLowerCase()
-  if (!needle) return null
-  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const pattern = new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i')
+export function reminderStage(invoice, today) {
+  if (!invoice?.date || !invoice?.due_date) return null
+  const invoiceAge = daysBetween(invoice.date, today)
+  const daysOverdue = daysBetween(invoice.due_date, today)
+  if (invoiceAge === 14) return 'day-14'
+  if (invoiceAge === 21) return 'day-21'
+  if (daysOverdue === 0) return 'due-today'
+  if (daysOverdue === -7) return 'seven-days-before-due'
+  return OVERDUE_BUCKETS.includes(daysOverdue) ? `overdue-${daysOverdue}` : null
+}
+
+export function storedInvoicePdf(files, invoice) {
+  const expectedNumber = String(invoice?.invoice_number || '').trim().toLowerCase()
+  const expectedAmount = Number(invoice?.amount)
+  if (!invoice?.id || !invoice?.customer_id || !expectedNumber || !Number.isFinite(expectedAmount)) return null
   const candidates = []
   for (const row of files) {
     let metadata = {}
     try { metadata = JSON.parse(row.timestamp || '{}') } catch { /* legacy metadata */ }
-    if (metadata.customerId !== customerId) continue
+    if (metadata.customerId !== invoice.customer_id || metadata.invoiceId !== invoice.id) continue
+    if (String(metadata.invoiceNumber || '').trim().toLowerCase() !== expectedNumber) continue
+    if (!Number.isFinite(Number(metadata.invoiceAmount)) || Math.abs(Number(metadata.invoiceAmount) - expectedAmount) > 0.005) continue
+    if (metadata.documentRole !== 'canonical_invoice' || metadata.templateId !== APPROVED_INVOICE_TEMPLATE_ID) continue
     if (metadata.type !== 'application/pdf' && !String(row.action || '').startsWith('data:application/pdf')) continue
-    if (!pattern.test(`${String(row.customer_name || '').slice(5)} ${metadata.note || ''}`)) continue
-    if (metadata.documentRole === 'legacy_source' || /original source/i.test(metadata.note || '')) continue
     const dataUri = String(row.action || '')
-    candidates.push({ name: String(row.customer_name || `FILE:Invoice-${invoiceNumber}.pdf`).slice(5), dataUri, base64: dataUri.slice(dataUri.indexOf(',') + 1), canonical: metadata.documentRole === 'canonical_invoice', createdAt: row.created_at || '' })
+    if (!dataUri.startsWith('data:application/pdf;base64,') || dataUri.indexOf(',') < 0) continue
+    candidates.push({ name: String(row.customer_name || `FILE:Invoice-${invoice.invoice_number}.pdf`).slice(5), dataUri, base64: dataUri.slice(dataUri.indexOf(',') + 1), createdAt: row.created_at || '' })
   }
-  return candidates.sort((a, b) => Number(b.canonical) - Number(a.canonical) || b.createdAt.localeCompare(a.createdAt))[0] || null
+  return candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
 }
 
 export default async function handler(req, res) {
@@ -83,14 +96,13 @@ export default async function handler(req, res) {
   for (const invoice of invoiceResult.data || []) {
     if (!invoice.due_date) continue
     const daysOverdue = daysBetween(invoice.due_date, today)
-    if (daysOverdue !== -7 && daysOverdue !== 0 && !OVERDUE_BUCKETS.includes(daysOverdue)) continue
+    const stage = reminderStage(invoice, today)
+    if (!stage) continue
     const customer = customers.get(invoice.customer_id)
     if (!customer) continue
     const outstanding = Math.max(0, Number(invoice.amount || 0) - Number(invoice.amount_paid || 0))
     if (!outstanding) continue
-    const invoiceAge = invoice.date ? daysBetween(invoice.date, today) : null
-    const stage = daysOverdue === 0 && invoiceAge === 21 ? 'day-21' : daysOverdue === 0 ? 'due-today' : daysOverdue === -7 ? 'seven-days-before-due' : `overdue-${daysOverdue}`
-    const pdf = storedInvoicePdf(fileResult.data || [], invoice.customer_id, invoice.invoice_number)
+    const pdf = storedInvoicePdf(fileResult.data || [], invoice)
     if (!pdf) {
       const missingKey = `${invoice.id}:${stage}:missing-canonical-pdf`
       await admin.from(table('notification_logs')).upsert({ invoice_id: invoice.id, customer_id: invoice.customer_id, channel: 'system', status: 'Failed', error: 'Official generated invoice PDF is missing; no reminder was sent.', reminder_stage: stage, idempotency_key: missingKey }, { onConflict: 'idempotency_key' })
@@ -98,13 +110,13 @@ export default async function handler(req, res) {
       continue
     }
 
-    const message = reminderMessage(customer.contact_person || customer.company_name || 'there', invoice.invoice_number, outstanding, daysOverdue)
+    const message = reminderMessage(customer.contact_person || customer.company_name || 'there', invoice.invoice_number, outstanding, daysOverdue, stage)
     let email = false
     let whatsapp = false
     const emailKey = `${invoice.id}:${stage}:email`
     if (customer.email && !sentKeys.has(emailKey)) {
       const subject = stage === 'day-21' ? `Payment Reminder - Invoice ${invoice.invoice_number}` : `Invoice Reminder - ${invoice.invoice_number}`
-      const html = brandedEmail({ heading: stage === 'due-today' ? 'Payment due today' : daysOverdue > 0 ? 'Your invoice is overdue' : 'Payment reminder', intro: `Invoice ${invoice.invoice_number} for ${customer.company_name} remains outstanding.`, contentHtml: `${summaryTable([['Invoice number', invoice.invoice_number], ['Outstanding', `£${outstanding.toFixed(2)}`], ['Due date', invoice.due_date]])}<p style="margin:0;text-align:center;color:#59655d">The official invoice PDF is attached. If payment has already been made, please allow a short time for it to appear on your account.</p>` })
+      const html = brandedEmail({ heading: stage === 'day-21' || stage === 'due-today' ? 'Payment due today' : daysOverdue > 0 ? 'Your invoice is overdue' : 'Payment reminder', intro: `Invoice ${invoice.invoice_number} for ${customer.company_name} remains outstanding.`, contentHtml: `${summaryTable([['Invoice number', invoice.invoice_number], ['Outstanding', `£${outstanding.toFixed(2)}`], ['Due date', invoice.due_date]])}<p style="margin:0;text-align:center;color:#59655d">The original approved invoice PDF is attached. If payment has already been made, please allow a short time for it to appear on your account.</p>` })
       const sent = await sendEmail(process.env.RESEND_API_KEY, customer.email, subject, html, [{ filename: pdf.name, content: pdf.base64 }], testMode, { admin, customerId: invoice.customer_id, invoiceId: invoice.id, idempotencyKey: `automation:${emailKey}`, communicationType: 'payment_reminder', createdBy: 'Daily reminder automation' })
       email = sent.ok
       await admin.from(table('notification_logs')).upsert({ invoice_id: invoice.id, customer_id: invoice.customer_id, channel: 'email', status: sent.ok ? 'Sent' : 'Failed', sent_at: sent.ok ? new Date().toISOString() : null, error: sent.error, reminder_stage: stage, idempotency_key: emailKey }, { onConflict: 'idempotency_key' })

@@ -11,6 +11,7 @@
     "test:security": "node scripts/test-security.mjs",
     "test:backup": "node scripts/test-backup-archive.mjs",
     "test:email": "node scripts/test-email-system.mjs",
+    "test:reminders": "node scripts/test-payment-reminders.mjs",
     "test:live-auth": "node scripts/test-live-login.mjs",
     "test:production-smoke": "node scripts/test-production-smoke.mjs",
     "test:live-rls": "node scripts/test-live-rls.mjs",

@@ -4,7 +4,7 @@ import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
 import { ADMIN_NOTIFY_EMAIL, sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml, paymentReminderEmailHtml } from '../../lib/emailService'
 import { getCreditStatus } from '../../lib/creditControl'
-import { dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
+import { APPROVED_INVOICE_TEMPLATE_ID, dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
 import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
 import { confirmAction, showNotice } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
@@ -286,7 +286,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   }
 
   const sendInvoiceReminderPdf = async (invoice: Invoice, customer: Customer) => {
-    const storedPdf = await findInvoicePdf(customer.id, invoice.invoiceNumber)
+    const storedPdf = await findInvoicePdf(customer.id, invoice.invoiceNumber, invoice.id, invoice.amount)
     if (!storedPdf) {
       const error = `Invoice PDF ${invoice.invoiceNumber} is missing. Generate or upload the official invoice PDF, then retry.`
       const channels: Array<'email' | 'whatsapp'> = []
@@ -319,7 +319,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const regenerateInvoicePdf = async (invoice: Invoice, customer: Customer) => {
     const items = await getInvoiceItems(invoice.id)
     const pdf = await generateCanonicalInvoicePdf(invoice, customer, items)
-    const stored = await uploadFile(pdf.fileName, 'application/pdf', pdf.blob.size, pdf.dataUri, `Invoices: ${invoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, documentRole: 'canonical_invoice' })
+    const stored = await uploadFile(pdf.fileName, 'application/pdf', pdf.blob.size, pdf.dataUri, `Invoices: ${invoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceAmount: invoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
     const updated = await updateInvoice(invoice.id, { canonicalDocumentId: stored.id, canonicalPdfFileName: stored.name, canonicalPdfGeneratedAt: new Date().toISOString() })
     if (!updated) throw new Error('The official PDF was generated but could not be linked to the invoice.')
     void logActivity(user.displayName, `regenerated official PDF for invoice ${invoice.invoiceNumber}`)
@@ -638,7 +638,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               sourceDocumentId = source.id
             }
             const canonical = await generateCanonicalInvoicePdf(createdInvoice, customer, data.items)
-            const official = await uploadFile(canonical.fileName, 'application/pdf', canonical.blob.size, canonical.dataUri, `Invoices: ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, documentRole: 'canonical_invoice' })
+            const official = await uploadFile(canonical.fileName, 'application/pdf', canonical.blob.size, canonical.dataUri, `Invoices: ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
             const linked = await updateInvoice(createdInvoice.id, { sourceDocumentId, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
             if (!linked) throw new Error('The invoice was imported, but its official PDF could not be linked. Retry PDF generation before sending it.')
             const previousOutstanding = invoices

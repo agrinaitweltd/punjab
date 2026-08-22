@@ -11,6 +11,13 @@ function EyeIcon({ open }: { open: boolean }) {
     : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-11-8-11-8a18 18 0 0 1 5.06-5.94M9.9 4.24A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 }
 
+function AuthBrand() {
+  return <div className="lx-form-brand">
+    <img src="/logo.png" alt="" />
+    <span><strong>Punjab Exotic Foods</strong><small>Business Management Portal</small></span>
+  </div>
+}
+
 type FruitKind = "orange" | "mango" | "watermelon" | "grapes" | "kiwi" | "lime"
 
 /* Realistic gradient-shaded SVG fruits (no emojis, no external assets) */
@@ -210,6 +217,7 @@ function ActivateFlow({ role, onBack, onDone }: { role: UserRole; onBack: () => 
 
   return (
     <div className="lx-card">
+      <AuthBrand />
       <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
 
       {stage === "email" && (
@@ -378,6 +386,7 @@ function ForgotPasswordFlow({ role, onBack, onDone }: { role: UserRole; onBack: 
 
   return (
     <div className="lx-card">
+      <AuthBrand />
       <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
 
       {stage === "email" && (
@@ -490,6 +499,7 @@ function ApplyFlow({ onBack }: { onBack: () => void }) {
   if (done) {
     return (
       <div className="lx-card">
+        <AuthBrand />
         <div style={{ textAlign: "center" }}>
           <div className="lx-done-ico">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -504,6 +514,7 @@ function ApplyFlow({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="lx-card">
+      <AuthBrand />
       <button type="button" className="lx-back" onClick={onBack}>← Back to login</button>
       <form onSubmit={submit}>
         <h1 className="lx-title">Apply For An Account</h1>
@@ -612,7 +623,7 @@ export function LoginPage({ onLogin, error }: {
           <ApplyFlow onBack={() => setMode("login")} />
         ) : (
         <form className="lx-card" onSubmit={submit}>
-          <div className="lx-form-brand"><img src="/logo.png" alt="" /><span><strong>Punjab Exotic Foods</strong><small>Business Management Portal</small></span></div>
+          <AuthBrand />
           <h1 className="lx-title">Welcome back</h1>
           <p className="lx-login-subtitle">Sign in to manage your account securely.</p>
 

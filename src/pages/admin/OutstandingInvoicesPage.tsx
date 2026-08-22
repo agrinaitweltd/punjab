@@ -31,7 +31,7 @@ export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment, 
   const selectedGroup = groups.find(group => group.customer.id === customerId) ?? (() => { const customer = customers.find(item => item.id === customerId); if (!customer) return undefined; const rows = outstandingInvoices.filter(invoice => invoice.customerId === customer.id); return { customer, rows, outstanding: total(rows), overdue: rows.filter(invoice => due(invoice) < today).length, nextDue: rows[0]?.dueDate ?? '' } })()
   const openPayment = (invoice: Invoice, fullyPaid = false) => { setSelected(invoice); setPayment(invoiceOutstanding(invoice).toFixed(2)); setConfirmStep(fullyPaid ? 1 : null) }
   const downloadDuePdf = async (invoice: Invoice, customer: Customer) => {
-    const file = await findInvoicePdf(customer.id, invoice.invoiceNumber)
+    const file = await findInvoicePdf(customer.id, invoice.invoiceNumber, invoice.id, invoice.amount)
     if (!file) { setNotice(`Official PDF for invoice ${invoice.invoiceNumber} is missing. Upload or regenerate it before retrying.`); return }
     const anchor = document.createElement('a'); anchor.href = file.dataUri; anchor.download = file.name; anchor.click()
   }

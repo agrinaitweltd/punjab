@@ -3336,3 +3336,76 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .data-table-footer { flex-wrap: wrap; }.data-table-footer > span { order: 3; width: 100%; }
   .customer-welcome { align-items: flex-start; flex-direction: column; }
 }
+
+/* Final product-wide consistency pass */
+:where(body, button, input, select, textarea, h1, h2, h3, h4, th, td, label, .badge, .status-badge) { letter-spacing: 0; }
+:where(button, input, select, textarea, a):focus-visible { outline: 3px solid rgba(35, 122, 66, .2); outline-offset: 2px; }
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  max-width: 100%;
+  border-color: #d8dfda;
+  border-radius: 6px;
+  color: #2f3d35;
+  background-color: #fff;
+  line-height: 1.4;
+}
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus {
+  border-color: #5a9b70;
+  box-shadow: 0 0 0 3px rgba(35, 122, 66, .09);
+}
+:where(input, textarea)::placeholder { color: #98a39c; opacity: 1; }
+:where(.btn, .ps-tool-btn, .ps-icon-btn, .db-primary-btn, .tb-icon-btn) svg { width: 16px; height: 16px; flex: 0 0 16px; }
+.btn { min-height: 38px; padding: 8px 14px; border-radius: 6px; font-size: 12.5px; line-height: 1.2; }
+.btn-sm { min-height: 32px; padding: 6px 10px; font-size: 11.5px; }
+.badge, .status-badge { max-width: 100%; justify-content: center; padding: 4px 8px; border-radius: 5px; font-size: 10.5px; line-height: 1.25; text-align: center; }
+.card, .ho-card, .sh-chart-card, .sh-table-card, .ps-table-card, .data-table-shell { border-color: #dfe5e1; border-radius: 7px; box-shadow: 0 1px 2px rgba(21, 40, 28, .04); }
+.card-header { min-height: 52px; padding: 13px 16px; }
+.card-header h3 { font-size: 13.5px; }
+.table-wrap, .ps-table-wrap, .hr-table-wrap { width: 100%; max-width: 100%; overscroll-behavior-inline: contain; }
+:where(table) { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+:where(th, td) { vertical-align: middle; }
+:where(th) { color: #66736b; font-size: 10.5px; font-weight: 750; line-height: 1.3; }
+:where(td) { color: #35433b; font-size: 11.5px; line-height: 1.4; }
+:where(td, th) > :where(button, a, span) { max-width: 100%; }
+.modal-header h3 { letter-spacing: 0; }
+.modal, .modal-card { border: 1px solid #dce3de; border-radius: 8px; box-shadow: 0 22px 55px rgba(20, 36, 26, .18); }
+.modal-header { min-height: 56px; }
+.success-message, .error-message, .form-error, .system-error { border-radius: 6px; line-height: 1.45; }
+.db-empty, .ho-empty, .data-table-empty { color: #7c8981; background: #fafbfa; }
+
+/* Authentication states share one calm, structured visual hierarchy. */
+.lx-card > form { width: 100%; }
+.lx-card > .lx-back { margin: -18px 0 22px; }
+.lx-card .lx-form-brand { position: sticky; top: 0; z-index: 2; padding: 2px 0 18px; margin-bottom: 22px; background: #fff; }
+.lx-card form + .lx-resend { margin-top: 10px; }
+.lx-title { line-height: 1.22; }
+.lx-sub strong { color: #405047; overflow-wrap: anywhere; }
+.lx-input { width: 100%; font-size: 13px; }
+.lx-login-btn, .lx-signup-btn { width: 100%; font-size: 12.5px; }
+.lx-signup-btn + .lx-signup-btn { margin-top: 8px; }
+.lx-role { border-radius: 5px; }
+.lx-error { border: 1px solid #efcccc; line-height: 1.45; }
+.lx-devhint { border: 1px solid #d7e5dc; border-radius: 6px; color: #486052; background: #f4f8f5; line-height: 1.45; }
+.lx-otp-row { width: 100%; gap: 7px; }
+.lx-otp { width: min(46px, 14%); min-width: 0; border-radius: 6px; }
+.setup-form input:focus { outline: none; border-color: #5a9b70; box-shadow: 0 0 0 3px rgba(35, 122, 66, .09); }
+.setup-submit:disabled { opacity: .58; cursor: not-allowed; }
+
+@media (max-width: 900px) {
+  .lx-card-wrap { align-items: flex-start; }
+  .lx-card { width: min(100%, 440px); max-height: none; margin: auto; overflow: visible; }
+  .lx-card .lx-form-brand { position: static; }
+  .lx-card > .lx-back { margin-top: -10px; }
+}
+@media (max-width: 600px) {
+  .lx-card-wrap { padding: 28px 20px 36px; }
+  .lx-form-brand { margin-bottom: 24px; }
+  .lx-title { font-size: 22px; }
+  .lx-row-between { gap: 12px; }
+  .lx-remember, .lx-forgot { min-height: 36px; display: inline-flex; align-items: center; }
+  .lx-otp-row { gap: 5px; }
+  .lx-otp { height: 48px; padding: 4px; font-size: 18px !important; }
+  .setup-form-side { padding: 28px 20px 36px; }
+  .setup-brand { margin-bottom: 30px; }
+  .modal-actions { align-items: stretch; flex-direction: column-reverse; }
+  .modal-actions .btn { width: 100%; }
+}
