@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { guardApi, safeError } from '../security.js'
 import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js'
+import { brandedEmail, escapeHtml, sendTransactionalEmail } from '../email-system.js'
 
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 
@@ -58,15 +59,10 @@ export default async function handler(req, res) {
 
     const resendKey = process.env.RESEND_API_KEY
     if (!resendKey) throw new Error('Invitation email provider is not configured')
-    const message = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'Punjab Exotic Foods <info@punjabexoticfoods.com>', to: [email],
-        subject: 'Set up your Punjab Exotic Foods account',
-        html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#24332a"><img src="${protocol}://${host}/logo.png" alt="Punjab Exotic Foods" width="72"><h2>Welcome, ${name.replace(/[<>&]/g, '')}</h2><p>You have been invited as <strong>${role.replace(/[<>&]/g, '')}</strong>. Use the secure button below to choose your password.</p><p><a href="${generated.data.properties.action_link}" style="display:inline-block;padding:12px 20px;background:#176b37;color:#fff;text-decoration:none;border-radius:6px;font-weight:700">Set up account</a></p><p style="color:#68756d;font-size:13px">This one-time link expires automatically. Punjab Exotic Foods will never email you a password.</p></div>`,
-      }),
+    const message = await sendTransactionalEmail({ apiKey: resendKey, category: 'signup', to: email, subject: 'Set up your Punjab Exotic Foods account', admin, communicationType: 'admin_invitation', createdBy: user.email || user.id,
+      html: brandedEmail({ heading: `Welcome, ${name}`, intro: 'Your Punjab Exotic Foods administration account is ready to activate.', contentHtml: `<p style="margin:0;text-align:center;color:#59655d">You have been invited as <strong>${escapeHtml(role)}</strong>. Choose a secure password using the one-time setup link below. We will never send your password by email.</p>`, cta: { label: 'Set Up Account', url: generated.data.properties.action_link }, logoUrl: `${protocol}://${host}/logo.png` }),
     })
-    if (!message.ok) throw new Error(`Email provider returned ${message.status}`)
+    if (!message.ok) throw new Error(message.error || 'Invitation delivery failed')
     await writeSystemAudit(admin, user.id, 'admin_invited', 'admin_staff', roster.data.id, { email, role })
     return res.status(200).json({ ok: true })
   } catch (error) {

@@ -152,12 +152,12 @@ export function PlaceOrderModal({
         void sendEmail(customerEmail, `Order ${order.orderNumber} received — Punjab Exotic Foods`,
           orderReceivedEmailHtml(order.orderNumber, customerName,
             cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment,
-            fulfilment === "Delivery" ? fullDeliveryAddress : undefined))
+            fulfilment === "Delivery" ? fullDeliveryAddress : undefined), undefined, { category: 'orders', customerId, idempotencyKey: `order:${order.id}:received:customer`, communicationType: 'order_received' })
       }
       void sendEmail(ADMIN_NOTIFY_EMAIL, `New order ${order.orderNumber} — ${customerName} (£${cartTotal.toFixed(2)})`,
         orderReceivedEmailHtml(order.orderNumber, customerName,
           cartLines.map(l => ({ name: l.product.productName, qty: l.qty, unitPrice: l.stock.price })), cartTotal, fulfilment,
-          fulfilment === "Delivery" ? fullDeliveryAddress : undefined))
+          fulfilment === "Delivery" ? fullDeliveryAddress : undefined), undefined, { category: 'orders', customerId, idempotencyKey: `order:${order.id}:received:admin`, communicationType: 'order_received_admin' })
     } catch {
       setError("We couldn't place your order — please try again or contact support.")
     }

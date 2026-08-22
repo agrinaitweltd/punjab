@@ -4,12 +4,15 @@ import { authenticatedFetch } from './apiFetch'
    Works on the Vercel deployment; in local dev the call fails gracefully
    and callers can fall back (e.g. show the OTP code on screen). */
 
-export async function sendEmail(to: string | string[], subject: string, html: string, attachments?: { filename: string; content: string }[]): Promise<{ ok: boolean; error?: string; simulated?: boolean }> {
+export type EmailCategory = 'notifications' | 'signup' | 'password' | 'security' | 'orders' | 'delivery' | 'statements' | 'accounts' | 'system'
+export type EmailOptions = { category?: EmailCategory; customerId?: string; invoiceId?: string; idempotencyKey?: string; communicationType?: string }
+
+export async function sendEmail(to: string | string[], subject: string, html: string, attachments?: { filename: string; content: string }[], options: EmailOptions = {}): Promise<{ ok: boolean; error?: string; simulated?: boolean }> {
   try {
     const r = await authenticatedFetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, subject, html, attachments }),
+      body: JSON.stringify({ to, subject, html, attachments, ...options }),
     })
     const data = await r.json().catch(() => ({}))
     if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` }
@@ -39,24 +42,7 @@ const logoUrl = () => {
   try { return `${window.location.origin}/logo.png` } catch { return "/logo.png" }
 }
 
-const wrap = (inner: string) => `
-<div style="background:#f4f6f4;padding:32px 16px;font-family:Segoe UI,Arial,sans-serif">
-  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
-    <div style="height:6px;background:linear-gradient(90deg,#1f7a3a,#f5c518,#f2790f,#d93025)"></div>
-    <div style="padding:28px 32px 8px;display:flex;align-items:center;gap:12px">
-      <img src="${logoUrl()}" alt="Punjab Exotic Foods" width="40" height="40" style="display:block;border-radius:8px" />
-      <div>
-        <p style="margin:0;font-size:18px;font-weight:800;color:#0d2b1e">PUNJAB <span style="font-weight:500">EXOTIC FOODS</span></p>
-        <p style="margin:2px 0 0;font-size:11px;letter-spacing:2px;color:#8a9a8f;text-transform:uppercase">Freshness Starts Here</p>
-      </div>
-    </div>
-    <div style="padding:16px 32px 28px;color:#374151;font-size:14px;line-height:1.65">${inner}</div>
-    <div style="padding:16px 32px;background:#fafbfa;border-top:1px solid #eef1ee;font-size:11.5px;color:#9aa79e">
-      Punjab Exotic Foods Ltd · Wholesale exotic fruit &amp; veg · Urgent Support: <strong style="color:#4d7c5f">${URGENT_SUPPORT_PHONE}</strong><br/>
-      This is an automated message.
-    </div>
-  </div>
-</div>`
+const wrap = (inner: string) => `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head><body style="margin:0;padding:0;background:#f3f5f3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f3f5f3"><tr><td align="center" style="padding:24px 12px"><table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e3e8e4"><tr><td style="height:5px;background:#1f7a3a;font-size:0">&nbsp;</td></tr><tr><td align="center" style="padding:32px 28px 16px"><img src="${logoUrl()}" alt="Punjab Exotic Foods" width="72" height="72" style="display:block;width:72px;height:72px;object-fit:contain;border:0"><p style="margin:10px 0 0;font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#17241c">Punjab Exotic Foods</p></td></tr><tr><td style="padding:12px 42px 36px;color:#3e4b43;font-family:Arial,sans-serif;font-size:14px;line-height:22px">${inner}</td></tr><tr><td style="padding:26px 34px;border-top:1px solid #e8ece9;background:#fafbfa;font-family:Arial,sans-serif;text-align:center"><p style="margin:0 0 12px;font-size:12px;line-height:19px;color:#5f6c64"><strong>Punjab Exotic Foods Ltd</strong><br>Stand 1B, New Spitalfields Market<br>Sherrin Road, Leyton, London, E10 5SQ<br>Tel: 020 8558 2867</p><p style="margin:0;font-size:11px;line-height:18px;color:#818b85">Please do not reply directly to this automated email. If you need assistance, please email <a href="mailto:info@punjabexoticfoods.co.uk" style="color:#1f7a3a">info@punjabexoticfoods.co.uk</a> or call us on 020 8558 2867.</p></td></tr></table></td></tr></table></body></html>`
 
 export function welcomeEmailHtml(name: string, role: "customer" | "admin", portalUrl: string) {
   return wrap(`

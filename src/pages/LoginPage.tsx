@@ -481,7 +481,7 @@ function ApplyFlow({ onBack }: { onBack: () => void }) {
          <p><strong>${form.companyName.trim()}</strong> — ${form.contactName.trim()}</p>
          <p>${form.email.trim()} ${form.phone.trim() ? `· ${form.phone.trim()}` : ""}</p>
          ${form.registeredAddress.trim() ? `<p>${form.registeredAddress.trim()}</p>` : ""}
-         <p style="margin-top:16px">Review it from Customer Applications.</p>`)
+         <p style="margin-top:16px">Review it from Customer Applications.</p>`, undefined, { category: 'system', communicationType: 'customer_application' })
       setDone(true)
     } catch { setErr("Couldn't submit your application — please try again.") }
     setBusy(false)

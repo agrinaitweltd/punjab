@@ -137,6 +137,7 @@ import { CommunicationHistoryPage } from './CommunicationHistoryPage'
 import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
 import { inviteAdmin, inviteCustomer, manageAdmin } from '../../lib/secureAdminApi'
+import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [current, setCurrent] = useState('dashboard')
@@ -168,6 +169,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [whatsappLogs, setWhatsappLogs] = useState<WhatsAppLog[]>([])
   const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsAppTemplate[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [communicationLogs, setCommunicationLogs] = useState<CommunicationDeliveryLog[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -196,6 +198,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       whatsappLogsData,
       whatsappTemplatesData,
       expensesData,
+      communicationLogsData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -222,6 +225,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getWhatsAppLogs(),
       getWhatsAppTemplates(),
       getExpenses(),
+      getCommunicationDeliveryLogs(),
     ])
 
     setCustomers(customersData)
@@ -249,6 +253,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setWhatsappLogs(whatsappLogsData)
     setWhatsappTemplates(whatsappTemplatesData)
     setExpenses(expensesData)
+    setCommunicationLogs(communicationLogsData)
   }, [])
 
   // Re-fetch on every page change so dashboards never show stale data
@@ -288,7 +293,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       if (customer.email) channels.push('email')
       if (customer.phone) channels.push('whatsapp')
       await Promise.all(channels.map(channel => createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel, status: 'Failed', error })))
-      await sendEmail(ADMIN_NOTIFY_EMAIL, `Invoice PDF Missing - ${customer.companyName} - ${invoice.invoiceNumber}`, `<p>${error}</p><p>Customer: ${customer.companyName}<br>Account: ${customer.customerNumber}<br>Due date: ${invoice.dueDate}</p>`)
+      await sendEmail(ADMIN_NOTIFY_EMAIL, `Invoice PDF Missing - ${customer.companyName} - ${invoice.invoiceNumber}`, `<p>${error}</p><p>Customer: ${customer.companyName}<br>Account: ${customer.customerNumber}<br>Due date: ${invoice.dueDate}</p>`, undefined, { category: 'system', customerId: customer.id, invoiceId: invoice.id, communicationType: 'invoice_pdf_missing' })
       void logActivity(user.displayName, `invoice reminder failed for ${invoice.invoiceNumber}: official PDF missing`)
       throw new Error(error)
     }
@@ -296,7 +301,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     const base64 = dataUriBase64(storedPdf.dataUri)
     const results: boolean[] = []
     if (customer.email) {
-      const sent = await sendEmail(customer.email, `Payment Reminder - Invoice ${invoice.invoiceNumber}`, paymentReminderEmailHtml(customer.contactPerson || customer.companyName, invoice.invoiceNumber, outstanding, invoice.dueDate, `${window.location.origin}/customer`), [{ filename: storedPdf.name, content: base64 }])
+      const sent = await sendEmail(customer.email, `Payment Reminder - Invoice ${invoice.invoiceNumber}`, paymentReminderEmailHtml(customer.contactPerson || customer.companyName, invoice.invoiceNumber, outstanding, invoice.dueDate, `${window.location.origin}/customer`), [{ filename: storedPdf.name, content: base64 }], { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, idempotencyKey: `invoice:${invoice.id}:manual-reminder:${new Date().toISOString().slice(0, 10)}`, communicationType: 'payment_reminder' })
       results.push(sent.ok)
       await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'email', status: sent.ok ? 'Sent' : 'Failed', sentAt: sent.ok ? new Date().toISOString() : undefined, error: sent.error })
     }
@@ -397,7 +402,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
       return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
     }
-    if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
+    if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} deliveryLogs={communicationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
     if (current === 'session') {
       const canEditBuying = user.isSuperAdmin || Boolean(user.permissions?.buyingPricesEdit)
@@ -497,7 +502,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 `<p>Hi ${target.name},</p><p><strong>${user.displayName}</strong> assigned you a task:</p>
                  <p style="font-size:16px;font-weight:700;margin:12px 0 4px">${title}</p>
                  ${description ? `<p style="color:#4b5563">${description}</p>` : ""}
-                 <p style="margin-top:20px"><a href="${window.location.origin}" style="color:#1f7a3a;font-weight:700">Open Punjab Exotic Foods Portal →</a></p>`)
+                 <p style="margin-top:20px"><a href="${window.location.origin}" style="color:#1f7a3a;font-weight:700">Open Punjab Exotic Foods Portal →</a></p>`, undefined, { category: 'system', communicationType: 'task_assigned' })
             }
             void logActivity(user.displayName, `assigned task "${title}" to ${target?.name ?? assignedToId}`)
             await load()
@@ -521,7 +526,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               : "Your Punjab Exotic Foods team account request",
               status === 'Approved'
                 ? `<p>Hi ${account.name},</p><p>Your team login for <strong>${account.customerName}</strong> has been approved. You can now sign in with your email and password.</p>`
-                : `<p>Hi ${account.name},</p><p>Your request for a team login under <strong>${account.customerName}</strong> was not approved. Please contact ${account.customerName} for details.</p>`)
+                : `<p>Hi ${account.name},</p><p>Your request for a team login under <strong>${account.customerName}</strong> was not approved. Please contact ${account.customerName} for details.</p>`, undefined, { category: 'accounts', customerId: account.customerId, communicationType: 'team_account_status' })
             void logActivity(user.displayName, `${status === 'Approved' ? 'approved' : 'rejected'} sub-account ${account.name} (${account.customerName})`)
             await load()
           }}
@@ -607,7 +612,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await createCustomer(input)
             if (input.email) {
               void sendEmail(input.email, "Welcome to the Punjab Exotic Foods Portal",
-                welcomeEmailHtml(input.contactPerson || input.companyName, "customer", window.location.origin))
+                welcomeEmailHtml(input.contactPerson || input.companyName, "customer", window.location.origin), undefined, { category: 'signup', communicationType: 'customer_welcome' })
             }
             await load()
           }}
@@ -754,7 +759,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                   await updateCustomer(customer.id, { blocked: true, balance: (customer.balance ?? 0) + order.amount })
                   if (customer.email) {
                     void sendEmail(customer.email, `Payment needed — order ${order.orderNumber}`,
-                      orderPaymentRequiredEmailHtml(customer.contactPerson || customer.companyName, order.orderNumber, order.amount, today))
+                      orderPaymentRequiredEmailHtml(customer.contactPerson || customer.companyName, order.orderNumber, order.amount, today), undefined, { category: 'notifications', customerId: customer.id, communicationType: 'order_payment_required' })
                   }
                   void sendInvoiceMessage(newInvoice, customer, user.displayName)
                 }
@@ -802,7 +807,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             const customer = customers.find(c => c.id === order.customerId)
             if (customer?.email) {
               void sendEmail(customer.email, `Payment received for order ${order.orderNumber}`,
-                paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today))
+                paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today), undefined, { category: 'notifications', customerId: customer.id, communicationType: 'payment_received' })
             }
             if (customer && invoice) void sendPaymentReceived(invoice, customer, order.amount, user.displayName)
             // Paying an invoice brings the balance back down — and once this
@@ -850,7 +855,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           await updateCustomer(customer.id, { balance: synchronizedBalance })
           if (newPaid >= invoice.amount) {
             void sendPaymentReceived(invoice, customer, amount, user.displayName)
-            if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)))
+            if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)), undefined, { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, communicationType: 'payment_received' })
           }
         }
         void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
@@ -895,7 +900,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             const customer = customers.find(c => c.id === proof.customerId)
             if (customer?.email) {
               void sendEmail(customer.email, 'Payment confirmed — thank you',
-                paymentApprovedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount))
+                paymentApprovedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount), undefined, { category: 'notifications', customerId: customer.id, communicationType: 'payment_approved' })
             }
             const paidInvoice = invoices.find(i => proof.invoiceIds.includes(i.id))
             if (customer && paidInvoice) void sendPaymentReceived(paidInvoice, customer, proof.amount, user.displayName)
@@ -917,7 +922,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             const customer = customers.find(c => c.id === proof.customerId)
             if (customer?.email) {
               void sendEmail(customer.email, "We couldn't confirm your payment",
-                paymentRejectedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount, reason))
+                paymentRejectedEmailHtml(customer.contactPerson || customer.companyName, proof.invoiceNumbers, proof.amount, reason), undefined, { category: 'notifications', customerId: customer.id, communicationType: 'payment_rejected' })
             }
             void logActivity(user.displayName, `rejected payment proof for ${customer?.companyName ?? proof.customerId}`)
             await load()
@@ -943,7 +948,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                 status.outstanding,
                 c.creditLimit ?? 0,
                 status.overLimitBy,
-              ),
+              ), undefined, { category: 'notifications', customerId: c.id, communicationType: 'credit_control_warning' }
             )
           }}
           onToggleBlock={async (customer, blocked) => {
@@ -1057,7 +1062,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await updateCustomerApplication(application.id, { status: 'Approved' })
             if (application.email) {
               void sendEmail(application.email, "Welcome to the Punjab Exotic Foods Portal",
-                welcomeEmailHtml(application.contactName || application.companyName, "customer", window.location.origin))
+                welcomeEmailHtml(application.contactName || application.companyName, "customer", window.location.origin), undefined, { category: 'signup', communicationType: 'customer_welcome' })
             }
             void sendAccountApproved(newCustomer, user.displayName)
             void logActivity(user.displayName, `approved customer application for ${application.companyName}`)

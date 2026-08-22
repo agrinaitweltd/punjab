@@ -229,7 +229,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       const message = `${description}${photoNote}`
       await createTicket("customer", user.id, subject, message)
       void sendEmail(ADMIN_NOTIFY_EMAIL, `Product issue reported — ${user.displayName}: ${productLabel}`,
-        `<p><strong>${user.displayName}</strong> reported an issue with <strong>${productLabel}</strong> from order ${order.orderNumber}:</p><p style="color:#4b5563">${description}</p>${photo ? "<p>A photo was attached.</p>" : ""}`)
+        `<p><strong>${user.displayName}</strong> reported an issue with <strong>${productLabel}</strong> from order ${order.orderNumber}:</p><p style="color:#4b5563">${description}</p>${photo ? "<p>A photo was attached.</p>" : ""}`, undefined, { category: 'system', customerId: user.id, communicationType: 'product_issue' })
       setIssueSent(prev => new Set(prev).add(itemIndex))
     } finally {
       setIssueBusy(null)
@@ -263,7 +263,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       })
       void sendEmail(ADMIN_NOTIFY_EMAIL, `Team account approval needed — ${user.displayName}`,
         `<p><strong>${user.displayName}</strong> has requested a team login for <strong>${subForm.name.trim()}</strong> (${subForm.email.trim()}).</p>
-         <p>Review and approve it from Sub-Account Approvals.</p>`)
+         <p>Review and approve it from Sub-Account Approvals.</p>`, undefined, { category: 'accounts', customerId: user.id, communicationType: 'team_account_request' })
       setSubForm({ name: "", email: "", password: "", permissions: { ...EMPTY_SUB_PERMS } })
       setShowAddSubAccount(false)
       await load()
@@ -295,8 +295,8 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         amount, fileName: proofFile.name, fileType: proofFile.type || "image/png",
         dataUri, note: proofNote.trim(),
       })
-      void sendEmail(user.email, "We've received your payment proof", paymentProofSubmittedEmailHtml(user.displayName, invoiceNumbers, amount))
-      void sendEmail(ADMIN_NOTIFY_EMAIL, `Payment proof to review — ${user.displayName}`, paymentProofAdminAlertEmailHtml(user.displayName, invoiceNumbers, amount))
+      void sendEmail(user.email, "We've received your payment proof", paymentProofSubmittedEmailHtml(user.displayName, invoiceNumbers, amount), undefined, { category: 'notifications', customerId: user.id, communicationType: 'payment_proof_received' })
+      void sendEmail(ADMIN_NOTIFY_EMAIL, `Payment proof to review — ${user.displayName}`, paymentProofAdminAlertEmailHtml(user.displayName, invoiceNumbers, amount), undefined, { category: 'notifications', customerId: user.id, communicationType: 'payment_proof_review' })
       setPayMsg({ ok: true, text: "Thanks — your payment proof has been submitted and is awaiting review. We'll email you once it's confirmed." })
       setPaySel(new Set())
       setShowProofModal(false)
@@ -1077,7 +1077,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
           e.preventDefault()
           await createTicket('customer', user.id, ticketSubject, ticketMsg)
           void sendEmail(ADMIN_NOTIFY_EMAIL, `New support ticket — ${user.displayName}: ${ticketSubject}`,
-            `<p><strong>${user.displayName}</strong> raised a support ticket:</p><p style="font-weight:700">${ticketSubject}</p><p style="color:#4b5563">${ticketMsg}</p>`)
+            `<p><strong>${user.displayName}</strong> raised a support ticket:</p><p style="font-weight:700">${ticketSubject}</p><p style="color:#4b5563">${ticketMsg}</p>`, undefined, { category: 'system', customerId: user.id, communicationType: 'support_ticket' })
           setTicketSubject(""); setTicketMsg(""); setShowTicket(false); load()
         }}>
           <Input label="Subject" value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} className="wide" required />

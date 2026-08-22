@@ -7,6 +7,7 @@ const handlers = {
   'manage-admin': () => import('../server/admin-actions/manage-admin.js'),
   'system-mode': () => import('../server/admin-actions/system-mode.js'),
   'system-overview': () => import('../server/admin-actions/system-overview.js'),
+  'test-email-suite': () => import('../server/admin-actions/test-email-suite.js'),
   'verify-sensitive-action': () => import('../server/admin-actions/verify-sensitive-action.js'),
 }
 

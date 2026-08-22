@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { guardApi } from '../server/security.js'
 import { globalTestMode } from '../server/runtime-mode.js'
+import { brandedEmail, sendTransactionalEmail } from '../server/email-system.js'
 
 const genericResponse = res => res.status(200).json({ ok: true })
 
@@ -41,17 +42,12 @@ export default async function handler(req, res) {
     })
     if (linkError || !link.properties?.action_link) throw linkError || new Error('Recovery link was not generated')
 
-    const message = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'Punjab Exotic Foods <info@punjabexoticfoods.com>',
-        to: [account.email],
-        subject: 'Secure your Punjab Exotic Foods password',
-        html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto"><h2>Set your password</h2><p>Use the secure button below to choose a new password. This one-time link expires automatically.</p><p><a href="${link.properties.action_link}" style="display:inline-block;padding:12px 20px;background:#1f7a3a;color:#fff;text-decoration:none;border-radius:6px;font-weight:700">Set password</a></p><p>If you did not request this, you can ignore this email.</p></div>`,
-      }),
+    const message = await sendTransactionalEmail({
+      apiKey: resendKey, category: 'password', to: account.email, subject: 'Reset your Punjab Exotic Foods password', admin,
+      communicationType: 'password_reset', createdBy: 'Password recovery',
+      html: brandedEmail({ heading: 'Reset your password', intro: 'A password reset was requested for your Punjab Exotic Foods account.', contentHtml: '<p style="margin:0;color:#59655d;text-align:center">Use the secure button below to choose a new password. The one-time link expires automatically. If you did not request this, you can safely ignore this email.</p>', cta: { label: 'Reset Password', url: link.properties.action_link }, preheader: 'Use this secure link to reset your password.' }),
     })
-    if (!message.ok) throw new Error(`Recovery email provider returned ${message.status}`)
+    if (!message.ok) throw new Error(message.error || 'Recovery email delivery failed')
   } catch (error) {
     console.error('request-password-reset failed', error instanceof Error ? error.message : 'Unknown error')
   }

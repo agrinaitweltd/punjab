@@ -41,6 +41,10 @@ export async function setSystemMode(enabled: boolean, sensitiveToken: string) {
 export async function createApplicationBackup(sensitiveToken: string) {
   return api<{ ok: true; id: string; status: string; sizeBytes: number; tableCount: number; rowCount: number; storageObjectCount: number }>('/api/admin-security?action=application-backup', { method: 'POST', body: '{}' }, sensitiveToken)
 }
+export type EmailSuiteResult = { category: string; sender: string; ok: boolean; error: string | null; providerMessageId: string | null }
+export async function sendEmailTestSuite(sensitiveToken: string) {
+  return api<{ ok: boolean; recipient: string; results: EmailSuiteResult[] }>('/api/admin-security?action=test-email-suite', { method: 'POST', body: '{}' }, sensitiveToken)
+}
 export async function downloadApplicationBackup(id: string, sensitiveToken: string) {
   const token = await accessToken()
   const response = await fetch('/api/admin-security?action=download-backup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Sensitive-Action-Token': sensitiveToken }, body: JSON.stringify({ id }) })

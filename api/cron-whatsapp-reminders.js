@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { brandedEmail, sendTransactionalEmail, summaryTable } from '../server/email-system.js'
 
 const ULTRAMSG_BASE = 'https://api.ultramsg.com/instance186201'
 const OVERDUE_BUCKETS = [1, 3, 7, 14]
@@ -21,15 +22,9 @@ function reminderMessage(name, invoiceNumber, amount, daysOverdue) {
   return `Hello ${name}, this is a reminder that invoice ${invoiceNumber} with an outstanding balance of GBP ${Number(amount).toFixed(2)} ${timing}. The official invoice is attached. Please arrange payment accordingly.`
 }
 
-async function sendEmail(key, to, subject, html, attachments, simulated) {
+async function sendEmail(key, to, subject, html, attachments, simulated, options) {
   if (simulated) return { ok: true, simulated: true, error: null }
-  if (!key || !to) return { ok: false, error: 'Email address or provider is missing' }
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'Punjab Exotic Foods <info@punjabexoticfoods.com>', to: [to], subject, html, ...(attachments?.length ? { attachments } : {}) }),
-  })
-  const data = await response.json().catch(() => ({}))
-  return { ok: response.ok, error: response.ok ? null : JSON.stringify(data) }
+  return sendTransactionalEmail({ apiKey: key, category: 'notifications', to, subject, html, attachments, ...options })
 }
 
 async function sendWhatsApp(token, phone, message, file, simulated) {
@@ -109,8 +104,8 @@ export default async function handler(req, res) {
     const emailKey = `${invoice.id}:${stage}:email`
     if (customer.email && !sentKeys.has(emailKey)) {
       const subject = stage === 'day-21' ? `Payment Reminder - Invoice ${invoice.invoice_number}` : `Invoice Reminder - ${invoice.invoice_number}`
-      const html = `<p>Hello ${customer.company_name},</p><p>This is a reminder that the attached invoice <strong>${invoice.invoice_number}</strong> remains outstanding. Please arrange payment accordingly.</p><p>Outstanding: <strong>&pound;${outstanding.toFixed(2)}</strong><br>Due date: <strong>${invoice.due_date}</strong></p><p>Kind regards,<br>Punjab Exotic Foods Limited</p>`
-      const sent = await sendEmail(process.env.RESEND_API_KEY, customer.email, subject, html, [{ filename: pdf.name, content: pdf.base64 }], testMode)
+      const html = brandedEmail({ heading: stage === 'due-today' ? 'Payment due today' : daysOverdue > 0 ? 'Your invoice is overdue' : 'Payment reminder', intro: `Invoice ${invoice.invoice_number} for ${customer.company_name} remains outstanding.`, contentHtml: `${summaryTable([['Invoice number', invoice.invoice_number], ['Outstanding', `£${outstanding.toFixed(2)}`], ['Due date', invoice.due_date]])}<p style="margin:0;text-align:center;color:#59655d">The official invoice PDF is attached. If payment has already been made, please allow a short time for it to appear on your account.</p>` })
+      const sent = await sendEmail(process.env.RESEND_API_KEY, customer.email, subject, html, [{ filename: pdf.name, content: pdf.base64 }], testMode, { admin, customerId: invoice.customer_id, invoiceId: invoice.id, idempotencyKey: `automation:${emailKey}`, communicationType: 'payment_reminder', createdBy: 'Daily reminder automation' })
       email = sent.ok
       await admin.from(table('notification_logs')).upsert({ invoice_id: invoice.id, customer_id: invoice.customer_id, channel: 'email', status: sent.ok ? 'Sent' : 'Failed', sent_at: sent.ok ? new Date().toISOString() : null, error: sent.error, reminder_stage: stage, idempotency_key: emailKey }, { onConflict: 'idempotency_key' })
     }

@@ -3,7 +3,7 @@ import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { SensitiveActionDialog } from '../../components/SensitiveActionDialog'
-import { createApplicationBackup, downloadApplicationBackup, getSystemOverview, setSystemMode, type SystemOverview } from '../../lib/secureAdminApi'
+import { createApplicationBackup, downloadApplicationBackup, getSystemOverview, sendEmailTestSuite, setSystemMode, type EmailSuiteResult, type SystemOverview } from '../../lib/secureAdminApi'
 
 const SECTION_TITLES: Record<string, { title: string; subtitle: string }> = {
   'system-overview': { title: 'System Overview', subtitle: 'Production health, account totals and security status.' },
@@ -23,7 +23,8 @@ export function SystemDeveloperPage({ section }: { section: string }) {
   const [data, setData] = useState<SystemOverview | null>(null)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('All')
-  const [sensitiveAction, setSensitiveAction] = useState<'mode' | 'backup' | 'download' | null>(null)
+  const [sensitiveAction, setSensitiveAction] = useState<'mode' | 'backup' | 'download' | 'email-test' | null>(null)
+  const [emailResults, setEmailResults] = useState<EmailSuiteResult[]>([])
   const [selectedBackupId, setSelectedBackupId] = useState('')
   const [restoreInfo, setRestoreInfo] = useState(false)
   const title = SECTION_TITLES[section] ?? SECTION_TITLES['system-overview']
@@ -44,6 +45,13 @@ export function SystemDeveloperPage({ section }: { section: string }) {
     }
     if (sensitiveAction === 'backup') {
       await createApplicationBackup(token)
+      setSensitiveAction(null)
+      load()
+      return
+    }
+    if (sensitiveAction === 'email-test') {
+      const result = await sendEmailTestSuite(token)
+      setEmailResults(result.results)
       setSensitiveAction(null)
       load()
       return
@@ -115,12 +123,12 @@ export function SystemDeveloperPage({ section }: { section: string }) {
       <section className="system-panel system-table-panel"><div className="system-table-tools"><div><strong>Application Backup History</strong><span>{data.backups.length} backup records</span></div><Button variant="secondary" onClick={() => setRestoreInfo(true)}>Review Restore Requirements</Button></div><div className="table-wrap"><table><thead><tr><th>Date & Time</th><th>Type</th><th>Status</th><th>Size</th><th>Created By</th><th>Database</th><th>Storage</th><th>Actions</th></tr></thead><tbody>{data.backups.map(item => <tr key={item.id}><td>{dateTime(item.requested_at)}</td><td>{item.backup_type}</td><td><span className={`sys-status ${item.status === 'Completed' ? 'active' : item.status === 'Failed' ? 'disabled' : ''}`}>{item.status}</span></td><td>{bytes(item.size_bytes)}</td><td>{item.created_by_email || 'System Developer'}</td><td>{item.database_export_status || '-'}</td><td>{item.storage_export_status || '-'}</td><td><Button className="btn-sm" variant="secondary" disabled={!['Completed', 'Partial'].includes(item.status)} onClick={() => { setSelectedBackupId(item.id); setSensitiveAction('download') }}>Download</Button></td></tr>)}</tbody></table>{!data.backups.length && <EmptyState title="No application backups have been created" />}</div></section>
     </>}
 
-    {data && section === 'system-health' && <div className="system-metrics health-metrics">{Object.entries(data.health).map(([label, value]) => <div className="system-metric" key={label}><span>{prettyAction(label)}</span><strong className="metric-text">{value}</strong></div>)}</div>}
+    {data && section === 'system-health' && <><div className="system-metrics health-metrics">{Object.entries(data.health).map(([label, value]) => <div className="system-metric" key={label}><span>{prettyAction(label)}</span><strong className="metric-text">{value}</strong></div>)}</div><section className="system-panel email-test-panel"><div><span className="control-centre-label">Restricted Delivery Test</span><h3>Automated Email Suite</h3><p>Sends nine branded messages only to info@kavotech.uk. The invoice preview is marked TEST / DEMO - NOT PAYABLE and no operational records or balances are created.</p></div><Button onClick={() => setSensitiveAction('email-test')}>Send Nine Test Emails</Button></section>{emailResults.length > 0 && <section className="system-panel system-table-panel"><div className="system-table-tools"><div><strong>Latest Email Test</strong><span>{emailResults.filter(item => item.ok).length} of {emailResults.length} accepted by the provider</span></div></div><div className="table-wrap"><table><thead><tr><th>Sender</th><th>Category</th><th>Status</th><th>Provider Result</th></tr></thead><tbody>{emailResults.map(item => <tr key={item.category}><td>{item.sender}</td><td>{prettyAction(item.category)}</td><td><span className={`sys-status ${item.ok ? 'active' : 'disabled'}`}>{item.ok ? 'Sent' : 'Failed'}</span></td><td>{item.error || item.providerMessageId || 'Accepted'}</td></tr>)}</tbody></table></div></section>}</>}
 
     {data && section === 'security' && <div className="security-checks">
       {['Supabase Auth sessions protect production access', 'Row Level Security is enabled on private business tables', 'Sensitive user actions require current-password verification', 'Privileged Supabase keys remain server-side', 'System Developer access is enforced by the database roster', 'Production Test Mode refuses activation without isolated infrastructure'].map(item => <div key={item}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5"/></svg><span>{item}</span></div>)}
     </div>}
-    <SensitiveActionDialog open={Boolean(sensitiveAction)} title={sensitiveAction === 'mode' ? `${data?.testMode ? 'Disable' : 'Enable'} Test Mode` : sensitiveAction === 'backup' ? 'Create Full Application Backup' : 'Download Application Backup'} warning={sensitiveAction === 'mode' && data?.testMode ? 'Returning to Live Mode discards all sandbox changes and reloads production data. Live records are not deleted or changed.' : sensitiveAction === 'mode' ? 'A fresh operational snapshot will be created. All users will be moved to isolated sandbox data.' : 'Backup archives contain sensitive company information and must be stored securely.'} actionLabel={sensitiveAction === 'mode' ? data?.testMode ? 'Verify & Return to Live' : 'Verify & Enable Test Mode' : sensitiveAction === 'backup' ? 'Verify & Create Backup' : 'Verify & Download'} onClose={() => setSensitiveAction(null)} onVerified={finishSensitiveAction} />
+    <SensitiveActionDialog open={Boolean(sensitiveAction)} title={sensitiveAction === 'mode' ? `${data?.testMode ? 'Disable' : 'Enable'} Test Mode` : sensitiveAction === 'backup' ? 'Create Full Application Backup' : sensitiveAction === 'email-test' ? 'Send Automated Email Test Suite' : 'Download Application Backup'} warning={sensitiveAction === 'mode' && data?.testMode ? 'Returning to Live Mode discards all sandbox changes and reloads production data. Live records are not deleted or changed.' : sensitiveAction === 'mode' ? 'A fresh operational snapshot will be created. All users will be moved to isolated sandbox data.' : sensitiveAction === 'email-test' ? 'Exactly nine test emails will be sent to info@kavotech.uk. No customer, invoice, payment, stock or reporting data will be created.' : 'Backup archives contain sensitive company information and must be stored securely.'} actionLabel={sensitiveAction === 'mode' ? data?.testMode ? 'Verify & Return to Live' : 'Verify & Enable Test Mode' : sensitiveAction === 'backup' ? 'Verify & Create Backup' : sensitiveAction === 'email-test' ? 'Verify & Send Test Emails' : 'Verify & Download'} onClose={() => setSensitiveAction(null)} onVerified={finishSensitiveAction} />
     <Modal open={restoreInfo} title="Protected Restore Workflow" onClose={() => setRestoreInfo(false)}><div className="restore-requirements"><p>Production restore is not executed automatically. A future approved restore must complete every safeguard below.</p>{['Select a completed backup archive', 'Validate the SHA-256 checksum and manifest version', 'Review database and Storage export status', 'Create a fresh pre-restore backup', 'Verify System Developer password again', 'Type an explicit production confirmation phrase', 'Write the restore decision and result to the audit log'].map(item => <div key={item}><span>Required</span>{item}</div>)}<Button variant="secondary" onClick={() => setRestoreInfo(false)}>Close Review</Button></div></Modal>
   </div>
 }

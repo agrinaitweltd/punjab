@@ -1,5 +1,6 @@
 import { guardApi, requireUser, safeError } from '../security.js'
 import { globalTestMode, serviceClient, simulatedResult } from '../runtime-mode.js'
+import { brandedEmail, sendTransactionalEmail } from '../email-system.js'
 
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 
@@ -53,15 +54,10 @@ export default async function handler(req, res) {
     invitationId = invitation.data.id
     const resendKey = process.env.RESEND_API_KEY
     if (!resendKey) throw new Error('Invitation email provider is not configured')
-    const message = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'Punjab Exotic Foods <info@punjabexoticfoods.com>', to: [email],
-        subject: 'Set up your Punjab Exotic Foods customer account',
-        html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#24332a"><img src="${protocol}://${host}/logo.png" alt="Punjab Exotic Foods" width="72"><h2>Welcome to your customer portal</h2><p>${String(customer.company_name || 'Your business').replace(/[<>&]/g, '')} has been invited to Punjab Exotic Foods. Use the secure button below to choose your password.</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 20px;background:#176b37;color:#fff;text-decoration:none;border-radius:6px;font-weight:700">Set up account</a></p><p style="color:#68756d;font-size:13px">This one-time link expires automatically. We will never email you a password.</p></div>`,
-      }),
+    const message = await sendTransactionalEmail({ apiKey: resendKey, category: 'signup', to: email, subject: 'Set up your Punjab Exotic Foods customer account', admin, customerId, communicationType: 'customer_invitation', createdBy: user.email || user.id,
+      html: brandedEmail({ heading: 'Welcome to your customer portal', intro: `${customer.company_name || 'Your business'} has been invited to Punjab Exotic Foods.`, contentHtml: `<p style="margin:0;text-align:center;color:#59655d">Use the secure one-time link below to choose your password and activate the account. Punjab Exotic Foods will never email you a password.</p>`, cta: { label: 'Activate Account', url: actionLink }, logoUrl: `${protocol}://${host}/logo.png` }),
     })
-    if (!message.ok) throw new Error(`Email provider returned ${message.status}`)
+    if (!message.ok) throw new Error(message.error || 'Invitation delivery failed')
     return res.status(200).json({ ok: true })
   } catch (error) {
     if (invitationId) await admin.from('portal_invitations').update({ status: 'Failed', error: 'Invitation delivery failed' }).eq('id', invitationId)
