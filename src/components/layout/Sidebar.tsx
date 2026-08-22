@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { PermissionSet, SubAccountPermissions, User } from "../../types"
+import { ChartNoAxesCombined, ChevronRight, CircleHelp, ClipboardList, Clock3, DollarSign, FileText, LayoutDashboard, LogOut, MessageSquare, Package, PanelLeftClose, Search, Settings, UserRound, UserRoundCog, UsersRound, X, type LucideIcon } from "lucide-react"
 
 const CUSTOMER_NAV_PERMISSION_KEY: Partial<Record<string, keyof SubAccountPermissions>> = {
   "place-order": "placeOrders", orders: "viewOrders", payments: "viewInvoicesBalance",
@@ -14,26 +15,14 @@ const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
   enquiries: "enquiries", complaints: "complaints",
 }
 
-const ICON_PATHS = {
-  dashboard: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
-  customers: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87",
-  invoices: "M9 12h6m-6 4h6M9 8h6M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16",
-  finance: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
-  stock: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
-  sales: "M3 3v18h18M7 16l4-4 3 3 5-7",
-  communications: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
-  documents: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7",
-  admin: "M12 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5.5 21a6.5 6.5 0 0 1 13 0M19 8v6M22 11h-6",
-  search: "M21 21l-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z",
-  help: "M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
-  settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2 3.46-.08-.02a1.7 1.7 0 0 0-1.8-.25l-.52.3a1.7 1.7 0 0 0-.86 1.69V22h-4l-.02-.08a1.7 1.7 0 0 0-.86-1.49l-.52-.3a1.7 1.7 0 0 0-1.8.25l-.08.02-2-3.46.06-.06A1.7 1.7 0 0 0 4.6 15v-.6a1.7 1.7 0 0 0-1.2-1.63L3.32 12l2-3.46.08.02a1.7 1.7 0 0 0 1.8-.25l.52-.3a1.7 1.7 0 0 0 .86-1.69V6h4l.02.08a1.7 1.7 0 0 0 .86 1.49l.52.3a1.7 1.7 0 0 0 1.8-.25l.08-.02 2 3.46-.06.06a1.7 1.7 0 0 0-.34 1.88z",
-  clock: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
-  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
-  order: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6v4H9z",
-  team: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
-} as const
+const ICONS = {
+  dashboard: LayoutDashboard, customers: UsersRound, invoices: FileText, finance: DollarSign,
+  stock: Package, sales: ChartNoAxesCombined, communications: MessageSquare, documents: FileText,
+  admin: UserRoundCog, search: Search, help: CircleHelp, settings: Settings, clock: Clock3,
+  logout: LogOut, order: ClipboardList, team: UserRound,
+} satisfies Record<string, LucideIcon>
 
-type IconName = keyof typeof ICON_PATHS
+type IconName = keyof typeof ICONS
 type NavigationItem = { key: string; label: string; icon: IconName; badgeKey?: string; access?: "users" | "superAdmin" | "systemDeveloper" }
 type NavigationGroup = { key: string; label: string; icon: IconName; children: NavigationItem[] }
 
@@ -99,11 +88,12 @@ const customerNavigation: NavigationGroup[] = [
 ]
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON_PATHS[name]} /></svg>
+  const Component = ICONS[name]
+  return <Component size={size} strokeWidth={1.8} aria-hidden="true" />
 }
 
 function Chevron({ open }: { open: boolean }) {
-  return <svg className={open ? "pn-chevron open" : "pn-chevron"} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+  return <ChevronRight className={open ? "pn-chevron open" : "pn-chevron"} size={15} strokeWidth={2} aria-hidden="true" />
 }
 
 export function Sidebar({ user, current, onNavigate, mobileOpen, collapsed, onCollapsedChange, onMobileClose, badges, onDayEnd, onLogout }: {
@@ -179,8 +169,8 @@ export function Sidebar({ user, current, onNavigate, mobileOpen, collapsed, onCo
     <div className="pn-panel">
       <div className="pn-header">
         <div className="pn-brand-copy"><strong>Punjab Exotic Foods</strong><span>{isAdmin ? "Admin dashboard" : "Customer portal"}</span></div>
-        <button className="pn-collapse-control" type="button" onClick={() => onCollapsedChange(true)} aria-label="Collapse navigation" title="Collapse navigation"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M14 8l-3 4 3 4"/></svg></button>
-        <button className="pn-mobile-close" type="button" onClick={onMobileClose} aria-label="Close navigation"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <button className="pn-collapse-control" type="button" onClick={() => onCollapsedChange(true)} aria-label="Collapse navigation" title="Collapse navigation"><PanelLeftClose size={18} strokeWidth={1.8} /></button>
+        <button className="pn-mobile-close" type="button" onClick={onMobileClose} aria-label="Close navigation"><X size={19} strokeWidth={2} /></button>
       </div>
       {isAdmin && <button className={current === "global-search" ? "pn-search active" : "pn-search"} type="button" onClick={() => navigate("global-search")}><Icon name="search" size={19} /><span>Global Search</span><kbd>Ctrl K</kbd></button>}
       <nav className="pn-menu" aria-label="Dashboard sections">

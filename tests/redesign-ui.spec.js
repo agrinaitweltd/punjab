@@ -72,3 +72,18 @@ test('tablet invoice table controls and responsive layout', async ({ page }) => 
   expect(overflow).toBeLessThanOrEqual(1)
   await page.screenshot({ path: 'test-results/tablet-invoice-table.png', fullPage: true })
 })
+
+test('settings centre is responsive and keeps category controls aligned', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 })
+  await prepareSession(page)
+  await page.route('**/rest/v1/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]', headers: { 'content-range': '0-0/0' } }))
+  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.locator('.pn-utility').filter({ hasText: 'Settings' }).click()
+  await expect(page.getByRole('heading', { name: 'Settings Centre' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
+  await page.getByRole('button', { name: /Files & Backup/ }).click()
+  await expect(page.getByText('Full Application Backup')).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: 'test-results/settings-centre.png', fullPage: true })
+})

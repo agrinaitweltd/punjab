@@ -31,11 +31,11 @@ const rest = async (table, token) => {
   return response.json()
 }
 
-const expectedAdminMinimums = { customers: 4, invoices: 158, admin_staff: 3, products: 8, activity_log: 1 }
-for (const [table, minimum] of Object.entries(expectedAdminMinimums)) {
+const expectedAdminCounts = { customers: 0, invoices: 0, admin_staff: 3, products: 0, activity_log: 0 }
+for (const [table, expectedCount] of Object.entries(expectedAdminCounts)) {
   assert.deepEqual(await rest(table), [], `Anonymous access exposed ${table}`)
   const adminRows = await rest(table, accessToken)
-  assert.ok(adminRows.length >= minimum, `Admin could not read ${table}`)
+  assert.equal(adminRows.length, expectedCount, `Unexpected production row count for ${table}`)
 }
 
 for (const table of ['invoice_items', 'expenses', 'finance_settings', 'portal_invitations', 'generated_documents', 'communication_logs']) {

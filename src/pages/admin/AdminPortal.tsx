@@ -395,7 +395,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
     if (current === 'global-search') return <GlobalSearchPage customers={customers} invoices={invoices} onNavigate={navigate} />
     if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
-      return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage />
+      return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
     }
     if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
@@ -1200,7 +1200,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return <AnalyticsPage orders={orders} products={products} />
     }
 
-    return <SettingsPage />
+    return <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
   }
 
   return (

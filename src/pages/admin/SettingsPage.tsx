@@ -1,38 +1,70 @@
-import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Building2, CreditCard, FileArchive, FileText, LayoutDashboard, Mail, ShieldCheck, Users } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
-import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { getFinanceSettings, saveFinanceSettings } from '../../services/financeSettingsService'
+import { defaultApplicationSettings, getApplicationSettings, saveApplicationSettings, type ApplicationSettings } from '../../services/applicationSettingsService'
 
-export function SettingsPage() {
-  const [companyName, setCompanyName] = useState('Punjab Exotic Foods Ltd')
-  const [supportEmail, setSupportEmail] = useState('info@punjabexoticfoods.com')
-  const [orderCutoff, setOrderCutoff] = useState('17:00')
-  const [saved, setSaved] = useState(false)
-  const [paymentDays,setPaymentDays]=useState('21')
-  const [reminderDays,setReminderDays]=useState('7')
-  useEffect(()=>{getFinanceSettings().then(x=>{setPaymentDays(String(x.defaultPaymentTermsDays));setReminderDays(String(x.reminderDaysBeforeDue))})},[])
+const sections = [
+  ['company', 'Company', 'Business identity and regional formatting'],
+  ['invoicing', 'Invoicing', 'Numbering, terms and PDF behaviour'],
+  ['customers', 'Customers', 'Account defaults and credit controls'],
+  ['payments', 'Payments', 'Methods, references and allocation rules'],
+  ['communications', 'Communications', 'Sender details and notification preferences'],
+  ['files', 'Files & Backup', 'Document categories, storage and exports'],
+  ['access', 'Users & Security', 'Staff access, login activity and permissions'],
+  ['interface', 'Interface & System', 'Dashboard layout and service health'],
+] as const
+type Section = typeof sections[number][0]
+const sectionIcons = { company: Building2, invoicing: FileText, customers: Users, payments: CreditCard, communications: Mail, files: FileArchive, access: ShieldCheck, interface: LayoutDashboard } as const
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    await saveFinanceSettings({defaultPaymentTermsDays:Math.max(0,Number(paymentDays)||0),reminderDaysBeforeDue:Math.max(0,Number(reminderDays)||0)})
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1800)
+function SettingPanel({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return <section className="settings-panel"><header><div><h3>{title}</h3><p>{description}</p></div></header><div className="settings-panel-body">{children}</div></section>
+}
+function Toggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return <label className="settings-toggle"><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /><i aria-hidden="true" /></label>
+}
+
+export function SettingsPage({ onNavigate, isSystemDeveloper = false }: { onNavigate?: (key: string) => void; isSystemDeveloper?: boolean }) {
+  const [active, setActive] = useState<Section>('company')
+  const [settings, setSettings] = useState<ApplicationSettings>(defaultApplicationSettings)
+  const [paymentDays, setPaymentDays] = useState('21')
+  const [reminderDays, setReminderDays] = useState('7')
+  const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'saved' | 'error'>('loading')
+  useEffect(() => {
+    Promise.all([getApplicationSettings(), getFinanceSettings()]).then(([application, finance]) => {
+      setSettings(application); setPaymentDays(String(finance.defaultPaymentTermsDays)); setReminderDays(String(finance.reminderDaysBeforeDue)); setState('ready')
+    }).catch(() => setState('error'))
+  }, [])
+  const field = (section: keyof ApplicationSettings, key: string) => String(settings[section][key] ?? '')
+  const setField = (section: keyof ApplicationSettings, key: string, value: string | boolean) => setSettings(current => ({ ...current, [section]: { ...current[section], [key]: value } }))
+  const save = async () => {
+    setState('saving')
+    try {
+      await Promise.all([saveApplicationSettings(settings), saveFinanceSettings({ defaultPaymentTermsDays: Math.max(0, Number(paymentDays) || 0), reminderDaysBeforeDue: Math.max(0, Number(reminderDays) || 0) })])
+      setState('saved'); window.setTimeout(() => setState('ready'), 1800)
+    } catch { setState('error') }
   }
 
-  return (
-    <div className="stack"><Card title="Portal Settings">
-      <form className="form-grid" onSubmit={submit}>
-        <Input label="Company Name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
-        <Input label="Support Email" value={supportEmail} onChange={(event) => setSupportEmail(event.target.value)} />
-        <Input label="Order Cut-Off Time" type="time" value={orderCutoff} onChange={(event) => setOrderCutoff(event.target.value)} />
-
-        <div className="wide actions-row">
-          <Button type="submit">Save Settings</Button>
-          {saved ? <span>Saved</span> : null}
-        </div>
-      </form>
-    </Card><Card title="Invoice & Payment Settings"><div className="form-grid"><Input label="Default Payment Terms (days)" type="number" min="0" value={paymentDays} onChange={e=>setPaymentDays(e.target.value)}/><Input label="Reminder Days Before Due Date" type="number" min="0" value={reminderDays} onChange={e=>setReminderDays(e.target.value)}/></div><p style={{fontSize:12,color:'#667085',marginTop:10}}>These shared defaults are used for invoice due dates and scheduled reminder processing.</p><div className="actions-row" style={{marginTop:12}}><Button onClick={async()=>{await saveFinanceSettings({defaultPaymentTermsDays:Math.max(0,Number(paymentDays)||0),reminderDaysBeforeDue:Math.max(0,Number(reminderDays)||0)});setSaved(true);setTimeout(()=>setSaved(false),1800)}}>Save Invoice Settings</Button>{saved&&<span>Saved</span>}</div></Card></div>
-  )
+  return <div className="settings-centre">
+    <header className="settings-heading"><div><span className="control-centre-label">Administration</span><h2>Settings Centre</h2><p>Manage business defaults and system preferences without exposing integration credentials.</p></div><Button onClick={save} disabled={state === 'saving' || state === 'loading'}>{state === 'saving' ? 'Saving...' : 'Save Changes'}</Button></header>
+    {state === 'saved' && <div className="success-message" role="status">Settings saved successfully.</div>}
+    {state === 'error' && <div className="error-message" role="alert">Settings could not be loaded or saved. Check the database connection and try again.</div>}
+    <div className="settings-layout">
+      <nav className="settings-nav" aria-label="Settings sections">{sections.map(([key, label, description]) => {
+        const Icon = sectionIcons[key]
+        return <button key={key} className={active === key ? 'active' : ''} onClick={() => setActive(key)}><Icon aria-hidden="true" /><span><strong>{label}</strong><small>{description}</small></span></button>
+      })}</nav>
+      <div className="settings-content">
+        {active === 'company' && <SettingPanel title="Company Details" description="Used throughout invoices, documents and account communications."><div className="form-grid"><Input label="Company Name" value={field('company', 'companyName')} onChange={e => setField('company', 'companyName', e.target.value)} /><Input label="Trading Name" value={field('company', 'tradingName')} onChange={e => setField('company', 'tradingName', e.target.value)} /><Input label="Telephone" value={field('company', 'telephone')} onChange={e => setField('company', 'telephone', e.target.value)} /><Input label="Accounts Email" type="email" value={field('company', 'accountsEmail')} onChange={e => setField('company', 'accountsEmail', e.target.value)} /><Input label="VAT Registration Number" value={field('company', 'vatNumber')} onChange={e => setField('company', 'vatNumber', e.target.value)} /><label className="form-control"><span>Default Currency</span><select value={field('company', 'currency')} onChange={e => setField('company', 'currency', e.target.value)}><option value="GBP">GBP - Pound Sterling</option><option value="EUR">EUR - Euro</option></select></label><label className="form-control"><span>Time Zone</span><select value={field('company', 'timeZone')} onChange={e => setField('company', 'timeZone', e.target.value)}><option>Europe/London</option><option>Africa/Nairobi</option></select></label><label className="form-control"><span>Date Format</span><select value={field('company', 'dateFormat')} onChange={e => setField('company', 'dateFormat', e.target.value)}><option>DD/MM/YYYY</option><option>YYYY-MM-DD</option></select></label><label className="form-control wide"><span>Company Address</span><textarea rows={4} value={field('company', 'address')} onChange={e => setField('company', 'address', e.target.value)} /></label></div></SettingPanel>}
+        {active === 'invoicing' && <><SettingPanel title="Invoice Defaults" description="Controls numbering, due dates and customer-facing invoice content."><div className="form-grid"><Input label="Invoice Prefix" value={field('invoicing', 'prefix')} onChange={e => setField('invoicing', 'prefix', e.target.value)} /><label className="form-control"><span>Numbering Method</span><select value={field('invoicing', 'numbering')} onChange={e => setField('invoicing', 'numbering', e.target.value)}><option>Sequential</option><option>Year + Sequence</option></select></label><Input label="Default Payment Terms (days)" type="number" min="0" value={paymentDays} onChange={e => setPaymentDays(e.target.value)} /><Input label="Reminder Days Before Due" type="number" min="0" value={reminderDays} onChange={e => setReminderDays(e.target.value)} /><label className="form-control wide"><span>Invoice Footer</span><textarea rows={4} value={field('invoicing', 'footer')} onChange={e => setField('invoicing', 'footer', e.target.value)} /></label></div></SettingPanel><SettingPanel title="PDF Behaviour" description="Official PDFs remain the canonical customer-facing invoice."><div className="settings-toggle-list"><Toggle label="Display VAT" description="Show VAT rates and totals on generated invoices." checked={Boolean(settings.invoicing.showVat)} onChange={v => setField('invoicing', 'showVat', v)} /><Toggle label="Automatic PDF generation" description="Create the official letterhead PDF when an invoice is saved." checked={Boolean(settings.invoicing.automaticPdf)} onChange={v => setField('invoicing', 'automaticPdf', v)} /><Toggle label="Automatic invoice download" description="Download completed invoices immediately for the administrator." checked={Boolean(settings.invoicing.automaticDownload)} onChange={v => setField('invoicing', 'automaticDownload', v)} /></div></SettingPanel></>}
+        {active === 'customers' && <SettingPanel title="Customer Account Defaults" description="Applied when administrators create a new customer account."><div className="form-grid"><Input label="Default Credit Limit" type="number" min="0" value={field('customers', 'defaultCreditLimit')} onChange={e => setField('customers', 'defaultCreditLimit', e.target.value)} /><Input label="Default Credit Days" type="number" min="0" value={field('customers', 'defaultCreditDays')} onChange={e => setField('customers', 'defaultCreditDays', e.target.value)} /><label className="form-control"><span>Account Number Behaviour</span><select value={field('customers', 'accountNumbers')} onChange={e => setField('customers', 'accountNumbers', e.target.value)}><option>Six-digit manual or imported</option><option>Automatic six-digit number</option></select></label><label className="form-control"><span>Default Status</span><select value={field('customers', 'defaultStatus')} onChange={e => setField('customers', 'defaultStatus', e.target.value)}><option>Active</option><option>Pending Approval</option></select></label></div><div className="settings-toggle-list"><Toggle label="Credit warnings" description="Warn administrators when a customer approaches or exceeds their credit limit." checked={Boolean(settings.customers.creditWarnings)} onChange={v => setField('customers', 'creditWarnings', v)} /></div></SettingPanel>}
+        {active === 'payments' && <SettingPanel title="Payment Handling" description="Shared rules for recording and allocating customer payments."><div className="form-grid"><Input label="Accepted Payment Methods" value={field('payments', 'methods')} onChange={e => setField('payments', 'methods', e.target.value)} /><Input label="Payment Reference Format" value={field('payments', 'referenceFormat')} onChange={e => setField('payments', 'referenceFormat', e.target.value)} /><label className="form-control wide"><span>Allocation Rule</span><select value={field('payments', 'allocation')} onChange={e => setField('payments', 'allocation', e.target.value)}><option>Oldest outstanding invoice first</option><option>Administrator selects invoice</option></select></label><label className="form-control wide"><span>Outstanding Balance Rule</span><textarea rows={3} value={field('payments', 'outstandingBalance')} onChange={e => setField('payments', 'outstandingBalance', e.target.value)} /></label></div></SettingPanel>}
+        {active === 'communications' && <SettingPanel title="Email & Reminder Preferences" description="API credentials remain encrypted in the hosting environment and are not shown here."><div className="form-grid"><Input label="Sender Name" value={field('communications', 'senderName')} onChange={e => setField('communications', 'senderName', e.target.value)} /><Input label="Accounts Email" type="email" value={field('communications', 'accountsEmail')} onChange={e => setField('communications', 'accountsEmail', e.target.value)} /></div><div className="settings-toggle-list"><Toggle label="Invoice emails" description="Allow administrators to email generated invoice PDFs." checked={Boolean(settings.communications.invoiceEmails)} onChange={v => setField('communications', 'invoiceEmails', v)} /><Toggle label="Reminder emails" description="Enable scheduled invoice reminder emails." checked={Boolean(settings.communications.reminderEmails)} onChange={v => setField('communications', 'reminderEmails', v)} /><Toggle label="WhatsApp reminders" description="Enable configured WhatsApp reminder delivery." checked={Boolean(settings.communications.reminderWhatsapp)} onChange={v => setField('communications', 'reminderWhatsapp', v)} /><Toggle label="Dashboard notifications" description="Show operational notifications in the top bar." checked={Boolean(settings.communications.notifications)} onChange={v => setField('communications', 'notifications', v)} /></div></SettingPanel>}
+        {active === 'files' && <><SettingPanel title="Document Management" description="Documents remain private and associated with their customer or invoice record."><div className="form-grid"><Input label="Invoice PDF Storage" value={field('files', 'invoiceStorage')} disabled /><label className="form-control wide"><span>Document Categories</span><textarea rows={3} value={field('files', 'categories')} onChange={e => setField('files', 'categories', e.target.value)} /></label></div><div className="settings-toggle-list"><Toggle label="Canonical generated invoices" description="Use generated letterhead PDFs for downloads and reminders." checked={Boolean(settings.files.automaticCanonicalPdf)} onChange={v => setField('files', 'automaticCanonicalPdf', v)} /></div></SettingPanel><SettingPanel title="Backup & Recovery" description="Create and download portable ZIP backups with CSV data and extracted documents."><div className="settings-action-row"><div><strong>Full Application Backup</strong><span>Password verification is required. Restore remains protected.</span></div>{isSystemDeveloper ? <Button onClick={() => onNavigate?.('backup-recovery')}>Open Backup Centre</Button> : <span className="sys-status">System Developer only</span>}</div></SettingPanel></>}
+        {active === 'access' && <><SettingPanel title="Users & Permissions" description="Manage staff access without sharing or displaying passwords."><div className="settings-link-grid"><button onClick={() => onNavigate?.('admins')}>Admin Users<span>Invitations, roles and permissions</span></button><button onClick={() => onNavigate?.('sales-users')}>Sales Users<span>Sales identities and assignments</span></button><button onClick={() => onNavigate?.('sub-accounts')}>Customer Sub-Accounts<span>Review customer team access</span></button>{isSystemDeveloper && <button onClick={() => onNavigate?.('system-users')}>System Users<span>Identity and invitation status</span></button>}</div></SettingPanel>{isSystemDeveloper && <SettingPanel title="Security" description="Restricted authentication and audit information."><div className="settings-link-grid"><button onClick={() => onNavigate?.('login-activity')}>Login Activity<span>Successful and failed attempts</span></button><button onClick={() => onNavigate?.('security')}>Security Status<span>RLS and environment safeguards</span></button><button onClick={() => onNavigate?.('audit-logs')}>Audit Log<span>Privileged system actions</span></button></div></SettingPanel>}</>}
+        {active === 'interface' && <><SettingPanel title="Interface Preferences" description="Keep the workspace compact, stable and comfortable for repeated daily use."><div className="form-grid"><label className="form-control"><span>Dashboard Density</span><select value={field('interface', 'density')} onChange={e => setField('interface', 'density', e.target.value)}><option>Comfortable</option><option>Compact</option></select></label><label className="form-control"><span>Default Sidebar</span><select value={field('interface', 'sidebar')} onChange={e => setField('interface', 'sidebar', e.target.value)}><option>Expanded</option><option>Collapsed</option></select></label></div><div className="settings-toggle-list"><Toggle label="Reduced motion" description="Minimise non-essential interface transitions." checked={Boolean(settings.interface.reducedMotion)} onChange={v => setField('interface', 'reducedMotion', v)} /></div></SettingPanel><SettingPanel title="System Status" description="Connectivity and integration health without exposing credentials."><div className="settings-link-grid">{isSystemDeveloper ? <><button onClick={() => onNavigate?.('system-health')}>Integrations & Health<span>Database, Storage, email and PDF services</span></button><button onClick={() => onNavigate?.('system-overview')}>System Overview<span>Users, environment and recent activity</span></button></> : <div className="settings-system-note">Database and integration health is monitored by the System Developer.</div>}</div></SettingPanel></>}
+      </div>
+    </div>
+  </div>
 }

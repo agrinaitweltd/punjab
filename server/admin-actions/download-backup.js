@@ -15,8 +15,9 @@ export default async function handler(req, res) {
     if (file.error) throw file.error
     const bytes = Buffer.from(await file.data.arrayBuffer())
     await writeSystemAudit(admin, user.id, 'application_backup_downloaded', 'system_backups', id, {})
-    res.setHeader('Content-Type', 'application/gzip')
-    res.setHeader('Content-Disposition', `attachment; filename="${backup.data.file_path.split('/').at(-1)}"`)
+    const fileName = backup.data.file_path.split('/').at(-1)
+    res.setHeader('Content-Type', fileName.endsWith('.zip') ? 'application/zip' : 'application/gzip')
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
     res.setHeader('Cache-Control', 'no-store')
     return res.status(200).send(bytes)
   } catch (error) {

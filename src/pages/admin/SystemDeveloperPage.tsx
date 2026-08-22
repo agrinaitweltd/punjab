@@ -49,9 +49,9 @@ export function SystemDeveloperPage({ section }: { section: string }) {
       return
     }
     if (sensitiveAction === 'download' && selectedBackupId) {
-      const blob = await downloadApplicationBackup(selectedBackupId, token)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = `punjab-application-backup-${selectedBackupId}.json.gz`; anchor.click()
+      const download = await downloadApplicationBackup(selectedBackupId, token)
+      const url = URL.createObjectURL(download.blob)
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = download.fileName; anchor.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 500)
       setSensitiveAction(null)
     }
@@ -108,7 +108,7 @@ export function SystemDeveloperPage({ section }: { section: string }) {
 
     {data && section === 'backup-recovery' && <>
       <div className="backup-types-grid">
-        <section className="system-panel backup-panel"><div><span className="control-centre-label">Application Backup</span><h3>Full Business Export</h3><p>Creates a compressed, checksummed export of critical live tables and actual private Storage object bytes in the restricted system-backups bucket.</p></div><Button onClick={() => setSensitiveAction('backup')}>Create Full Application Backup</Button></section>
+        <section className="system-panel backup-panel"><div><span className="control-centre-label">Application Backup</span><h3>Portable ZIP Package</h3><p>Creates CSV table exports, extracted invoice and customer documents, file-to-record metadata, a manifest, and checksums in the restricted system-backups bucket.</p></div><Button onClick={() => setSensitiveAction('backup')}>Create Full Backup</Button></section>
         <section className="system-panel backup-panel"><div><span className="control-centre-label">Supabase Managed Database Backup</span><h3>Provider-managed Recovery</h3><p>Native database backup schedules and production restoration remain controlled in Supabase. They are separate from application exports.</p></div><span className="sys-status active">Provider controlled</span></section>
       </div>
       <div className="system-callout"><strong>Restore protection:</strong> no backup can overwrite production from this screen. Restore requires backup selection, checksum validation, an impact review, fresh password verification and a separately approved server procedure.</div>

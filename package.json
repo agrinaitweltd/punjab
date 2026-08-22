@@ -9,6 +9,7 @@
     "test:finance": "node scripts/test-finance-workflows.mjs",
     "test:invoice-parser": "node scripts/test-invoice-parser.mjs",
     "test:security": "node scripts/test-security.mjs",
+    "test:backup": "node scripts/test-backup-archive.mjs",
     "test:live-auth": "node scripts/test-live-login.mjs",
     "test:production-smoke": "node scripts/test-production-smoke.mjs",
     "test:live-rls": "node scripts/test-live-rls.mjs",
@@ -19,6 +20,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
     "bcryptjs": "^3.0.3",
+    "lucide-react": "^0.468.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
     "pizzip": "^3.2.0",

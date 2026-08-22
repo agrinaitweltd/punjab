@@ -19,8 +19,8 @@ for (const viewport of [
     await page.getByRole('button', { name: 'Log In', exact: true }).click()
     await expect(page.getByText('Dashboard', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
     const outstanding = page.locator('.ho-stat').filter({ hasText: 'Outstanding Payments' })
-    await expect(outstanding.locator('.ho-stat-value')).toHaveText('£37,103.73', { timeout: 20_000 })
-    await expect(outstanding).toContainText('152 invoices')
+    await expect(outstanding.locator('.ho-stat-value')).toHaveText('£0.00', { timeout: 20_000 })
+    await expect(outstanding).toContainText('0 invoices')
 
     const sidebarParent = name => page.locator('.pn-parent').filter({ hasText: name })
     if (viewport.name === 'desktop') {

@@ -1,4 +1,5 @@
 import { Children, isValidElement, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 
 function nodeText(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -42,21 +43,21 @@ export function DataTable({ columns, children }: { columns: string[]; children: 
   return <div className="data-table-shell">
     <div className="data-table-toolbar">
       <label className="data-table-search">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <Search size={16} strokeWidth={1.8} aria-hidden="true" />
         <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search this table" aria-label="Search table" />
       </label>
       <span className="data-table-count">{filtered.length} {filtered.length === 1 ? 'record' : 'records'}</span>
     </div>
     <div className="table-wrap">
       <table>
-        <thead><tr>{columns.map((column, index) => <th key={column}><button type="button" className={sortColumn === index ? 'table-sort active' : 'table-sort'} onClick={() => sort(index)}>{column}<span aria-hidden="true">{sortColumn === index ? sortDirection === 'asc' ? '↑' : '↓' : '↕'}</span></button></th>)}</tr></thead>
+        <thead><tr>{columns.map((column, index) => <th key={column}><button type="button" className={sortColumn === index ? 'table-sort active' : 'table-sort'} onClick={() => sort(index)}>{column}<span aria-hidden="true">{sortColumn === index ? sortDirection === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} /> : <ArrowUpDown size={11} />}</span></button></th>)}</tr></thead>
         <tbody>{visibleRows.length ? visibleRows : <tr><td className="data-table-empty" colSpan={columns.length}>No matching records</td></tr>}</tbody>
       </table>
     </div>
     <div className="data-table-footer">
       <label>Rows per page<select value={pageSize} onChange={event => setPageSize(Number(event.target.value))}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
       <span>Page {page} of {pageCount}</span>
-      <div><button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>‹</button><button type="button" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage(value => value + 1)}>›</button></div>
+      <div><button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage(value => value - 1)}><ChevronLeft size={15} /></button><button type="button" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage(value => value + 1)}><ChevronRight size={15} /></button></div>
     </div>
   </div>
 }

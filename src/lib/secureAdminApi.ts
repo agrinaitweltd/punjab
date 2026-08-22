@@ -45,7 +45,9 @@ export async function downloadApplicationBackup(id: string, sensitiveToken: stri
   const token = await accessToken()
   const response = await fetch('/api/admin-security?action=download-backup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Sensitive-Action-Token': sensitiveToken }, body: JSON.stringify({ id }) })
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Backup download failed.') }
-  return response.blob()
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `Punjab-Exotic-Foods-Backup-${id}.zip`
+  return { blob: await response.blob(), fileName }
 }
 
 export type SystemOverview = {
