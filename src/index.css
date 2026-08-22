@@ -3081,13 +3081,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Split-screen authentication */
 .lx-page {
+  position: relative;
+  width: 100%;
   min-height: 100dvh;
-  display: grid;
-  grid-template-columns: minmax(390px, 44%) minmax(0, 1fr);
-  align-items: stretch;
-  gap: 0;
-  padding: clamp(24px, 5vh, 54px) clamp(20px, 6vw, 84px);
-  background: #dfe4e1;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  background: #f1f5f9;
   color: #28332d;
 }
 .lx-page::before { display: none; }
@@ -3095,6 +3097,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lx-card-wrap {
   order: 1;
   z-index: 1;
+  width: min(42vw, 600px);
+  min-height: min(80dvh, 720px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3109,6 +3113,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lx-brand {
   order: 2;
   z-index: 1;
+  width: min(42vw, 600px);
+  min-height: min(80dvh, 720px);
   max-width: none;
   min-width: 0;
   padding: 44px clamp(36px, 5vw, 72px);
