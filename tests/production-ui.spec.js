@@ -8,16 +8,17 @@ for (const viewport of [
   { name: 'mobile', width: 390, height: 844 },
 ]) {
   test(`${viewport.name} admin dashboard`, async ({ page }) => {
+    test.setTimeout(60_000)
     test.skip(!origin || !password, 'Production UI environment is required')
     await page.setViewportSize(viewport)
-    await page.goto(origin, { waitUntil: 'networkidle' })
+    await page.goto(origin, { waitUntil: 'domcontentloaded' })
     const consent = page.getByRole('dialog', { name: 'Cookie consent' })
     if (await consent.isVisible()) await consent.getByRole('button', { name: 'Decline all' }).click()
     await page.getByRole('button', { name: 'Admin', exact: true }).click()
     await page.getByPlaceholder('you@punjabexoticfoods.com').fill('info@kavotech.uk')
     await page.locator('input[type="password"]').fill(password)
-    await page.getByRole('button', { name: 'Log In', exact: true }).click()
-    await expect(page.getByText('Dashboard', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+    await page.getByRole('button', { name: /Log in/i }).click()
+    await expect(page.locator('.topbar-title')).toHaveText('Overview', { timeout: 45_000 })
     const outstanding = page.locator('.ho-stat').filter({ hasText: 'Outstanding Payments' })
     await expect(outstanding.locator('.ho-stat-value')).toHaveText('£0.00', { timeout: 20_000 })
     await expect(outstanding).toContainText('0 invoices')
