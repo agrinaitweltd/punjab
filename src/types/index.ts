@@ -277,6 +277,27 @@ export interface CreditNote {
   status: 'Active' | 'Void'
   /** How much of `amount` hasn't been applied to an invoice yet. */
   remainingBalance: number
+  originalInvoiceReference?: string
+  totalGoods?: number
+  totalVat?: number
+  sourceDocumentId?: string
+  sourceFileName?: string
+  importedMetadata?: Record<string, unknown>
+}
+
+export interface CreditNoteItem {
+  id?: string
+  creditNoteId: string
+  line: string
+  quantity: number
+  product: string
+  variety: string
+  size: string
+  price: number
+  goodsValue: number
+  vatCode: string
+  vatRate: number
+  vatAmount: number
 }
 
 /** One application of a credit note's balance against a specific invoice —

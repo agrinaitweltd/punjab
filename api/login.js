@@ -93,6 +93,13 @@ export default async function handler(req, res) {
       if (linked.error) throw linked.error
     }
 
+    const expectedMetadata = { ...(authUser?.app_metadata || {}), role, legacy_id: account.id }
+    if (authUser && (authUser.app_metadata?.role !== role || authUser.app_metadata?.legacy_id !== account.id)) {
+      const { data, error } = await admin.auth.admin.updateUserById(authUser.id, { app_metadata: expectedMetadata })
+      if (error) throw error
+      authUser = data.user
+    }
+
     if (!authUser?.email) throw new Error('Linked Auth user has no email address')
     const { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password })
     if (signInError || !signedIn.session) { await recordLogin(false, 'invalid_credentials', authUser.id); return res.status(401).json({ error: 'Invalid credentials' }) }

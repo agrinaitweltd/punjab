@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "test:finance": "node scripts/test-finance-workflows.mjs",
     "test:invoice-parser": "node scripts/test-invoice-parser.mjs",
+    "test:document-imports": "node scripts/test-document-imports.mjs",
     "test:security": "node scripts/test-security.mjs",
     "test:backup": "node scripts/test-backup-archive.mjs",
     "test:email": "node scripts/test-email-system.mjs",

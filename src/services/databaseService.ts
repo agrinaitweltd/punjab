@@ -87,6 +87,12 @@ function mapCreditNote(r: any): CreditNote {
     amount: r.amount ?? 0, reason: r.reason ?? "", date: r.date ?? "",
     linkedTicketId: r.linked_ticket_id ?? undefined, linkedInvoiceId: r.linked_invoice_id ?? undefined,
     status: r.status ?? "Active", remainingBalance: r.remaining_balance ?? 0,
+    originalInvoiceReference: r.original_invoice_reference ?? undefined,
+    totalGoods: r.total_goods === undefined ? undefined : Number(r.total_goods),
+    totalVat: r.total_vat === undefined ? undefined : Number(r.total_vat),
+    sourceDocumentId: r.source_document_id ?? undefined,
+    sourceFileName: r.source_file_name ?? undefined,
+    importedMetadata: r.imported_metadata ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -660,6 +666,10 @@ class SupabaseDatabaseService {
       amount: input.amount, reason: input.reason, date: input.date,
       linked_ticket_id: input.linkedTicketId || null, linked_invoice_id: input.linkedInvoiceId || null,
       status: input.status, remaining_balance: input.remainingBalance,
+      original_invoice_reference: input.originalInvoiceReference || null,
+      total_goods: input.totalGoods ?? 0, total_vat: input.totalVat ?? 0,
+      source_document_id: input.sourceDocumentId || null, source_file_name: input.sourceFileName || null,
+      imported_metadata: input.importedMetadata ?? {},
     }
     const { data, error } = await db().from("credit_notes").insert(row).select().single()
     if (error) throw error
@@ -671,6 +681,12 @@ class SupabaseDatabaseService {
     if (input.amount !== undefined) row.amount = input.amount
     if (input.status) row.status = input.status
     if (input.remainingBalance !== undefined) row.remaining_balance = input.remainingBalance
+    if (input.sourceDocumentId !== undefined) row.source_document_id = input.sourceDocumentId || null
+    if (input.sourceFileName !== undefined) row.source_file_name = input.sourceFileName || null
+    if (input.originalInvoiceReference !== undefined) row.original_invoice_reference = input.originalInvoiceReference || null
+    if (input.totalGoods !== undefined) row.total_goods = input.totalGoods
+    if (input.totalVat !== undefined) row.total_vat = input.totalVat
+    if (input.importedMetadata !== undefined) row.imported_metadata = input.importedMetadata
     const { data, error } = await db().from("credit_notes").update(row).eq("id", id).select().single()
     if (error) { console.error("updateCreditNote", error); return null }
     return mapCreditNote(data)

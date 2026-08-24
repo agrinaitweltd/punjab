@@ -18,7 +18,10 @@ export type StoredFile = {
   invoiceId?: string
   invoiceNumber?: string
   invoiceAmount?: number
-  documentRole?: 'canonical_invoice' | 'legacy_source' | 'general'
+  creditNoteId?: string
+  creditNoteNumber?: string
+  creditNoteAmount?: number
+  documentRole?: 'canonical_invoice' | 'legacy_source' | 'credit_note_source' | 'general'
   templateId?: 'punjab-approved-letterhead-v1'
 }
 
@@ -52,7 +55,7 @@ export async function listFiles(): Promise<StoredFile[]> {
     .order("created_at", { ascending: false })
   if (error) { console.error("listFiles", error); return [] }
   return (data ?? []).map(r => {
-    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
+    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; creditNoteId?: string; creditNoteNumber?: string; creditNoteAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
     try { meta = JSON.parse(r.timestamp ?? "{}") } catch { /* legacy row */ }
     return {
       id: r.id,
@@ -67,6 +70,9 @@ export async function listFiles(): Promise<StoredFile[]> {
       invoiceId: meta.invoiceId,
       invoiceNumber: meta.invoiceNumber,
       invoiceAmount: meta.invoiceAmount,
+      creditNoteId: meta.creditNoteId,
+      creditNoteNumber: meta.creditNoteNumber,
+      creditNoteAmount: meta.creditNoteAmount,
       documentRole: meta.documentRole ?? 'general',
       templateId: meta.templateId,
     }
@@ -108,7 +114,7 @@ export function dataUriBase64(dataUri: string): string {
 export async function uploadFile(
   name: string, type: string, size: number, dataUri: string, note: string,
   customerId: string | null, customerName: string,
-  document: { invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {},
+  document: { invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; creditNoteId?: string; creditNoteNumber?: string; creditNoteAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {},
 ): Promise<StoredFile> {
   const sanitizedName = safeFileName(name)
   if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_BYTES) throw new Error('File size is outside the allowed range.')

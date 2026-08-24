@@ -8,6 +8,9 @@ import { APPROVED_INVOICE_TEMPLATE_ID, dataUriBase64, findInvoicePdf, uploadFile
 import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
 import { confirmAction, showNotice } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
+import { saveCreditNoteItems } from '../../services/creditNoteItemService'
+import { findDuplicateCreditNote, findDuplicateInvoice, matchImportedCustomer } from '../../lib/importMatching'
+import type { ImportedCreditNote } from '../../lib/invoiceImport'
 import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
@@ -617,24 +620,25 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await load()
           }}
           onCreateFromInvoice={async (data) => {
-            let customer = customers.find(c => c.customerNumber === data.customer.accountNumber)
+            let customer = matchImportedCustomer(customers, data.customer)
             const existingCustomer = Boolean(customer)
             if (!customer) {
               customer = await createCustomer({
                 companyName: data.customer.companyName, contactPerson: '', email: data.customer.email || `${data.customer.accountNumber}@pending.punjab.local`,
-                phone: data.customer.phone, customerNumber: data.customer.accountNumber, password: `pending-${Math.random().toString(36).slice(2, 12)}`,
+                phone: data.customer.phone, customerNumber: data.customer.accountNumber.replace(/[^a-z0-9]/gi, '').toUpperCase(), password: `pending-${Math.random().toString(36).slice(2, 12)}`,
                 address: [data.customer.address, data.customer.postcode].filter(Boolean).join(', '), deliveryArea: '', paymentTerms: '14 Days', creditDays: 14,
               })
               void logActivity(user.displayName, `created customer ${customer.companyName} from invoice`)
             }
             const issueDate = data.invoice.date || new Date().toISOString().slice(0, 10)
             const due = new Date(`${issueDate}T00:00:00`); due.setDate(due.getDate() + (customer.creditDays ?? 14))
-            if (data.invoice.invoiceNumber && invoices.some(i => i.invoiceNumber === data.invoice.invoiceNumber)) throw new Error('That invoice number already exists.')
+            if (data.invoice.invoiceNumber && findDuplicateInvoice(invoices, { invoiceNumber: data.invoice.invoiceNumber, customerId: customer.id, date: issueDate })) throw new Error('This invoice has already been imported for that customer and date.')
+            if (data.invoice.invoiceNumber && invoices.some(i => i.invoiceNumber.trim().toLowerCase() === data.invoice.invoiceNumber.trim().toLowerCase())) throw new Error('That invoice number already exists.')
             const createdInvoice = await createInvoice({ customerId: customer.id, invoiceNumber: data.invoice.invoiceNumber, date: issueDate, dueDate: due.toISOString().slice(0, 10), amount: data.invoice.grandTotal, amountPaid: 0, status: 'Unpaid' })
             await saveInvoiceItems(createdInvoice.id, data.items)
             let sourceDocumentId: string | undefined
             if (data.source) {
-              const source = await uploadFile(data.source.name, data.source.type, data.source.size, data.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, documentRole: 'legacy_source' })
+              const source = await uploadFile(data.source.name, data.source.type, data.source.size, data.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'legacy_source' })
               sourceDocumentId = source.id
             }
             const canonical = await generateCanonicalInvoicePdf(createdInvoice, customer, data.items)
@@ -974,6 +978,82 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           tickets={tickets}
           canManage={user.isSuperAdmin || Boolean(user.permissions?.creditNotesIssue)}
           openCreditNoteId={openCreditNoteId}
+          onImport={async (document: ImportedCreditNote) => {
+            let customer = matchImportedCustomer(customers, document.customer)
+            const existingCustomer = Boolean(customer)
+            if (!customer) {
+              if (!document.customer.companyName.trim() || !document.customer.accountNumber.trim()) {
+                throw new Error('Confirm the customer name and account number before importing.')
+              }
+              customer = await createCustomer({
+                companyName: document.customer.companyName,
+                contactPerson: '',
+                email: document.customer.email || `${document.customer.accountNumber}@pending.punjab.local`,
+                phone: document.customer.phone,
+                customerNumber: document.customer.accountNumber.replace(/[^a-z0-9]/gi, '').toUpperCase(),
+                password: `pending-${Math.random().toString(36).slice(2, 12)}`,
+                address: [document.customer.address, document.customer.postcode].filter(Boolean).join(', '),
+                deliveryArea: '', paymentTerms: '14 Days', creditDays: 14,
+              })
+            }
+            const identity = { creditNumber: document.creditNote.creditNumber, customerId: customer.id, date: document.creditNote.date }
+            if (findDuplicateCreditNote(creditNotes, identity)) throw new Error('This credit note has already been imported for that customer and date.')
+            if (creditNotes.some(note => note.creditNumber.trim().toLowerCase() === document.creditNote.creditNumber.trim().toLowerCase())) {
+              throw new Error('That credit note number already exists.')
+            }
+            const linkedInvoice = document.creditNote.originalInvoiceReference
+              ? invoices.find(invoice => invoice.customerId === customer.id && invoice.invoiceNumber.trim().toLowerCase() === document.creditNote.originalInvoiceReference.trim().toLowerCase())
+              : undefined
+            const note = await createCreditNote({
+              creditNumber: document.creditNote.creditNumber,
+              customerId: customer.id,
+              amount: document.creditNote.grandTotal,
+              reason: document.creditNote.originalInvoiceReference ? `Imported credit for invoice ${document.creditNote.originalInvoiceReference}` : 'Imported credit note',
+              date: document.creditNote.date,
+              linkedInvoiceId: linkedInvoice?.id,
+              status: 'Active',
+              remainingBalance: document.creditNote.grandTotal,
+              originalInvoiceReference: document.creditNote.originalInvoiceReference,
+              totalGoods: document.creditNote.totalGoods,
+              totalVat: document.creditNote.vat,
+              sourceFileName: document.source?.name,
+              importedMetadata: {
+                accountNumber: document.customer.accountNumber,
+                deliveryAccount: document.creditNote.deliveryAccount,
+                salesman: document.creditNote.salesman,
+                packages: document.creditNote.packages,
+                vatSummary: document.vatSummary,
+              },
+            })
+            await saveCreditNoteItems(note.id, document.items)
+            let sourceDocumentId: string | undefined
+            if (document.source) {
+              const source = await uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Credit Notes: Original source for ${note.creditNumber}`, customer.id, customer.companyName, {
+                creditNoteId: note.id, creditNoteNumber: note.creditNumber, creditNoteAmount: note.amount, documentRole: 'credit_note_source',
+              })
+              sourceDocumentId = source.id
+              const linkedSource = await updateCreditNote(note.id, { sourceDocumentId, sourceFileName: source.name })
+              if (!linkedSource) throw new Error('The credit note was imported, but its source PDF could not be linked.')
+            }
+            let appliedAmount = 0
+            if (linkedInvoice) {
+              const result = computeCreditApplication(note, linkedInvoice, note.amount)
+              appliedAmount = result.appliedAmount
+              if (appliedAmount > 0) {
+                await createCreditNoteAllocation({ creditNoteId: note.id, invoiceId: linkedInvoice.id, amount: appliedAmount, date: document.creditNote.date })
+                await updateInvoice(linkedInvoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
+                await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance, sourceDocumentId })
+              }
+            }
+            if (appliedAmount > 0) {
+              const currentBalance = existingCustomer
+                ? customer.balance
+                : document.customer.ledgerBalance
+              await updateCustomer(customer.id, { balance: Math.max(0, currentBalance - appliedAmount) })
+            }
+            void logActivity(user.displayName, `imported credit note ${note.creditNumber} for ${customer.companyName} (${document.items.length} product rows)`)
+            await load()
+          }}
           onIssue={async (input, mode) => {
             // A credit note is still a normal support ticket on the customer's
             // account — auto-create one (unless an existing ticket was picked)
@@ -1006,6 +1086,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
                   })
                   await updateInvoice(invoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
                   await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance })
+                  const customer = customers.find(c => c.id === input.customerId)
+                  if (customer) await updateCustomer(customer.id, { balance: Math.max(0, customer.balance - result.appliedAmount) })
                 }
               }
             }
@@ -1034,6 +1116,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             })
             await updateInvoice(invoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
             await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance })
+            const customer = customers.find(c => c.id === note.customerId)
+            if (customer) await updateCustomer(customer.id, { balance: Math.max(0, customer.balance - result.appliedAmount) })
             void logActivity(user.displayName, `applied £${result.appliedAmount.toFixed(2)} credit from ${note.creditNumber} to ${invoice.invoiceNumber}`)
             await load()
           }}

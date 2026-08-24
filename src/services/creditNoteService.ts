@@ -19,10 +19,16 @@ export async function getCreditNoteAllocations(): Promise<CreditNoteAllocation[]
 }
 
 export async function createCreditNote(
-  input: Omit<CreditNote, "id" | "creditNumber">,
+  input: Omit<CreditNote, "id" | "creditNumber"> & { creditNumber?: string },
 ): Promise<CreditNote> {
   const existing = supabaseReady ? await databaseService.getCreditNotes() : creditNotes
-  const creditNumber = nextCreditNumber(existing)
+  const creditNumber = input.creditNumber?.trim() || nextCreditNumber(existing)
+  if (existing.some(note => note.customerId === input.customerId && note.creditNumber.toLowerCase() === creditNumber.toLowerCase() && note.date === input.date)) {
+    throw new Error(`Credit note ${creditNumber} has already been imported for this customer and date.`)
+  }
+  if (existing.some(note => note.creditNumber.toLowerCase() === creditNumber.toLowerCase())) {
+    throw new Error(`Credit note ${creditNumber} already exists.`)
+  }
   const full = { ...input, creditNumber }
   if (supabaseReady) return databaseService.createCreditNote(full)
   await new Promise(r => setTimeout(r, 100))

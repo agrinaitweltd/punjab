@@ -12,9 +12,13 @@ export type ImportedInvoiceItem = {
   goodsValue: number
   vatCode: string
   vatRate: number
+  vatAmount?: number
 }
 
+export type ImportDocumentType = 'invoice' | 'credit_note'
+
 export type ImportedLegacyInvoice = {
+  documentType: 'invoice'
   customer: {
     companyName: string
     address: string
@@ -44,6 +48,31 @@ export type ImportedLegacyInvoice = {
   debug: { rawLines: string[]; normalizedLines: string[] }
   source?: { name: string; type: string; size: number; dataUri: string }
 }
+
+export type ImportedCreditNote = {
+  documentType: 'credit_note'
+  customer: ImportedLegacyInvoice['customer']
+  creditNote: {
+    creditNumber: string
+    date: string
+    originalInvoiceReference: string
+    deliveryAccount: string
+    salesman: string
+    currency: 'GBP'
+    totalGoods: number
+    vat: number
+    grandTotal: number
+    packages: number
+  }
+  items: ImportedInvoiceItem[]
+  vatSummary: ImportedLegacyInvoice['vatSummary']
+  confidence: Record<string, FieldConfidence>
+  warnings: string[]
+  debug: ImportedLegacyInvoice['debug']
+  source?: ImportedLegacyInvoice['source']
+}
+
+export type ImportedFinancialDocument = ImportedLegacyInvoice | ImportedCreditNote
 
 const money = (value = '') => Number(value.replace(/[^\d.-]/g, '')) || 0
 const compact = (value = '') => value.replace(/\s+/g, ' ').trim()
@@ -113,23 +142,44 @@ function metadataSection(lines: string[]) {
   return { date: isoDate(dateToken), accountNumber, deliveryAccount, invoiceAccount, salesman, invoiceNumber }
 }
 
-function productSection(lines: string[]): ImportedInvoiceItem[] {
+function descriptiveCells(values: string[]) {
+  if (values.length <= 3) return { product: values[0] ?? '', variety: values[1] ?? '', size: values[2] ?? '' }
+  const sizeIndex = values.findIndex(value => /\d\s*(?:KG|G|LB|L|ML|MM|CM)|\d+\s*[Xx]\s*\d+|BOX|CASE|PUNNET|EACH/i.test(value))
+  if (sizeIndex >= 1) return {
+    product: values.slice(0, Math.max(1, sizeIndex - 1)).join(' '),
+    variety: values.slice(Math.max(1, sizeIndex - 1), sizeIndex).join(' '),
+    size: values.slice(sizeIndex).join(' '),
+  }
+  return { product: values.slice(0, -2).join(' '), variety: values.at(-2) ?? '', size: values.at(-1) ?? '' }
+}
+
+function parseProductRow(row: string): ImportedInvoiceItem | null {
+  let cells = columns(row)
+  if (cells.length < 7) cells = compact(row).split(' ')
+  if (cells.length < 7 || !/^\d+$/.test(cells[0]) || !/^\d+(?:\.\d+)?$/.test(cells[1])) return null
+  const vatCode = cells.at(-1) ?? ''
+  const goodsValueToken = cells.at(-2) ?? ''
+  const priceToken = cells.at(-3) ?? ''
+  if (!/^-?[\d,.]+$/.test(goodsValueToken) || !/^-?[\d,.]+$/.test(priceToken) || !/^[A-Z0-9.-]+$/i.test(vatCode)) return null
+  const description = descriptiveCells(cells.slice(2, -3))
+  return {
+    line: cells[0], quantity: Math.abs(money(cells[1])), ...description,
+    price: Math.abs(money(priceToken)), goodsValue: Math.abs(money(goodsValueToken)),
+    vatCode, vatRate: 0,
+  }
+}
+
+export function productSection(lines: string[]): ImportedInvoiceItem[] {
   const headerIndex = lines.findIndex(line => /\bLine\b/i.test(line) && /\bQty\b/i.test(line) && /\bProduct\b/i.test(line) && /\bGoods\b/i.test(line))
   if (headerIndex < 0) return []
   const items: ImportedInvoiceItem[] = []
   for (const row of lines.slice(headerIndex + 1)) {
-    if (/PACKAGES|Total Goods|Grand Total|%Rate/i.test(row)) break
-    const cells = columns(row)
-    if (cells.length < 7 || !/^\d+$/.test(cells[0]) || !/^\d+(?:\.\d+)?$/.test(cells[1])) continue
-    const vatCode = cells.at(-1) ?? ''
-    const goodsValue = money(cells.at(-2))
-    const price = money(cells.at(-3))
-    const descriptive = cells.slice(2, -3)
-    items.push({
-      line: cells[0], quantity: money(cells[1]), product: descriptive[0] ?? '',
-      variety: descriptive[1] ?? '', size: descriptive[2] ?? '', price, goodsValue,
-      vatCode, vatRate: 0,
-    })
+    if (/\bPACKAGES\b|Total\s+(?:Credit\s+)?Goods|Grand\s+Total|Credit\s+Total|\bVC\s+%?Rate\b|\bV\.A\.T\b/i.test(row)) break
+    const parsed = parseProductRow(row)
+    if (parsed) { items.push(parsed); continue }
+    if (items.length && compact(row) && !/^(?:Page|E\.?&O\.?E|VAT Reg|Tel:|Fax:)/i.test(compact(row))) {
+      items[items.length - 1].product = compact(`${items[items.length - 1].product} ${row}`)
+    }
   }
   return items
 }
@@ -138,12 +188,21 @@ function vatSection(lines: string[]) {
   const headerIndex = lines.findIndex(line => /\bVC\b/i.test(line) && /%Rate/i.test(line) && /V\.A\.T/i.test(line))
   if (headerIndex < 0) return []
   for (const row of lines.slice(headerIndex + 1, headerIndex + 4)) {
-    const cells = columns(row)
+    let cells = columns(row)
+    if (cells.length < 4) cells = compact(row).split(' ')
     if (cells.length >= 4 && cells.slice(0, 4).every(cell => /^-?[\d,.]+$/.test(cell))) {
       return [{ code: cells[0], rate: money(cells[1]), goods: money(cells[2]), vat: money(cells[3]) }]
     }
   }
   return []
+}
+
+function applyVatRates(items: ImportedInvoiceItem[], summary: Array<{ code: string; rate: number; goods: number; vat: number }>) {
+  const rates = new Map(summary.map(row => [row.code.trim().toLowerCase(), row.rate]))
+  for (const item of items) {
+    item.vatRate = rates.get(item.vatCode.trim().toLowerCase()) ?? item.vatRate
+    item.vatAmount = item.goodsValue * item.vatRate / 100
+  }
 }
 
 function confidence(value: unknown): FieldConfidence {
@@ -158,6 +217,7 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   const metadata = metadataSection(lines)
   const items = productSection(lines)
   const vatSummary = vatSection(lines)
+  applyVatRates(items, vatSummary)
   const totalGoods = money(afterLabel(lines, /Total Goods\s*:?/i)) || items.reduce((sum, item) => sum + item.goodsValue, 0)
   const vat = money(afterLabel(lines, /Total V\.A\.T\s*:?/i)) || vatSummary.reduce((sum, row) => sum + row.vat, 0)
   const grandTotal = money(afterLabel(lines, /Grand Total\s*:?/i)) || totalGoods + vat
@@ -172,6 +232,7 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   if (items.length && Math.abs(items.reduce((sum, item) => sum + item.goodsValue, 0) - totalGoods) > 0.02) warnings.push('The product values do not match the goods total.')
 
   return {
+    documentType: 'invoice',
     customer: { ...customer, email: '', accountNumber: metadata.accountNumber, ledgerBalance },
     invoice: { invoiceNumber: metadata.invoiceNumber, invoiceAccount: metadata.invoiceAccount, deliveryAccount: metadata.deliveryAccount, salesman: metadata.salesman, date: metadata.date, currency: 'GBP', totalGoods, vat, grandTotal, packages },
     items,
@@ -182,6 +243,48 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
       invoiceNumber: metadata.invoiceNumber ? 'high' : 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
       totals: Math.abs(totalGoods + vat - grandTotal) <= 0.02 ? 'high' : 'review',
     },
+    warnings,
+    debug: { rawLines: lines, normalizedLines },
+  }
+}
+
+export function detectImportDocumentType(rawLines: string[]): ImportDocumentType {
+  const heading = rawLines.slice(0, 20).join(' ')
+  return /\bCREDIT\s+(?:NOTE|MEMO|ADVICE)\b/i.test(heading) ? 'credit_note' : 'invoice'
+}
+
+export function parseCreditNoteLines(rawLines: string[]): ImportedCreditNote {
+  const lines = rawLines.map(line => line.replace(/\u00a0/g, ' ')).filter(line => line.trim())
+  const normalizedLines = lines.map(compact)
+  const customer = customerSection(lines)
+  const metadata = metadataSection(lines)
+  const items = productSection(lines)
+  const vatSummary = vatSection(lines)
+  applyVatRates(items, vatSummary)
+  const explicitNumber = normalizedLines.map(line =>
+    line.match(/\b(?:Credit\s+(?:Note|Memo)\s+(?:No\.?|Number|#)|Credit\s+Number)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{1,})\b/i)?.[1]
+      ?? line.match(/\b(C(?:N|R)[-/#]?\d[A-Z0-9/-]*)\b/i)?.[1]
+  ).find(Boolean) ?? ''
+  const originalInvoiceReference = normalizedLines.map(line => line.match(/\b(?:Original\s+Invoice|Invoice\s+Reference|Invoice\s+No\.?)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{1,})\b/i)?.[1]).find(Boolean) ?? ''
+  const totalGoods = Math.abs(money(afterLabel(lines, /Total\s+(?:Credit\s+)?Goods\s*:?/i))) || items.reduce((sum, item) => sum + item.goodsValue, 0)
+  const vat = Math.abs(money(afterLabel(lines, /Total\s+(?:V\.A\.T|VAT|Credit\s+VAT)\s*:?/i))) || Math.abs(vatSummary.reduce((sum, row) => sum + row.vat, 0))
+  const grandTotal = Math.abs(money(afterLabel(lines, /(?:Grand\s+Total|Credit\s+Total|Total\s+Credit)(?!\s+(?:Goods|VAT|V\.A\.T))\s*:?/i))) || totalGoods + vat
+  const packages = Math.abs(money(lines.find(line => /\bPACKAGES\b/i.test(line))?.match(/\d+(?:\.\d+)?/)?.[0]))
+  const ledgerBalance = money(afterLabel(lines, /S\/L Balance\s*:?/i))
+  const warnings: string[] = []
+  if (detectImportDocumentType(lines) !== 'credit_note') warnings.push('This document is not labelled as a credit note. Upload it through invoice import instead.')
+  if (!customer.companyName) warnings.push('Please check the customer company name.')
+  if (!metadata.accountNumber) warnings.push('Please check the customer account number.')
+  if (!explicitNumber) warnings.push('Please check the credit note number.')
+  if (!metadata.date) warnings.push('Please check the credit note date.')
+  if (!items.length) warnings.push('No credited product rows were found.')
+  if (Math.abs(totalGoods + vat - grandTotal) > 0.02) warnings.push('The credited goods plus VAT does not match the total credit.')
+  return {
+    documentType: 'credit_note',
+    customer: { ...customer, email: '', accountNumber: metadata.accountNumber, ledgerBalance },
+    creditNote: { creditNumber: explicitNumber, date: metadata.date, originalInvoiceReference, deliveryAccount: metadata.deliveryAccount, salesman: metadata.salesman, currency: 'GBP', totalGoods, vat, grandTotal, packages },
+    items, vatSummary,
+    confidence: { companyName: confidence(customer.companyName), accountNumber: confidence(metadata.accountNumber), creditNumber: confidence(explicitNumber), date: confidence(metadata.date), products: items.length ? 'high' : 'missing', totals: Math.abs(totalGoods + vat - grandTotal) <= 0.02 ? 'high' : 'review' },
     warnings,
     debug: { rawLines: lines, normalizedLines },
   }
@@ -199,6 +302,13 @@ function fileToDataUri(file: File): Promise<string> {
 export async function parseLegacyInvoice(file: File, onProgress?: (message: string) => void): Promise<ImportedLegacyInvoice> {
   const rawLines = await extractDocumentLines(file, onProgress)
   const parsed = parseLegacyInvoiceLines(rawLines)
+  parsed.source = { name: file.name, type: file.type || 'application/pdf', size: file.size, dataUri: await fileToDataUri(file) }
+  return parsed
+}
+
+export async function parseFinancialDocument(file: File, onProgress?: (message: string) => void): Promise<ImportedFinancialDocument> {
+  const rawLines = await extractDocumentLines(file, onProgress)
+  const parsed = detectImportDocumentType(rawLines) === 'credit_note' ? parseCreditNoteLines(rawLines) : parseLegacyInvoiceLines(rawLines)
   parsed.source = { name: file.name, type: file.type || 'application/pdf', size: file.size, dataUri: await fileToDataUri(file) }
   return parsed
 }

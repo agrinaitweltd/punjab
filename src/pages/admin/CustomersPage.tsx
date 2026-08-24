@@ -14,7 +14,7 @@ import { CustomerStatementModal } from './CustomerStatementModal'
 import { SendWhatsAppModal } from '../../components/SendWhatsAppModal'
 import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
 import { SALESMEN } from '../../lib/salesmen'
-import { parseLegacyInvoice, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
+import { parseFinancialDocument, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
 
 const initialForm = {
   companyName: '',
@@ -245,7 +245,11 @@ export function CustomersPage({
   const readFirstInvoice = async (file?: File) => {
     if (!file) return
     setAddError(''); setInvoiceReview(null); setInvoiceReading('Reading invoice...')
-    try { setInvoiceReview(await parseLegacyInvoice(file, setInvoiceReading)) } catch { setAddError('Could not read that invoice. Try the original PDF, JPG or PNG file.') }
+    try {
+      const parsed = await parseFinancialDocument(file, setInvoiceReading)
+      if (parsed.documentType === 'credit_note') setAddError('This document is a credit note. Import it from the Credit Notes page.')
+      else setInvoiceReview(parsed)
+    } catch { setAddError('Could not read that invoice. Try the original PDF, JPG or PNG file.') }
     setInvoiceReading('')
   }
 
