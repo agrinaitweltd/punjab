@@ -295,7 +295,7 @@ export function CustomersPage({
     if (!/^\d{6}$/.test(importCustomer.accountNumber)) { setAddError('Account Number must be exactly six digits from the document Num field.'); return }
     if (!importCustomer.companyName.trim()) { setAddError('Company name is required.'); return }
     if (invoiceReview && !invoiceReview.invoice.invoiceNumber.trim()) { setAddError('Enter the invoice number shown on the source invoice before saving.'); return }
-    if (creditReview && (!creditReview.creditNote.creditNumber.trim() || creditReview.creditNote.grandTotal === 0)) { setAddError('Enter the credit note number and a non-zero credit total before saving.'); return }
+    if (creditReview && creditReview.creditNote.grandTotal === 0) { setAddError('Enter a non-zero credit total before saving.'); return }
     if (documents.some(document => !document.items.length || document.items.some(item => !item.product.trim()))) { setAddError('Each document needs at least one valid product row. Negative and zero values are allowed.'); return }
     setAdding(true); setAddError('')
     try {
@@ -460,7 +460,6 @@ export function CustomersPage({
             {creditReview && <section className="stack">
               <h3>Credit Note</h3>
               <div className="form-grid">
-                <Input label="Credit Note Number" value={creditReview.creditNote.creditNumber} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, creditNumber: event.target.value } })} />
                 <Input label="Credit Note Date" type="date" value={creditReview.creditNote.date} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, date: event.target.value } })} />
                 <Input label="Original Invoice Reference" value={creditReview.creditNote.originalInvoiceReference} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, originalInvoiceReference: event.target.value } })} />
                 <Input label="Total Credit Goods" type="number" value={String(creditReview.creditNote.totalGoods)} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, totalGoods: Number(event.target.value) || 0 } })} />

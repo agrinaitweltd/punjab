@@ -446,15 +446,18 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         continue
       }
 
-      const identity = { creditNumber: document.creditNote.creditNumber, customerId: customer.id, date: document.creditNote.date }
-      if (findDuplicateCreditNote(availableCredits, identity)) throw new Error('This credit note has already been imported for that customer and date.')
-      if (availableCredits.some(note => note.creditNumber.trim().toLowerCase() === document.creditNote.creditNumber.trim().toLowerCase())) throw new Error('That credit note number already exists.')
+      const sourceCreditNumber = document.creditNote.creditNumber.trim()
+      if (sourceCreditNumber) {
+        const identity = { creditNumber: sourceCreditNumber, customerId: customer.id, date: document.creditNote.date }
+        if (findDuplicateCreditNote(availableCredits, identity)) throw new Error('This credit note has already been imported for that customer and date.')
+        if (availableCredits.some(note => note.creditNumber.trim().toLowerCase() === sourceCreditNumber.toLowerCase())) throw new Error('That credit note number already exists.')
+      }
       const linkedInvoice = document.creditNote.originalInvoiceReference
         ? availableInvoices.find(invoice => invoice.customerId === customer.id && invoice.invoiceNumber.trim().toLowerCase() === document.creditNote.originalInvoiceReference.trim().toLowerCase())
         : undefined
       const accountingAmount = Math.abs(document.creditNote.grandTotal)
       const note = await createCreditNote({
-        creditNumber: document.creditNote.creditNumber, customerId: customer.id, amount: accountingAmount,
+        creditNumber: sourceCreditNumber || undefined, customerId: customer.id, amount: accountingAmount,
         reason: document.creditNote.originalInvoiceReference ? `Imported credit for invoice ${document.creditNote.originalInvoiceReference}` : 'Imported credit note',
         date: document.creditNote.date, linkedInvoiceId: linkedInvoice?.id, status: 'Active', remainingBalance: accountingAmount,
         originalInvoiceReference: document.creditNote.originalInvoiceReference,

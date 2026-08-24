@@ -16,6 +16,7 @@
     "test:live-auth": "node scripts/test-live-login.mjs",
     "test:production-smoke": "node scripts/test-production-smoke.mjs",
     "test:live-rls": "node scripts/test-live-rls.mjs",
+    "test:all-admin-rls": "node scripts/test-all-admin-rls.mjs",
     "test:production-ui": "playwright test tests/production-ui.spec.js --reporter=line",
     "lint": "oxlint",
     "preview": "vite preview"

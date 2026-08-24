@@ -273,7 +273,6 @@ export function parseCreditNoteLines(rawLines: string[]): ImportedCreditNote {
   if (detectImportDocumentType(lines) !== 'credit_note') warnings.push('This document is not labelled as a credit note. Upload it through invoice import instead.')
   if (!customer.companyName) warnings.push('Please check the customer company name.')
   if (!metadata.accountNumber) warnings.push('Please check the customer account number.')
-  if (!explicitNumber) warnings.push('Please check the credit note number.')
   if (!metadata.date) warnings.push('Please check the credit note date.')
   if (!items.length) warnings.push('No credited product rows were found.')
   if (Math.abs(totalGoods + vat - grandTotal) > 0.02) warnings.push('The credited goods plus VAT does not match the total credit.')
