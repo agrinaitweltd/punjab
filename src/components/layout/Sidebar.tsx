@@ -8,7 +8,7 @@ const CUSTOMER_NAV_PERMISSION_KEY: Partial<Record<string, keyof SubAccountPermis
 }
 
 const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
-  products: "products", orders: "orders", customers: "customers", "add-customer": "customers", tickets: "tickets",
+  products: "products", orders: "orders", customers: "customers", "add-customer": "customersCreate", tickets: "tickets",
   payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
   "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage", "payment-reminders": "payments",
   stats: "stats", "day-check": "stats", stock: "stock", "data-extract": "extracts",

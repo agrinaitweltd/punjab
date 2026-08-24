@@ -14,7 +14,8 @@ import { CustomerStatementModal } from './CustomerStatementModal'
 import { SendWhatsAppModal } from '../../components/SendWhatsAppModal'
 import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
 import { SALESMEN } from '../../lib/salesmen'
-import { parseFinancialDocument, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
+import { parseFinancialDocument, type ImportedCreditNote, type ImportedFinancialDocument, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
+import { matchImportedCustomer } from '../../lib/importMatching'
 
 const initialForm = {
   companyName: '',
@@ -44,6 +45,10 @@ const initialFullForm = {
   salesmanName: '',
 }
 
+const emptyImportedCustomer: ImportedLegacyInvoice['customer'] = {
+  companyName: '', address: '', postcode: '', phone: '', normalizedPhone: '', email: '', accountNumber: '', ledgerBalance: 0,
+}
+
 export function CustomersPage({
   customers,
   deliveryAreas,
@@ -58,9 +63,10 @@ export function CustomersPage({
   whatsappTemplates = [],
   onSendWhatsApp,
   onSaveWhatsAppTemplate,
-  onCreateFromInvoice,
+  onCreateFromDocuments,
   onNavigate,
   onInviteCustomer,
+  canCreate = true,
   openAddRequest = 0,
 }: {
   customers: Customer[]
@@ -78,9 +84,10 @@ export function CustomersPage({
   whatsappTemplates?: WhatsAppTemplate[]
   onSendWhatsApp?: (phone: string, message: string, customer: Customer) => Promise<void>
   onSaveWhatsAppTemplate?: (name: string, message: string) => Promise<void>
-  onCreateFromInvoice?: (data: ImportedLegacyInvoice) => Promise<void>
+  onCreateFromDocuments?: (documents: ImportedFinancialDocument[]) => Promise<{ customerName: string; accountNumber: string }>
   onNavigate?: (page: string) => void
   onInviteCustomer?: (accountNumber: string, email: string, phone: string) => Promise<void>
+  canCreate?: boolean
   openAddRequest?: number
 }) {
   const [whatsappTarget, setWhatsappTarget] = useState<Customer | null>(null)
@@ -93,8 +100,11 @@ export function CustomersPage({
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
-  const [addMode, setAddMode] = useState<'invoice' | 'invite' | 'full'>('invoice')
+  const [addMode, setAddMode] = useState<'documents' | 'invite' | 'full'>('documents')
+  const [documentChoice, setDocumentChoice] = useState<'invoice' | 'credit_note' | 'both'>('invoice')
   const [invoiceReview, setInvoiceReview] = useState<ImportedLegacyInvoice | null>(null)
+  const [creditReview, setCreditReview] = useState<ImportedCreditNote | null>(null)
+  const [importCustomer, setImportCustomer] = useState<ImportedLegacyInvoice['customer']>(emptyImportedCustomer)
   const [invoiceReading, setInvoiceReading] = useState('')
   const [onboardingCustomer, setOnboardingCustomer] = useState('')
   const [onboardingContact, setOnboardingContact] = useState(false)
@@ -119,7 +129,7 @@ export function CustomersPage({
 
   useEffect(() => {
     if (!openAddRequest) return
-    setNewEmail(''); setFullForm(initialFullForm); setAddMode('invoice'); setInvoiceReview(null)
+    setNewEmail(''); setFullForm(initialFullForm); setAddMode('documents'); setDocumentChoice('invoice'); setInvoiceReview(null); setCreditReview(null); setImportCustomer(emptyImportedCustomer)
     setOnboardingCustomer(''); setOnboardingContact(false); setOnboardingAccount(''); setAddError(''); setShowAdd(true)
   }, [openAddRequest])
 
@@ -242,28 +252,58 @@ export function CustomersPage({
     setImportStatement(null); setImportMsg(''); setImportDone('')
   }
 
-  const readFirstInvoice = async (file?: File) => {
+  const mergeImportedCustomer = (next: ImportedLegacyInvoice['customer']) => {
+    setImportCustomer(current => ({
+      companyName: current.companyName || next.companyName,
+      address: current.address || next.address,
+      postcode: current.postcode || next.postcode,
+      phone: current.phone || next.phone,
+      normalizedPhone: current.normalizedPhone || next.normalizedPhone,
+      email: current.email || next.email,
+      accountNumber: current.accountNumber || next.accountNumber,
+      ledgerBalance: current.ledgerBalance || next.ledgerBalance,
+    }))
+  }
+
+  const readCustomerDocument = async (file: File | undefined, expectedType: 'invoice' | 'credit_note') => {
     if (!file) return
-    setAddError(''); setInvoiceReview(null); setInvoiceReading('Reading invoice...')
+    setAddError(''); setInvoiceReading(`Reading ${expectedType === 'invoice' ? 'invoice' : 'credit note'}...`)
     try {
       const parsed = await parseFinancialDocument(file, setInvoiceReading)
-      if (parsed.documentType === 'credit_note') setAddError('This document is a credit note. Import it from the Credit Notes page.')
-      else setInvoiceReview(parsed)
-    } catch { setAddError('Could not read that invoice. Try the original PDF, JPG or PNG file.') }
+      if (parsed.documentType !== expectedType) {
+        setAddError(`That file is labelled as an ${parsed.documentType === 'invoice' ? 'invoice' : 'credit note'}. Upload it in the matching document field.`)
+      } else {
+        const otherCustomer = expectedType === 'invoice' ? creditReview?.customer : invoiceReview?.customer
+        if (otherCustomer?.accountNumber && parsed.customer.accountNumber && otherCustomer.accountNumber !== parsed.customer.accountNumber) {
+          setAddError('The invoice and credit note have different account numbers. Import them separately or correct the account details.')
+        } else {
+          mergeImportedCustomer(parsed.customer)
+          if (parsed.documentType === 'invoice') setInvoiceReview(parsed)
+          else setCreditReview(parsed)
+        }
+      }
+    } catch { setAddError('Could not read that document. Try the original PDF, JPG or PNG file.') }
     setInvoiceReading('')
   }
 
-  const submitInvoiceCustomer = async () => {
-    if (!invoiceReview || !onCreateFromInvoice) return
-    if (!/^\d{6}$/.test(invoiceReview.customer.accountNumber)) { setAddError('Account Number must be exactly six digits from the invoice Num field.'); return }
-    if (!invoiceReview.customer.companyName.trim()) { setAddError('Company name is required.'); return }
-    if (!invoiceReview.invoice.invoiceNumber.trim()) { setAddError('Enter the invoice number shown on the source invoice before saving.'); return }
+  const submitCustomerDocuments = async () => {
+    if (!onCreateFromDocuments) return
+    const documents: ImportedFinancialDocument[] = [invoiceReview, creditReview].filter((document): document is ImportedFinancialDocument => Boolean(document))
+    if (documentChoice === 'invoice' && !invoiceReview) { setAddError('Upload and review an invoice first.'); return }
+    if (documentChoice === 'credit_note' && !creditReview) { setAddError('Upload and review a credit note first.'); return }
+    if (documentChoice === 'both' && (!invoiceReview || !creditReview)) { setAddError('Upload and review both documents first.'); return }
+    if (!/^\d{6}$/.test(importCustomer.accountNumber)) { setAddError('Account Number must be exactly six digits from the document Num field.'); return }
+    if (!importCustomer.companyName.trim()) { setAddError('Company name is required.'); return }
+    if (invoiceReview && !invoiceReview.invoice.invoiceNumber.trim()) { setAddError('Enter the invoice number shown on the source invoice before saving.'); return }
+    if (creditReview && (!creditReview.creditNote.creditNumber.trim() || creditReview.creditNote.grandTotal === 0)) { setAddError('Enter the credit note number and a non-zero credit total before saving.'); return }
+    if (documents.some(document => !document.items.length || document.items.some(item => !item.product.trim()))) { setAddError('Each document needs at least one valid product row. Negative and zero values are allowed.'); return }
     setAdding(true); setAddError('')
     try {
-      await onCreateFromInvoice(invoiceReview)
-      setInvoiceReview(null)
-      setShowAdd(false)
-    } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not create the customer and invoice.') }
+      const imported = await onCreateFromDocuments(documents.map(document => ({ ...document, customer: { ...importCustomer } })))
+      setInvoiceReview(null); setCreditReview(null); setImportCustomer(emptyImportedCustomer)
+      setOnboardingCustomer(imported.customerName); setOnboardingAccount(imported.accountNumber)
+      setContactEmail(importCustomer.email); setContactPhone(importCustomer.phone)
+    } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not import the customer documents.') }
     setAdding(false)
   }
 
@@ -306,6 +346,45 @@ export function CustomersPage({
     setImportRows([]); setImportBusy(false)
   }
 
+  const chooseDocumentType = (choice: 'invoice' | 'credit_note' | 'both') => {
+    setDocumentChoice(choice); setAddError('')
+    if (choice === 'invoice') { setCreditReview(null); setImportCustomer(invoiceReview?.customer ?? emptyImportedCustomer) }
+    if (choice === 'credit_note') { setInvoiceReview(null); setImportCustomer(creditReview?.customer ?? emptyImportedCustomer) }
+  }
+
+  const updateDocumentItem = (type: 'invoice' | 'credit_note', index: number, key: keyof ImportedLegacyInvoice['items'][number], value: string) => {
+    const numeric = ['quantity', 'price', 'goodsValue', 'vatRate', 'vatAmount'].includes(key)
+    const update = (document: ImportedLegacyInvoice | ImportedCreditNote) => ({
+      ...document,
+      items: document.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: numeric ? Number(value) : value } : item),
+    })
+    if (type === 'invoice' && invoiceReview) setInvoiceReview(update(invoiceReview) as ImportedLegacyInvoice)
+    if (type === 'credit_note' && creditReview) setCreditReview(update(creditReview) as ImportedCreditNote)
+  }
+
+  const removeDocumentItem = (type: 'invoice' | 'credit_note', index: number) => {
+    if (type === 'invoice' && invoiceReview) setInvoiceReview({ ...invoiceReview, items: invoiceReview.items.filter((_, itemIndex) => itemIndex !== index) })
+    if (type === 'credit_note' && creditReview) setCreditReview({ ...creditReview, items: creditReview.items.filter((_, itemIndex) => itemIndex !== index) })
+  }
+
+  const addDocumentItem = (type: 'invoice' | 'credit_note') => {
+    const item = { line: '', quantity: 0, product: '', variety: '', size: '', price: 0, goodsValue: 0, vatCode: '', vatRate: 0, vatAmount: 0 }
+    if (type === 'invoice' && invoiceReview) setInvoiceReview({ ...invoiceReview, items: [...invoiceReview.items, item] })
+    if (type === 'credit_note' && creditReview) setCreditReview({ ...creditReview, items: [...creditReview.items, item] })
+  }
+
+  const renderLineItems = (document: ImportedLegacyInvoice | ImportedCreditNote) => (
+    <div className="stack" key={document.documentType}>
+      <div className="invoice-builder-table"><table><thead><tr>{['Line', 'Qty', 'Product', 'Variety', 'Size', 'Price', 'Goods', 'VC', 'VAT %', 'VAT', 'Remove'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
+        {document.items.map((item, index) => <tr key={`${document.documentType}-${index}`}>
+          {(['line', 'quantity', 'product', 'variety', 'size', 'price', 'goodsValue', 'vatCode', 'vatRate', 'vatAmount'] as const).map(key => <td key={key}><input value={String(item[key] ?? '')} onChange={event => updateDocumentItem(document.documentType, index, key, event.target.value)} /></td>)}
+          <td><button type="button" className="icon-button" aria-label="Remove product" onClick={() => removeDocumentItem(document.documentType, index)}>×</button></td>
+        </tr>)}
+      </tbody></table></div>
+      <div className="actions-row"><Button variant="secondary" onClick={() => addDocumentItem(document.documentType)}>+ Add Product</Button><span className="processing-message">{document.items.length} product line{document.items.length === 1 ? '' : 's'} detected</span></div>
+    </div>
+  )
+
   return (
     <div className="stack">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
@@ -320,15 +399,15 @@ export function CustomersPage({
           <Button variant="secondary" onClick={() => setShowArchived(a => !a)}>
             {showArchived ? '← Back to Customers' : `Archived Customers${archivedCount > 0 ? ` (${archivedCount})` : ''}`}
           </Button>
-          {!showArchived && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('invoice'); setInvoiceReview(null); setOnboardingCustomer(''); setOnboardingContact(false); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
+          {!showArchived && canCreate && <Button onClick={() => { setNewEmail(''); setFullForm(initialFullForm); setAddMode('documents'); setDocumentChoice('invoice'); setInvoiceReview(null); setCreditReview(null); setImportCustomer(emptyImportedCustomer); setOnboardingCustomer(''); setOnboardingContact(false); setAddError(''); setShowAdd(true) }}>+ Add Customer</Button>}
         </div>
       </div>
 
-      <Modal open={showAdd} title={addMode === 'invoice' ? 'Create Customer from Invoice' : addMode === 'invite' ? 'Invite New Customer' : 'Create Customer Account'} onClose={() => setShowAdd(false)} wide={addMode !== 'invite'}>
+      <Modal open={showAdd} title={addMode === 'documents' ? 'Import Customer & Documents' : addMode === 'invite' ? 'Invite New Customer' : 'Create Customer Account'} onClose={() => setShowAdd(false)} wide={addMode !== 'invite'}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <button type="button" onClick={() => { setAddMode('invoice'); setAddError('') }}
-            style={{ flex: 1, padding: '9px 14px', borderRadius: 8, cursor: 'pointer', border: addMode === 'invoice' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'invoice' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13 }}>
-            From Invoice
+          <button type="button" onClick={() => { setAddMode('documents'); setAddError('') }}
+            style={{ flex: 1, padding: '9px 14px', borderRadius: 8, cursor: 'pointer', border: addMode === 'documents' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'documents' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13 }}>
+            Import Documents
           </button>
           <button type="button" onClick={() => { setAddMode('invite'); setAddError('') }}
             style={{ flex: 1, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', border: addMode === 'invite' ? '2px solid #1f7a3a' : '1.5px solid #e5e7eb', background: addMode === 'invite' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13, color: addMode === 'invite' ? '#14532d' : '#374151' }}>
@@ -340,21 +419,34 @@ export function CustomersPage({
           </button>
         </div>
 
-        {addMode === 'invoice' ? (
+        {addMode === 'documents' ? (
           <div className="stack">
-            {onboardingCustomer && !invoiceReview && !onboardingContact && <div className="onboarding-success"><strong>Customer Created / Invoice Added</strong><span>{onboardingCustomer}</span><p>Would you like to add another invoice for this customer?</p><div className="actions-row"><Button onClick={()=>setOnboardingCustomer('')}>+ Add Another Invoice</Button><Button variant="secondary" onClick={()=>setOnboardingContact(true)}>Finished Adding Invoices</Button></div></div>}
-            {onboardingContact && <div className="stack"><div className="onboarding-success"><strong>Customer Contact & Portal Access</strong><span>{onboardingCustomer}</span></div><div className="form-grid"><Input label="Email Address" type="email" value={contactEmail} onChange={e=>setContactEmail(e.target.value)}/><Input label="Telephone Number" value={contactPhone} onChange={e=>setContactPhone(e.target.value)}/></div><h3>Invite Customer to Portal?</h3><div className="actions-row"><Button disabled={!contactEmail||adding} onClick={async()=>{if(!onInviteCustomer)return;setAdding(true);await onInviteCustomer(onboardingAccount,contactEmail,contactPhone);setAdding(false);setShowAdd(false);setOnboardingContact(false);setOnboardingCustomer('')}}>{adding?'Sending...':'Send Invitation'}</Button><Button variant="secondary" onClick={()=>{setShowAdd(false);setOnboardingContact(false);setOnboardingCustomer('')}}>Not Now</Button><Button variant="ghost" onClick={()=>{setOnboardingContact(false);setOnboardingCustomer('')}}>+ Add Another Invoice</Button></div></div>}
+            {onboardingCustomer && !onboardingContact && <div className="onboarding-success"><strong>Customer & Documents Imported</strong><span>{onboardingCustomer}</span><p>Add another document for this customer or finish their contact setup.</p><div className="actions-row"><Button onClick={() => { setOnboardingCustomer(''); setDocumentChoice('invoice') }}>+ Add Another Document</Button><Button variant="secondary" onClick={() => setOnboardingContact(true)}>Finish Contact Setup</Button></div></div>}
+            {onboardingContact && <div className="stack"><div className="onboarding-success"><strong>Customer Contact & Portal Access</strong><span>{onboardingCustomer}</span></div><div className="form-grid"><Input label="Email Address" type="email" value={contactEmail} onChange={event => setContactEmail(event.target.value)} /><Input label="Telephone Number" value={contactPhone} onChange={event => setContactPhone(event.target.value)} /></div><div className="actions-row"><Button disabled={!contactEmail || adding} onClick={async () => { if (!onInviteCustomer) return; setAdding(true); await onInviteCustomer(onboardingAccount, contactEmail, contactPhone); setAdding(false); setShowAdd(false); setOnboardingContact(false); setOnboardingCustomer('') }}>{adding ? 'Sending...' : 'Send Portal Invitation'}</Button><Button variant="secondary" onClick={() => { setShowAdd(false); setOnboardingContact(false); setOnboardingCustomer('') }}>Not Now</Button></div></div>}
             {!onboardingCustomer && !onboardingContact && <>
-            <label className="invoice-upload-zone"><strong>Upload First Invoice</strong><span>PDF, JPG, JPEG or PNG</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e => readFirstInvoice(e.target.files?.[0])} /></label>
+            <div className="actions-row" style={{ flexWrap: 'wrap' }} role="group" aria-label="Document import method">
+              {([['invoice', 'Invoice'], ['credit_note', 'Credit Note'], ['both', 'Both Invoice & Credit Note']] as const).map(([value, label]) => <Button key={value} variant={documentChoice === value ? 'primary' : 'secondary'} onClick={() => chooseDocumentType(value)}>{label}</Button>)}
+            </div>
+            <div className="form-grid">
+              {(documentChoice === 'invoice' || documentChoice === 'both') && <label className="invoice-upload-zone"><strong>{invoiceReview ? `Invoice: ${invoiceReview.source?.name}` : 'Upload Invoice'}</strong><span>PDF, JPG, JPEG or PNG</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={event => readCustomerDocument(event.target.files?.[0], 'invoice')} /></label>}
+              {(documentChoice === 'credit_note' || documentChoice === 'both') && <label className="invoice-upload-zone"><strong>{creditReview ? `Credit Note: ${creditReview.source?.name}` : 'Upload Credit Note'}</strong><span>PDF, JPG, JPEG or PNG</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={event => readCustomerDocument(event.target.files?.[0], 'credit_note')} /></label>}
+            </div>
             {invoiceReading && <p className="processing-message">{invoiceReading}</p>}
-            {invoiceReview && <>
+            {(invoiceReview || creditReview) && <>
+              <h3>Customer Details</h3>
               <div className="form-grid">
-                <Input label="Company Name" value={invoiceReview.customer.companyName} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, companyName: e.target.value } })} />
-                <Input label="Account Number" value={invoiceReview.customer.accountNumber} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, accountNumber: e.target.value.replace(/\D/g,'').slice(0,6) } })} />
-                <div className="wide"><Input label="Address" value={invoiceReview.customer.address} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, address: e.target.value } })} /></div>
-                <Input label="Postcode" value={invoiceReview.customer.postcode} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, postcode: e.target.value.toUpperCase() } })} />
-                <Input label="Telephone" value={invoiceReview.customer.phone} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, phone: e.target.value } })} />
-                <Input label="Email" value={invoiceReview.customer.email} onChange={e => setInvoiceReview({ ...invoiceReview, customer: { ...invoiceReview.customer, email: e.target.value } })} />
+                <Input label="Company Name" value={importCustomer.companyName} onChange={event => setImportCustomer({ ...importCustomer, companyName: event.target.value })} />
+                <Input label="Account Number" value={importCustomer.accountNumber} onChange={event => setImportCustomer({ ...importCustomer, accountNumber: event.target.value.replace(/\D/g, '').slice(0, 6) })} />
+                <div className="wide"><Input label="Address" value={importCustomer.address} onChange={event => setImportCustomer({ ...importCustomer, address: event.target.value })} /></div>
+                <Input label="Postcode" value={importCustomer.postcode} onChange={event => setImportCustomer({ ...importCustomer, postcode: event.target.value.toUpperCase() })} />
+                <Input label="Telephone" value={importCustomer.phone} onChange={event => setImportCustomer({ ...importCustomer, phone: event.target.value })} />
+                <Input label="Email" value={importCustomer.email} onChange={event => setImportCustomer({ ...importCustomer, email: event.target.value })} />
+              </div>
+              {matchImportedCustomer(customers, importCustomer) && <p className="processing-message">Existing Customer Found: {matchImportedCustomer(customers, importCustomer)?.companyName}</p>}
+            </>}
+            {invoiceReview && <section className="stack">
+              <h3>Invoice</h3>
+              <div className="form-grid">
                 <Input label="Invoice Number (Invoice Acc)" value={invoiceReview.invoice.invoiceNumber} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, invoiceNumber: e.target.value, invoiceAccount: e.target.value } })} />
                 <Input label="Invoice Date" type="date" value={invoiceReview.invoice.date} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, date: e.target.value } })} />
                 <Input label="Total Goods" type="number" value={String(invoiceReview.invoice.totalGoods)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, totalGoods: Number(e.target.value) || 0 } })} />
@@ -362,15 +454,24 @@ export function CustomersPage({
                 <Input label="Grand Total (£)" type="number" value={String(invoiceReview.invoice.grandTotal)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, grandTotal: Number(e.target.value) || 0 } })} />
                 <Input label="Packages" type="number" value={String(invoiceReview.invoice.packages)} onChange={e => setInvoiceReview({ ...invoiceReview, invoice: { ...invoiceReview.invoice, packages: Number(e.target.value) || 0 } })} />
               </div>
-              <div className="invoice-builder-table"><table><thead><tr>{['Line','Qty','Product','Variety','Size','Price','Goods','VAT %','Remove'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{invoiceReview.items.map((item,index)=><tr key={index}>{(['line','quantity','product','variety','size','price','goodsValue','vatRate'] as const).map(key=><td key={key}><input value={String(item[key])} onChange={e=>setInvoiceReview({...invoiceReview,items:invoiceReview.items.map((x,i)=>i===index?{...x,[key]:['quantity','price','goodsValue','vatRate'].includes(key)?Number(e.target.value):e.target.value}:x)})}/></td>)}<td><button className="icon-button" onClick={()=>setInvoiceReview({...invoiceReview,items:invoiceReview.items.filter((_,i)=>i!==index)})}>×</button></td></tr>)}</tbody></table></div>
-              <Button variant="secondary" onClick={()=>setInvoiceReview({...invoiceReview,items:[...invoiceReview.items,{line:'',quantity:1,product:'',variety:'',size:'',price:0,goodsValue:0,vatCode:'',vatRate:0}]})}>+ Add Product</Button>
-              {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber) && <p className="processing-message">Existing Customer Found: {customers.find(c => c.customerNumber === invoiceReview.customer.accountNumber)?.companyName}</p>}
-              {invoiceReview.confidence.invoiceNumber !== 'high' && !invoiceReview.invoice.invoiceNumber && <p className="error-message"><strong>Invoice Acc could not be detected.</strong> Please enter the invoice number manually.</p>}
+              {renderLineItems(invoiceReview)}
               {invoiceReview.warnings.map(w => <p className="error-message" key={w}>{w}</p>)}
-              {import.meta.env.DEV && <details><summary>Extraction diagnostics</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>{JSON.stringify(invoiceReview.debug, null, 2)}</pre></details>}
-              <div className="actions-row"><Button onClick={submitInvoiceCustomer} disabled={adding}>{adding ? 'Saving...' : customers.some(c => c.customerNumber === invoiceReview.customer.accountNumber) ? 'Add Invoice to Existing Customer' : 'Create Customer & Add Invoice'}</Button></div>
-            </>}
+            </section>}
+            {creditReview && <section className="stack">
+              <h3>Credit Note</h3>
+              <div className="form-grid">
+                <Input label="Credit Note Number" value={creditReview.creditNote.creditNumber} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, creditNumber: event.target.value } })} />
+                <Input label="Credit Note Date" type="date" value={creditReview.creditNote.date} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, date: event.target.value } })} />
+                <Input label="Original Invoice Reference" value={creditReview.creditNote.originalInvoiceReference} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, originalInvoiceReference: event.target.value } })} />
+                <Input label="Total Credit Goods" type="number" value={String(creditReview.creditNote.totalGoods)} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, totalGoods: Number(event.target.value) || 0 } })} />
+                <Input label="VAT Credit" type="number" value={String(creditReview.creditNote.vat)} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, vat: Number(event.target.value) || 0 } })} />
+                <Input label="Total Credit" type="number" value={String(creditReview.creditNote.grandTotal)} onChange={event => setCreditReview({ ...creditReview, creditNote: { ...creditReview.creditNote, grandTotal: Number(event.target.value) || 0 } })} />
+              </div>
+              {renderLineItems(creditReview)}
+              {creditReview.warnings.map(warning => <p className="error-message" key={warning}>{warning}</p>)}
+            </section>}
             {addError && <p className="error-message">{addError}</p>}
+            {(invoiceReview || creditReview) && <div className="actions-row"><Button onClick={submitCustomerDocuments} disabled={adding}>{adding ? 'Saving...' : 'Import Customer & Document'}</Button><Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button></div>}
             </>}
           </div>
         ) : addMode === 'invite' ? (

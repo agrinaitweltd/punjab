@@ -17,10 +17,10 @@ export async function saveCreditNoteItems(creditNoteId: string, items: ImportedI
     variety: item.variety,
     size: item.size,
     price: item.price,
-    goods_value: item.goodsValue || item.quantity * item.price,
+    goods_value: item.goodsValue,
     vat_code: item.vatCode,
     vat_rate: item.vatRate,
-    vat_amount: item.vatAmount ?? (item.goodsValue || item.quantity * item.price) * item.vatRate / 100,
+    vat_amount: item.vatAmount ?? item.goodsValue * item.vatRate / 100,
   }))
   const { error } = await db().from('credit_note_items').insert(rows)
   if (error) throw new Error(`Could not store credited products: ${error.message}`)

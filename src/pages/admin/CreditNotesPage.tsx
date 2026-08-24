@@ -5,12 +5,11 @@ import { Modal } from "../../components/ui/Modal"
 import { Input, Select, TextArea } from "../../components/ui/Input"
 import { invoiceOutstanding } from "../../lib/creditNotes"
 import { confirmAction, showNotice } from "../../lib/appDialogs"
-import { parseFinancialDocument, type ImportedCreditNote } from "../../lib/invoiceImport"
 
 type IssueMode = "invoice" | "account"
 
 export function CreditNotesPage({
-  creditNotes, allocations, customers, invoices, tickets, onIssue, onImport, onEdit, onVoid, onApply, canManage = true, openCreditNoteId,
+  creditNotes, allocations, customers, invoices, tickets, onIssue, onEdit, onVoid, onApply, canManage = true, openCreditNoteId,
 }: {
   creditNotes: CreditNote[]
   allocations: CreditNoteAllocation[]
@@ -18,7 +17,6 @@ export function CreditNotesPage({
   invoices: Invoice[]
   tickets: SupportTicket[]
   onIssue: (input: { customerId: string; amount: number; reason: string; linkedTicketId?: string; linkedInvoiceId?: string }, mode: IssueMode) => Promise<void>
-  onImport?: (document: ImportedCreditNote) => Promise<void>
   onEdit: (id: string, input: { reason: string; amount: number }) => Promise<void>
   onVoid: (note: CreditNote) => Promise<void>
   onApply: (note: CreditNote, invoiceId: string, amount: number) => Promise<void>
@@ -40,9 +38,6 @@ export function CreditNotesPage({
   const [issueReason, setIssueReason] = useState("")
   const [issueError, setIssueError] = useState("")
   const [issueBusy, setIssueBusy] = useState(false)
-  const [importReview, setImportReview] = useState<ImportedCreditNote | null>(null)
-  const [importProgress, setImportProgress] = useState("")
-  const [importError, setImportError] = useState("")
 
   const [detail, setDetail] = useState<CreditNote | null>(null)
   const [editReason, setEditReason] = useState("")
@@ -73,29 +68,6 @@ export function CreditNotesPage({
   const resetIssueForm = () => {
     setIssueMode("invoice"); setIssueCustomerId(""); setIssueInvoiceId(""); setIssueTicketId("")
     setIssueAmount(""); setIssueReason(""); setIssueError("")
-  }
-
-  const readCreditNote = async (file?: File) => {
-    if (!file) return
-    setImportError(""); setImportReview(null); setImportProgress("Reading document...")
-    try {
-      const parsed = await parseFinancialDocument(file, setImportProgress)
-      if (parsed.documentType !== 'credit_note') setImportError('This document is labelled as an invoice. Import it from Add Customer / Invoice Import instead.')
-      else setImportReview(parsed)
-    } catch { setImportError('Could not read that credit note PDF. Check the file and try again.') }
-    setImportProgress("")
-  }
-
-  const submitImport = async () => {
-    if (!importReview || !onImport) return
-    if (!importReview.creditNote.creditNumber.trim() || !importReview.creditNote.date || importReview.creditNote.grandTotal <= 0 || !importReview.items.length || importReview.items.some(item => !item.product.trim() || item.quantity <= 0)) {
-      setImportError('Credit note number, date, positive total, and valid product rows are required.')
-      return
-    }
-    setIssueBusy(true); setImportError("")
-    try { await onImport(importReview); setImportReview(null) }
-    catch (error) { setImportError(error instanceof Error ? error.message : 'Could not import the credit note.') }
-    setIssueBusy(false)
   }
 
   const customerInvoices = (customerId: string, unpaidOnly: boolean) =>
@@ -232,13 +204,8 @@ export function CreditNotesPage({
             Issue credit against an order/ticket, or as account credit for future invoices.
           </p>
         </div>
-        {canManage && <div className="actions-row">
-          <label className="btn btn-secondary">Import PDF<input hidden type="file" accept=".pdf,application/pdf" onChange={event => { void readCreditNote(event.target.files?.[0]); event.target.value = '' }} /></label>
-          <Button onClick={() => { resetIssueForm(); setShowIssue(true) }}>+ Issue Credit Note</Button>
-        </div>}
+        {canManage && <Button onClick={() => { resetIssueForm(); setShowIssue(true) }}>+ Issue Credit Note</Button>}
       </div>
-
-      {(importProgress || importError) && <p className={importError ? "error-message" : "processing-message"}>{importError || importProgress}</p>}
 
       <div className="ps-stats-row">
         <div className="ps-stat"><p className="ps-stat-label">Total Credit Notes</p><p className="ps-stat-value">{creditNotes.length}</p></div>
@@ -358,28 +325,6 @@ export function CreditNotesPage({
             <Button variant="secondary" onClick={() => setShowIssue(false)}>Cancel</Button>
           </div>
         </div>
-      </Modal>
-
-      <Modal open={Boolean(importReview)} title="Review Imported Credit Note" onClose={() => setImportReview(null)} wide>
-        {importReview && <div className="stack">
-          <div className="form-grid">
-            <Input label="Company Name" value={importReview.customer.companyName} onChange={event => setImportReview({ ...importReview, customer: { ...importReview.customer, companyName: event.target.value } })} />
-            <Input label="Account Number" value={importReview.customer.accountNumber} onChange={event => setImportReview({ ...importReview, customer: { ...importReview.customer, accountNumber: event.target.value.trim() } })} />
-            <div className="wide"><Input label="Customer Address" value={importReview.customer.address} onChange={event => setImportReview({ ...importReview, customer: { ...importReview.customer, address: event.target.value } })} /></div>
-            <Input label="Telephone" value={importReview.customer.phone} onChange={event => setImportReview({ ...importReview, customer: { ...importReview.customer, phone: event.target.value } })} />
-            <Input label="Credit Note Number" value={importReview.creditNote.creditNumber} onChange={event => setImportReview({ ...importReview, creditNote: { ...importReview.creditNote, creditNumber: event.target.value } })} />
-            <Input label="Credit Note Date" type="date" value={importReview.creditNote.date} onChange={event => setImportReview({ ...importReview, creditNote: { ...importReview.creditNote, date: event.target.value } })} />
-            <Input label="Original Invoice Reference" value={importReview.creditNote.originalInvoiceReference} onChange={event => setImportReview({ ...importReview, creditNote: { ...importReview.creditNote, originalInvoiceReference: event.target.value } })} />
-            <Input label="Total Credit Goods" type="number" value={String(importReview.creditNote.totalGoods)} onChange={event => setImportReview({ ...importReview, creditNote: { ...importReview.creditNote, totalGoods: Number(event.target.value) || 0 } })} />
-            <Input label="VAT Credit" type="number" value={String(importReview.creditNote.vat)} onChange={event => setImportReview({ ...importReview, creditNote: { ...importReview.creditNote, vat: Number(event.target.value) || 0 } })} />
-            <Input label="Total Credit" type="number" value={String(importReview.creditNote.grandTotal)} onChange={event => setImportReview({ ...importReview, creditNote: { ...importReview.creditNote, grandTotal: Number(event.target.value) || 0 } })} />
-          </div>
-          <div className="invoice-builder-table"><table><thead><tr>{['Line','Qty','Product','Variety','Size','Price','Goods','VAT %','Remove'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{importReview.items.map((item, index) => <tr key={`${item.line}-${index}`}>{(['line','quantity','product','variety','size','price','goodsValue','vatRate'] as const).map(key => <td key={key}><input value={String(item[key])} onChange={event => setImportReview({ ...importReview, items: importReview.items.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: ['quantity','price','goodsValue','vatRate'].includes(key) ? Number(event.target.value) : event.target.value } : row) })} /></td>)}<td><button className="icon-button" aria-label="Remove product" onClick={() => setImportReview({ ...importReview, items: importReview.items.filter((_, rowIndex) => rowIndex !== index) })}>×</button></td></tr>)}</tbody></table></div>
-          <Button variant="secondary" onClick={() => setImportReview({ ...importReview, items: [...importReview.items, { line: '', quantity: 1, product: '', variety: '', size: '', price: 0, goodsValue: 0, vatCode: '', vatRate: 0 }] })}>+ Add Product</Button>
-          {importReview.warnings.map(warning => <p className="error-message" key={warning}>{warning}</p>)}
-          {importError && <p className="error-message">{importError}</p>}
-          <div className="actions-row"><Button onClick={submitImport} disabled={issueBusy}>{issueBusy ? 'Importing...' : 'Import Credit Note'}</Button><Button variant="secondary" onClick={() => setImportReview(null)}>Cancel</Button></div>
-        </div>}
       </Modal>
 
       {/* Detail / edit / apply modal */}

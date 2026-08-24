@@ -231,6 +231,10 @@ export interface Invoice {
   canonicalDocumentId?: string
   canonicalPdfFileName?: string
   canonicalPdfGeneratedAt?: string
+  totalGoods?: number
+  totalVat?: number
+  packages?: number
+  importedMetadata?: Record<string, unknown>
 }
 
 export interface Payment {

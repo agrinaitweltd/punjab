@@ -12,9 +12,10 @@ export async function saveInvoiceItems(invoiceId: string, items: ImportedInvoice
     variety: item.variety,
     size: item.size,
     price: item.price,
-    goods_value: item.goodsValue || item.quantity * item.price,
+    goods_value: item.goodsValue,
     vat_code: item.vatCode,
     vat_rate: item.vatRate,
+    vat_amount: item.vatAmount ?? item.goodsValue * item.vatRate / 100,
   }))
   const { error } = await supabase.from('invoice_items').insert(rows)
   if (!error) return
@@ -37,6 +38,7 @@ export async function getInvoiceItems(invoiceId: string): Promise<ImportedInvoic
   if (!error && data?.length) return data.map(row => ({
     line: row.line_number ?? '', quantity: Number(row.quantity) || 0, product: row.product ?? '', variety: row.variety ?? '', size: row.size ?? '',
     price: Number(row.price) || 0, goodsValue: Number(row.goods_value) || 0, vatCode: row.vat_code ?? '', vatRate: Number(row.vat_rate) || 0,
+    vatAmount: Number(row.vat_amount) || 0,
   }))
   const { data: fallback, error: fallbackError } = await supabase.from('activity_log').select('timestamp').eq('id', `invoice-items-${invoiceId}`).maybeSingle()
   if (fallbackError) throw new Error(`Could not load invoice products: ${fallbackError.message}`)

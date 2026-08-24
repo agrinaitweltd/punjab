@@ -40,4 +40,27 @@ const login = fs.readFileSync(new URL('../api/login.js', import.meta.url), 'utf8
 assert.match(login, /updateUserById\(authUser\.id,[\s\S]*app_metadata/i)
 assert.doesNotMatch(login, /info@kavotech|oliver/i)
 
+const customersPage = fs.readFileSync(new URL('../src/pages/admin/CustomersPage.tsx', import.meta.url), 'utf8')
+assert.match(customersPage, /Both Invoice & Credit Note/)
+assert.match(customersPage, /onCreateFromDocuments/)
+assert.match(customersPage, /Import Customer & Document/)
+assert.doesNotMatch(customersPage, /Import it from the Credit Notes page/)
+
+const creditNotesPage = fs.readFileSync(new URL('../src/pages/admin/CreditNotesPage.tsx', import.meta.url), 'utf8')
+assert.doesNotMatch(creditNotesPage, /Import PDF|Review Imported Credit Note/)
+
+const parserSource = fs.readFileSync(new URL('../src/lib/invoiceImport.ts', import.meta.url), 'utf8')
+assert.doesNotMatch(parserSource, /quantity:\s*Math\.abs|price:\s*Math\.abs|goodsValue:\s*Math\.abs/)
+const invoiceItems = fs.readFileSync(new URL('../src/services/invoiceItemService.ts', import.meta.url), 'utf8')
+const creditItems = fs.readFileSync(new URL('../src/services/creditNoteItemService.ts', import.meta.url), 'utf8')
+assert.match(invoiceItems, /goods_value:\s*item\.goodsValue/)
+assert.match(creditItems, /goods_value:\s*item\.goodsValue/)
+
+const signedMigration = fs.readFileSync(new URL('../sql/migrations/014_signed_document_fields_and_test_mode.sql', import.meta.url), 'utf8')
+assert.match(signedMigration, /invoice_items add column if not exists vat_amount/i)
+assert.match(signedMigration, /test_credit_note_items/i)
+assert.match(signedMigration, /'credit_note_items'/)
+const runtimeMode = fs.readFileSync(new URL('../src/lib/runtimeMode.ts', import.meta.url), 'utf8')
+assert.match(runtimeMode, /'credit_note_items'/)
+
 console.log('Document import matching, duplicate, and multi-admin authorization tests passed')

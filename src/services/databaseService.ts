@@ -70,6 +70,10 @@ function mapInvoice(r: any): Invoice {
     canonicalDocumentId: r.canonical_document_id ?? undefined,
     canonicalPdfFileName: r.canonical_pdf_file_name ?? undefined,
     canonicalPdfGeneratedAt: r.canonical_pdf_generated_at ?? undefined,
+    totalGoods: r.total_goods === undefined ? undefined : Number(r.total_goods),
+    totalVat: r.total_vat === undefined ? undefined : Number(r.total_vat),
+    packages: r.packages === undefined ? undefined : Number(r.packages),
+    importedMetadata: r.imported_metadata ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -462,6 +466,10 @@ class SupabaseDatabaseService {
     if (input.canonicalDocumentId !== undefined) row.canonical_document_id = input.canonicalDocumentId || null
     if (input.canonicalPdfFileName !== undefined) row.canonical_pdf_file_name = input.canonicalPdfFileName || null
     if (input.canonicalPdfGeneratedAt !== undefined) row.canonical_pdf_generated_at = input.canonicalPdfGeneratedAt || null
+    if (input.totalGoods !== undefined) row.total_goods = input.totalGoods
+    if (input.totalVat !== undefined) row.total_vat = input.totalVat
+    if (input.packages !== undefined) row.packages = input.packages
+    if (input.importedMetadata !== undefined) row.imported_metadata = input.importedMetadata
     let { data, error } = await db().from("invoices").insert(row).select().single()
     if (error && (error.code === "PGRST204" || /amount_paid/.test(error.message ?? "")) && "amount_paid" in row) {
       const { amount_paid: _ap, ...rest } = row
@@ -487,6 +495,10 @@ class SupabaseDatabaseService {
     if (input.canonicalDocumentId !== undefined) row.canonical_document_id = input.canonicalDocumentId || null
     if (input.canonicalPdfFileName !== undefined) row.canonical_pdf_file_name = input.canonicalPdfFileName || null
     if (input.canonicalPdfGeneratedAt !== undefined) row.canonical_pdf_generated_at = input.canonicalPdfGeneratedAt || null
+    if (input.totalGoods !== undefined) row.total_goods = input.totalGoods
+    if (input.totalVat !== undefined) row.total_vat = input.totalVat
+    if (input.packages !== undefined) row.packages = input.packages
+    if (input.importedMetadata !== undefined) row.imported_metadata = input.importedMetadata
     let { data, error } = await db().from("invoices").update(row).eq("id", id).select().single()
     if (error && (error.code === "PGRST204" || /amount_paid/.test(error.message ?? "")) && "amount_paid" in row) {
       const { amount_paid: _ap, ...rest } = row

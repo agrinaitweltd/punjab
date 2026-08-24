@@ -42,6 +42,7 @@ const multiLineInvoice = parser.parseLegacyInvoiceLines([
   '3 3 PEAR CONFERENCE 10KG 9.00 27.00 1',
   '4 1 MANGO KENT 4KG 15.00 15.00 0',
   '5 2 RED SEEDLESS GRAPE PUNNET 6.00 12.00 1',
+  '6 1 ONION 10KG 5.00 5.00',
   'PACKAGES 13',
   'Total Goods: 127.00',
   'VC %Rate Goods V.A.T',
@@ -49,10 +50,14 @@ const multiLineInvoice = parser.parseLegacyInvoiceLines([
   'Total V.A.T: 15.80',
   'Grand Total: 142.80',
 ])
-assert.equal(multiLineInvoice.items.length, 5)
-assert.deepEqual(multiLineInvoice.items.map(item => item.line), ['1', '2', '3', '4', '5'])
+assert.equal(multiLineInvoice.items.length, 6)
+assert.deepEqual(multiLineInvoice.items.map(item => item.line), ['1', '2', '3', '4', '5', '6'])
 assert.equal(multiLineInvoice.items[1].vatRate, 20)
 assert.equal(multiLineInvoice.items[1].vatAmount, 8)
+assert.equal(multiLineInvoice.items[5].product, 'ONION')
+assert.equal(multiLineInvoice.items[5].variety, '')
+assert.equal(multiLineInvoice.items[5].size, '10KG')
+assert.equal(multiLineInvoice.items[5].vatCode, '')
 assert.equal(multiLineInvoice.invoice.totalGoods, 127)
 assert.equal(multiLineInvoice.invoice.grandTotal, 142.8)
 
@@ -66,7 +71,7 @@ const multiLineCredit = parser.parseCreditNoteLines([
   'Delivery Acc     Invoice Acc     Salesman     Date/Tax Pt     Num',
   '0/0              INV-9001        17           22/08/2026      828310',
   'Line Qty Product Variety Size Price Goods Value VC',
-  '1 1 BANANA FYFFES 18KG -16.50 -16.50 0',
+  '1 -1 BANANA FYFFES 18KG 16.50 -16.50 0',
   '2 2 APPLE GALA 12KG -8.00 -16.00 1',
   '3 1 MANGO KENT 4KG -15.00 -15.00 0',
   'PACKAGES 4',
@@ -80,8 +85,10 @@ assert.equal(parser.detectImportDocumentType(multiLineCredit.debug.rawLines), 'c
 assert.equal(multiLineCredit.creditNote.creditNumber, 'CN-2026-44')
 assert.equal(multiLineCredit.creditNote.originalInvoiceReference, 'INV-9001')
 assert.equal(multiLineCredit.items.length, 3)
-assert.equal(multiLineCredit.creditNote.grandTotal, 50.7)
-assert.equal(multiLineCredit.items[1].vatAmount, 3.2)
+assert.equal(multiLineCredit.items[0].quantity, -1)
+assert.equal(multiLineCredit.items[0].goodsValue, -16.5)
+assert.equal(multiLineCredit.creditNote.grandTotal, -50.7)
+assert.equal(multiLineCredit.items[1].vatAmount, -3.2)
 
 async function pdfLines(filePath) {
   const document = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(filePath)) }).promise
@@ -131,6 +138,18 @@ if (fs.existsSync(suppliedCreditNotePath)) {
   assert.equal(actual.documentType, 'invoice')
   assert.equal(actual.customer.accountNumber, '828310')
   assert.ok(actual.items.length >= 1)
+}
+
+const suppliedMultiLinePath = ['multiperfields.pdf', 'tkt-828012.pdf'].map(name => path.resolve(name)).find(fs.existsSync)
+if (suppliedMultiLinePath) {
+  const actual = parser.parseLegacyInvoiceLines(await pdfLines(suppliedMultiLinePath))
+  assert.equal(actual.documentType, 'invoice')
+  assert.equal(actual.items.length, 5)
+  assert.deepEqual(actual.items.map(item => item.line), ['262771', '262393', '262763', '262597', '262156'])
+  assert.deepEqual(actual.items.map(item => item.quantity), [-2, -1, 10, -3, 3])
+  assert.deepEqual(actual.items.map(item => item.goodsValue), [-16, -8.5, 110, -33, 34.5])
+  assert.equal(actual.invoice.totalGoods, 87)
+  assert.equal(actual.invoice.grandTotal, 87)
 }
 
 console.log('Invoice and credit-note parser tests passed')
