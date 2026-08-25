@@ -44,7 +44,10 @@ assert.match(appSource, /setUser\(null\)/)
 const authSource = fs.readFileSync(new URL('../src/services/authService.ts', import.meta.url), 'utf8')
 assert.match(authSource, /customers:\s*true,\s*customersCreate:\s*true/)
 const loginSource = fs.readFileSync(new URL('../api/login.js', import.meta.url), 'utf8')
-assert.match(loginSource, /passwordMatches\(account\.password, password\)[\s\S]*updateUserById\(authUser\.id, \{ password \}\)/)
+assert.match(loginSource, /authBridgePassword\(role, account\.id, password\)/)
+assert.match(loginSource, /createUser\(\{[\s\S]*password: bridgePassword/)
+assert.match(loginSource, /updateUserById\(authUser\.id, \{ password: bridgePassword \}\)/)
+assert.doesNotMatch(loginSource, /updateUserById\(authUser\.id, \{ password \}\)/)
 
 delete process.env.CRON_SECRET
 const cronResponse = response()

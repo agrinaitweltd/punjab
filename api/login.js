@@ -1,14 +1,18 @@
 import bcrypt from 'bcryptjs'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { guardApi, safeError } from '../server/security.js'
 
 const customerAuthEmail = id => `info+${String(id).replace(/[^a-zA-Z0-9]/g, '')}@punjabexoticfoods.co.uk`
 const passwordMatches = (stored, attempt) =>
   String(stored || '').startsWith('$2') ? bcrypt.compare(attempt, stored) : String(stored || '') === attempt
+const authBridgePassword = (role, id, password) => {
+  const secret = process.env.SUPABASE_AUTH_BRIDGE_SECRET || process.env.SENSITIVE_ACTION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
+  return `Pef1!${createHmac('sha256', String(secret || 'punjab-auth')).update(`${role}:${id}:${password}`).digest('base64url')}`
+}
 
 export default async function handler(req, res) {
-  if (!guardApi(req, res, { maxBytes: 8_192, limit: 8, windowMs: 15 * 60_000 })) return
+  if (!guardApi(req, res, { maxBytes: 8_192, limit: 30, windowMs: 15 * 60_000 })) return
 
   const role = req.body?.role
   const identifier = String(req.body?.identifier || '').trim()
@@ -66,6 +70,12 @@ export default async function handler(req, res) {
     }
 
     if (!account) { await recordLogin(false, 'invalid_credentials'); return res.status(401).json({ error: 'Invalid credentials' }) }
+    if (!(await passwordMatches(account.password, password))) {
+      await recordLogin(false, 'invalid_credentials')
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+
+    const bridgePassword = authBridgePassword(role, account.id, password)
 
     let authUser = null
     if (account.auth_user_id) {
@@ -73,14 +83,10 @@ export default async function handler(req, res) {
       if (error) throw error
       authUser = data.user
     } else {
-      if (!(await passwordMatches(account.password, password))) {
-        await recordLogin(false, 'invalid_credentials')
-        return res.status(401).json({ error: 'Invalid credentials' })
-      }
       const authEmail = role === 'admin' ? account.email : customerAuthEmail(account.id)
       const { data, error } = await admin.auth.admin.createUser({
         email: authEmail,
-        password,
+        password: bridgePassword,
         email_confirm: true,
         app_metadata: { role, legacy_id: account.id },
       })
@@ -101,14 +107,11 @@ export default async function handler(req, res) {
     }
 
     if (!authUser?.email) throw new Error('Linked Auth user has no email address')
-    let { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password })
-    // Accounts created before the Auth cutover still carry their verified
-    // bcrypt password in the roster. If Auth drifted, a valid legacy password
-    // safely repairs the Auth credential instead of locking that admin out.
-    if ((signInError || !signedIn.session) && await passwordMatches(account.password, password)) {
-      const synchronized = await admin.auth.admin.updateUserById(authUser.id, { password })
+    let { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password: bridgePassword })
+    if (signInError || !signedIn.session) {
+      const synchronized = await admin.auth.admin.updateUserById(authUser.id, { password: bridgePassword })
       if (synchronized.error) throw synchronized.error
-      ;({ data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password }))
+      ;({ data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password: bridgePassword }))
     }
     if (signInError || !signedIn.session) { await recordLogin(false, 'invalid_credentials', authUser.id); return res.status(401).json({ error: 'Invalid credentials' }) }
 
