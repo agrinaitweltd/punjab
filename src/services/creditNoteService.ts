@@ -46,10 +46,13 @@ export async function updateCreditNote(id: string, input: Partial<CreditNote>): 
   return creditNotes[idx]
 }
 
-export async function createCreditNoteAllocation(input: Omit<CreditNoteAllocation, "id">): Promise<CreditNoteAllocation> {
-  if (supabaseReady) return databaseService.createCreditNoteAllocation(input)
-  await new Promise(r => setTimeout(r, 100))
-  const allocation: CreditNoteAllocation = { ...input, id: `cna-${Date.now()}` }
-  allocations.push(allocation)
-  return allocation
+export async function applyCreditNoteToInvoice(creditNoteId: string, invoiceId: string, amount: number, date: string): Promise<void> {
+  if (supabaseReady) return databaseService.applyCreditNote(creditNoteId, invoiceId, amount, date)
+  const note = creditNotes.find(item => item.id === creditNoteId)
+  if (!note) throw new Error('Credit note not found.')
+  const rounded = Math.round(amount * 100) / 100
+  if (rounded <= 0 || rounded > note.remainingBalance) throw new Error('Credit amount exceeds the available credit.')
+  allocations.push({ id: `cna-${Date.now()}`, creditNoteId, invoiceId, amount: rounded, date })
+  note.remainingBalance = Math.round((note.remainingBalance - rounded) * 100) / 100
+  note.linkedInvoiceId ||= invoiceId
 }

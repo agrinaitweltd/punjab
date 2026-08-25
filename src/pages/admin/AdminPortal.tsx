@@ -10,7 +10,7 @@ import { confirmAction, showNotice } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
 import { saveCreditNoteItems } from '../../services/creditNoteItemService'
 import { findDuplicateCreditNote, findDuplicateInvoice, matchImportedCustomer } from '../../lib/importMatching'
-import type { ImportedFinancialDocument } from '../../lib/invoiceImport'
+import type { ImportedCreditNote, ImportedFinancialDocument } from '../../lib/invoiceImport'
 import { listPaymentProofs, approvePaymentProof, rejectPaymentProof, type PaymentProof } from '../../lib/paymentProofService'
 import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '../../api/customersApi'
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
@@ -37,7 +37,7 @@ import {
   getCreditNoteAllocations,
   createCreditNote,
   updateCreditNote,
-  createCreditNoteAllocation,
+  applyCreditNoteToInvoice,
   getCustomerApplications,
   updateCustomerApplication,
   getBuyingSessions,
@@ -72,7 +72,7 @@ import {
 import { sendWhatsAppDocument, sendWhatsAppMessage, retryWhatsAppMessage, sendInvoiceMessage, sendPaymentReceived, sendOrderConfirmed, sendOrderPacked, sendOrderDelivered, sendAccountApproved, sendAccountSuspended, invalidateTemplateCache } from '../../lib/whatsapp'
 import { WhatsAppLogsPage } from './WhatsAppLogsPage'
 import { WhatsAppSendPage } from './WhatsAppSendPage'
-import { computeCreditApplication } from '../../lib/creditNotes'
+import { attachCreditAllocations, computeCreditApplication, invoiceOutstanding, invoiceStatusFor } from '../../lib/creditNotes'
 import { currentTradingDate } from '../../lib/tradingDate'
 import type {
   ActivityLog,
@@ -237,7 +237,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setOrders(ordersData)
     setActivity(activityData)
     setAdmins(adminsData)
-    setInvoices(invoicesData)
+    setInvoices(attachCreditAllocations(invoicesData, creditNoteAllocationsData))
     setPayments(paymentsData)
     setTickets(ticketsData)
     setDeliveryAreas(deliveryAreasData)
@@ -301,7 +301,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       void logActivity(user.displayName, `invoice reminder failed for ${invoice.invoiceNumber}: official PDF missing`)
       throw new Error(error)
     }
-    const outstanding = Math.max(0, invoice.amount - (invoice.amountPaid ?? 0))
+    const outstanding = invoiceOutstanding(invoice)
     const base64 = dataUriBase64(storedPdf.dataUri)
     const results: boolean[] = []
     if (customer.email) {
@@ -391,6 +391,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     const accounts = new Set(documents.map(document => document.customer.accountNumber.replace(/[^a-z0-9]/gi, '').toLowerCase()).filter(Boolean))
     if (accounts.size > 1) throw new Error('The selected documents belong to different customer accounts.')
     let customer = matchImportedCustomer(customers, importedCustomer)
+    if (!customer && documents.every(document => document.documentType === 'credit_note')) {
+      throw new Error('Create the customer from an invoice first, then add the credit note from their customer account.')
+    }
     if (!customer) {
       if (!importedCustomer.companyName.trim() || !importedCustomer.accountNumber.trim()) throw new Error('Confirm the customer name and account number before importing.')
       customer = await createCustomer({
@@ -415,7 +418,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
     const availableInvoices = [...invoices]
     const availableCredits = [...creditNotes]
-    let workingBalance = invoices.filter(invoice => invoice.customerId === customer.id).reduce((sum, invoice) => sum + Math.max(0, invoice.amount - (invoice.amountPaid ?? 0)), 0)
+    let workingBalance = invoices.filter(invoice => invoice.customerId === customer.id).reduce((sum, invoice) => sum + invoiceOutstanding(invoice), 0)
 
     for (const document of documents) {
       if (document.documentType === 'invoice') {
@@ -452,14 +455,11 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         if (findDuplicateCreditNote(availableCredits, identity)) throw new Error('This credit note has already been imported for that customer and date.')
         if (availableCredits.some(note => note.creditNumber.trim().toLowerCase() === sourceCreditNumber.toLowerCase())) throw new Error('That credit note number already exists.')
       }
-      const linkedInvoice = document.creditNote.originalInvoiceReference
-        ? availableInvoices.find(invoice => invoice.customerId === customer.id && invoice.invoiceNumber.trim().toLowerCase() === document.creditNote.originalInvoiceReference.trim().toLowerCase())
-        : undefined
       const accountingAmount = Math.abs(document.creditNote.grandTotal)
       const note = await createCreditNote({
         creditNumber: sourceCreditNumber || undefined, customerId: customer.id, amount: accountingAmount,
         reason: document.creditNote.originalInvoiceReference ? `Imported credit for invoice ${document.creditNote.originalInvoiceReference}` : 'Imported credit note',
-        date: document.creditNote.date, linkedInvoiceId: linkedInvoice?.id, status: 'Active', remainingBalance: accountingAmount,
+        date: document.creditNote.date, status: 'Active', remainingBalance: accountingAmount,
         originalInvoiceReference: document.creditNote.originalInvoiceReference,
         totalGoods: document.creditNote.totalGoods, totalVat: document.creditNote.vat,
         sourceFileName: document.source?.name,
@@ -471,17 +471,6 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         const source = await uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Credit Notes: Original source for ${note.creditNumber}`, customer.id, customer.companyName, { creditNoteId: note.id, creditNoteNumber: note.creditNumber, creditNoteAmount: note.amount, documentRole: 'credit_note_source' })
         sourceDocumentId = source.id
         if (!await updateCreditNote(note.id, { sourceDocumentId, sourceFileName: source.name })) throw new Error('The credit note was imported, but its source PDF could not be linked.')
-      }
-      if (linkedInvoice) {
-        const result = computeCreditApplication(note, linkedInvoice, accountingAmount)
-        if (result.appliedAmount > 0) {
-          await createCreditNoteAllocation({ creditNoteId: note.id, invoiceId: linkedInvoice.id, amount: result.appliedAmount, date: document.creditNote.date })
-          await updateInvoice(linkedInvoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
-          await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance, sourceDocumentId })
-          workingBalance = Math.max(0, workingBalance - result.appliedAmount)
-          const index = availableInvoices.findIndex(invoice => invoice.id === linkedInvoice.id)
-          if (index >= 0) availableInvoices[index] = { ...linkedInvoice, amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus }
-        }
       }
       availableCredits.push(note)
       void logActivity(user.displayName, `imported credit note ${note.creditNumber} for ${customer.companyName} (${document.items.length} product rows)`)
@@ -728,6 +717,39 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await load()
           }}
           onCreateFromDocuments={importCustomerDocuments}
+          canCreditNotes={user.isSuperAdmin || Boolean(user.permissions?.creditNotesIssue)}
+          onAddCreditNote={async (customer, document: ImportedCreditNote, invoiceId) => {
+            const amount = Math.abs(document.creditNote.grandTotal)
+            const invoice = invoiceId ? invoices.find(item => item.id === invoiceId && item.customerId === customer.id) : undefined
+            if (invoiceId && !invoice) throw new Error('The selected invoice does not belong to this customer.')
+            if (invoice && amount > invoiceOutstanding(invoice)) throw new Error(`Invoice ${invoice.invoiceNumber} only has £${invoiceOutstanding(invoice).toFixed(2)} outstanding.`)
+            const note = await createCreditNote({
+              creditNumber: document.creditNote.creditNumber.trim() || undefined,
+              customerId: customer.id,
+              amount,
+              reason: document.creditNote.originalInvoiceReference ? `Imported credit for invoice ${document.creditNote.originalInvoiceReference}` : 'Imported customer credit',
+              date: document.creditNote.date,
+              status: 'Active',
+              remainingBalance: amount,
+              originalInvoiceReference: document.creditNote.originalInvoiceReference,
+              totalGoods: document.creditNote.totalGoods,
+              totalVat: document.creditNote.vat,
+              sourceFileName: document.source?.name,
+              importedMetadata: { accountNumber: customer.customerNumber, deliveryAccount: document.creditNote.deliveryAccount, salesman: document.creditNote.salesman, packages: document.creditNote.packages, sourceGrandTotal: document.creditNote.grandTotal, vatSummary: document.vatSummary },
+            })
+            await saveCreditNoteItems(note.id, document.items)
+            if (document.source) {
+              const source = await uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Credit Notes: Original source for ${note.creditNumber}`, customer.id, customer.companyName, { creditNoteId: note.id, creditNoteNumber: note.creditNumber, creditNoteAmount: note.amount, documentRole: 'credit_note_source' })
+              if (!await updateCreditNote(note.id, { sourceDocumentId: source.id, sourceFileName: source.name })) throw new Error('The credit note was saved, but its source document could not be linked.')
+            }
+            if (invoice) {
+              await applyCreditNoteToInvoice(note.id, invoice.id, amount, document.creditNote.date)
+              const synchronizedBalance = Math.max(0, invoices.filter(item => item.customerId === customer.id).reduce((sum, item) => sum + invoiceOutstanding(item), 0) - amount)
+              await updateCustomer(customer.id, { balance: synchronizedBalance })
+            }
+            void logActivity(user.displayName, `${invoice ? `applied ${note.creditNumber} to ${invoice.invoiceNumber}` : `saved ${note.creditNumber} as unallocated credit`} for ${customer.companyName}`)
+            await load()
+          }}
           onNavigate={navigate}
           onInviteCustomer={async (accountNumber, email, phone) => {
             const customer=customers.find(c=>c.customerNumber===accountNumber)
@@ -878,24 +900,28 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             // payment was required upfront) — update it instead of creating a
             // duplicate, which would collide on the unique invoice_number.
             const existing = invoices.find(i => i.invoiceNumber === invoiceNumber)
+            const cashAmount = existing ? invoiceOutstanding(existing) : order.amount
+            const newPaid = (existing?.amountPaid ?? 0) + cashAmount
             const invoice = existing
-              ? await updateInvoice(existing.id, { status: 'Paid' })
-              : await createInvoice({ customerId: order.customerId, invoiceNumber, amount: order.amount, dueDate: today, status: 'Paid' })
-            const payment = await createPayment({ customerId: order.customerId, amount: order.amount, date: today, method: 'Bank Transfer' })
+              ? await updateInvoice(existing.id, { amountPaid: newPaid, status: invoiceStatusFor(existing.amount, newPaid, existing.creditApplied ?? 0) })
+              : await createInvoice({ customerId: order.customerId, invoiceNumber, amount: order.amount, amountPaid: order.amount, dueDate: today, status: 'Paid' })
+            const payment = cashAmount > 0
+              ? await createPayment({ customerId: order.customerId, amount: cashAmount, date: today, method: 'Bank Transfer' })
+              : null
             const customer = customers.find(c => c.id === order.customerId)
-            if (customer?.email) {
+            if (customer?.email && payment) {
               void sendEmail(customer.email, `Payment received for order ${order.orderNumber}`,
-                paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, order.amount, payment.paymentReference, today), undefined, { category: 'notifications', customerId: customer.id, communicationType: 'payment_received' })
+                paymentReceivedEmailHtml(order.orderNumber, customer.contactPerson || customer.companyName, cashAmount, payment.paymentReference, today), undefined, { category: 'notifications', customerId: customer.id, communicationType: 'payment_received' })
             }
-            if (customer && invoice) void sendPaymentReceived(invoice, customer, order.amount, user.displayName)
+            if (customer && invoice && cashAmount > 0) void sendPaymentReceived(invoice, customer, cashAmount, user.displayName)
             // Paying an invoice brings the balance back down — and once this
             // invoice is paid, check whether the customer is still over their
             // limit or has other overdue invoices; if not, lift the freeze.
             if (customer) {
-              const updatedInvoices = invoice ? invoices.map(i => i.id === invoice.id ? { ...i, status: 'Paid' as const } : i) : invoices
+              const updatedInvoices = invoice ? invoices.map(i => i.id === invoice.id ? { ...i, amountPaid: newPaid, status: 'Paid' as const } : i) : invoices
               const stillOverdue = customer.blocked && getCreditStatus(customer, updatedInvoices).isOverdue
               await updateCustomer(customer.id, {
-                balance: Math.max(0, (customer.balance ?? 0) - order.amount),
+                balance: Math.max(0, (customer.balance ?? 0) - cashAmount),
                 ...(customer.blocked ? { blocked: stillOverdue } : {}),
               })
             }
@@ -922,16 +948,19 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         await sendInvoiceReminderPdf(invoice, customer)
         await load()
       }} onRecordPayment={async (invoice, amount) => {
-        const newPaid = Math.min(invoice.amount, (invoice.amountPaid ?? 0) + amount)
+        const outstanding = invoiceOutstanding(invoice)
+        if (amount <= 0) throw new Error('Payment amount must be greater than zero.')
+        if (amount > outstanding + 0.005) throw new Error(`Payment exceeds the £${outstanding.toFixed(2)} outstanding balance.`)
+        const newPaid = (invoice.amountPaid ?? 0) + amount
         await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
-        await updateInvoice(invoice.id, { amountPaid: newPaid, status: newPaid >= invoice.amount ? 'Paid' : 'Part Paid' })
+        await updateInvoice(invoice.id, { amountPaid: newPaid, status: invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0) })
         const customer = customers.find(c => c.id === invoice.customerId)
         if (customer) {
           const synchronizedBalance = invoices
             .filter(item => item.customerId === customer.id)
-            .reduce((sum, item) => sum + Math.max(0, item.amount - (item.id === invoice.id ? newPaid : (item.amountPaid ?? 0))), 0)
+            .reduce((sum, item) => sum + invoiceOutstanding(item.id === invoice.id ? { ...item, amountPaid: newPaid } : item), 0)
           await updateCustomer(customer.id, { balance: synchronizedBalance })
-          if (newPaid >= invoice.amount) {
+          if (invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0) === 'Paid') {
             void sendPaymentReceived(invoice, customer, amount, user.displayName)
             if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)), undefined, { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, communicationType: 'payment_received' })
           }
@@ -972,7 +1001,20 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           proofs={paymentProofs}
           canRecord={canRecordPayments}
           onApprove={async (proof) => {
-            for (const id of proof.invoiceIds) await updateInvoice(id, { status: 'Paid' })
+            const selectedInvoices = proof.invoiceIds.map(id => invoices.find(invoice => invoice.id === id)).filter((invoice): invoice is Invoice => Boolean(invoice))
+            const selectedOutstanding = selectedInvoices.reduce((sum, invoice) => sum + invoiceOutstanding(invoice), 0)
+            if (proof.amount > selectedOutstanding + 0.005) throw new Error('Payment proof amount exceeds the selected invoice balance.')
+            let remainingPayment = proof.amount
+            const paidByInvoice = new Map<string, number>()
+            for (const invoice of selectedInvoices) {
+              const applied = Math.min(remainingPayment, invoiceOutstanding(invoice))
+              if (applied <= 0) continue
+              const newPaid = (invoice.amountPaid ?? 0) + applied
+              await updateInvoice(invoice.id, { amountPaid: newPaid, status: invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0) })
+              paidByInvoice.set(invoice.id, newPaid)
+              remainingPayment -= applied
+            }
+            if (remainingPayment > 0.005) throw new Error('Payment proof could not be allocated to the selected invoices.')
             await createPayment({ customerId: proof.customerId, amount: proof.amount, date: new Date().toISOString().slice(0, 10), method: 'Bank Transfer (Verified)' })
             await approvePaymentProof(proof.id)
             const customer = customers.find(c => c.id === proof.customerId)
@@ -985,7 +1027,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             // Paying brings the balance down, and lifts a payment-required
             // freeze once the account is back within terms.
             if (customer) {
-              const updatedInvoices = invoices.map(i => proof.invoiceIds.includes(i.id) ? { ...i, status: 'Paid' as const } : i)
+              const updatedInvoices = invoices.map(invoice => {
+                const amountPaid = paidByInvoice.get(invoice.id)
+                return amountPaid === undefined ? invoice : { ...invoice, amountPaid, status: invoiceStatusFor(invoice.amount, amountPaid, invoice.creditApplied ?? 0) }
+              })
               const stillOverdue = customer.blocked && getCreditStatus(customer, updatedInvoices).isOverdue
               await updateCustomer(customer.id, {
                 balance: Math.max(0, (customer.balance ?? 0) - proof.amount),
@@ -1078,14 +1123,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
               if (invoice) {
                 const result = computeCreditApplication(note, invoice, input.amount)
                 if (result.appliedAmount > 0) {
-                  await createCreditNoteAllocation({
-                    creditNoteId: note.id, invoiceId: invoice.id,
-                    amount: result.appliedAmount, date: new Date().toISOString().slice(0, 10),
-                  })
-                  await updateInvoice(invoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
-                  await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance })
+                  await applyCreditNoteToInvoice(note.id, invoice.id, result.appliedAmount, new Date().toISOString().slice(0, 10))
                   const customer = customers.find(c => c.id === input.customerId)
-                  if (customer) await updateCustomer(customer.id, { balance: Math.max(0, customer.balance - result.appliedAmount) })
+                  if (customer) await updateCustomer(customer.id, { balance: Math.max(0, invoices.filter(item => item.customerId === customer.id).reduce((sum, item) => sum + invoiceOutstanding(item), 0) - result.appliedAmount) })
                 }
               }
             }
@@ -1108,14 +1148,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             if (!invoice) return
             const result = computeCreditApplication(note, invoice, amount)
             if (result.appliedAmount <= 0) return
-            await createCreditNoteAllocation({
-              creditNoteId: note.id, invoiceId: invoice.id,
-              amount: result.appliedAmount, date: new Date().toISOString().slice(0, 10),
-            })
-            await updateInvoice(invoice.id, { amountPaid: result.newInvoiceAmountPaid, status: result.newInvoiceStatus })
-            await updateCreditNote(note.id, { remainingBalance: result.newCreditRemainingBalance })
+            await applyCreditNoteToInvoice(note.id, invoice.id, result.appliedAmount, new Date().toISOString().slice(0, 10))
             const customer = customers.find(c => c.id === note.customerId)
-            if (customer) await updateCustomer(customer.id, { balance: Math.max(0, customer.balance - result.appliedAmount) })
+            if (customer) await updateCustomer(customer.id, { balance: Math.max(0, invoices.filter(item => item.customerId === customer.id).reduce((sum, item) => sum + invoiceOutstanding(item), 0) - result.appliedAmount) })
             void logActivity(user.displayName, `applied £${result.appliedAmount.toFixed(2)} credit from ${note.creditNumber} to ${invoice.invoiceNumber}`)
             await load()
           }}

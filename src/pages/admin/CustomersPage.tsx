@@ -11,11 +11,13 @@ import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { CustomerStatementModal } from './CustomerStatementModal'
+import { CustomerCreditNoteModal } from './CustomerCreditNoteModal'
 import { SendWhatsAppModal } from '../../components/SendWhatsAppModal'
 import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
 import { SALESMEN } from '../../lib/salesmen'
 import { parseFinancialDocument, type ImportedCreditNote, type ImportedFinancialDocument, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
 import { matchImportedCustomer } from '../../lib/importMatching'
+import { invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 
 const initialForm = {
   companyName: '',
@@ -64,9 +66,11 @@ export function CustomersPage({
   onSendWhatsApp,
   onSaveWhatsAppTemplate,
   onCreateFromDocuments,
+  onAddCreditNote,
   onNavigate,
   onInviteCustomer,
   canCreate = true,
+  canCreditNotes = true,
   openAddRequest = 0,
 }: {
   customers: Customer[]
@@ -85,9 +89,11 @@ export function CustomersPage({
   onSendWhatsApp?: (phone: string, message: string, customer: Customer) => Promise<void>
   onSaveWhatsAppTemplate?: (name: string, message: string) => Promise<void>
   onCreateFromDocuments?: (documents: ImportedFinancialDocument[]) => Promise<{ customerName: string; accountNumber: string }>
+  onAddCreditNote?: (customer: Customer, document: ImportedCreditNote, invoiceId?: string) => Promise<void>
   onNavigate?: (page: string) => void
   onInviteCustomer?: (accountNumber: string, email: string, phone: string) => Promise<void>
   canCreate?: boolean
+  canCreditNotes?: boolean
   openAddRequest?: number
 }) {
   const [whatsappTarget, setWhatsappTarget] = useState<Customer | null>(null)
@@ -112,6 +118,7 @@ export function CustomersPage({
   const [contactPhone, setContactPhone] = useState('')
   const [onboardingAccount, setOnboardingAccount] = useState('')
   const [accountProfile, setAccountProfile] = useState<Customer | null>(null)
+  const [creditNoteTarget, setCreditNoteTarget] = useState<Customer | null>(null)
   const [profileTab, setProfileTab] = useState('Overview')
   const [fullForm, setFullForm] = useState(initialFullForm)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -425,7 +432,7 @@ export function CustomersPage({
             {onboardingContact && <div className="stack"><div className="onboarding-success"><strong>Customer Contact & Portal Access</strong><span>{onboardingCustomer}</span></div><div className="form-grid"><Input label="Email Address" type="email" value={contactEmail} onChange={event => setContactEmail(event.target.value)} /><Input label="Telephone Number" value={contactPhone} onChange={event => setContactPhone(event.target.value)} /></div><div className="actions-row"><Button disabled={!contactEmail || adding} onClick={async () => { if (!onInviteCustomer) return; setAdding(true); await onInviteCustomer(onboardingAccount, contactEmail, contactPhone); setAdding(false); setShowAdd(false); setOnboardingContact(false); setOnboardingCustomer('') }}>{adding ? 'Sending...' : 'Send Portal Invitation'}</Button><Button variant="secondary" onClick={() => { setShowAdd(false); setOnboardingContact(false); setOnboardingCustomer('') }}>Not Now</Button></div></div>}
             {!onboardingCustomer && !onboardingContact && <>
             <div className="actions-row" style={{ flexWrap: 'wrap' }} role="group" aria-label="Document import method">
-              {([['invoice', 'Invoice'], ['credit_note', 'Credit Note'], ['both', 'Both Invoice & Credit Note']] as const).map(([value, label]) => <Button key={value} variant={documentChoice === value ? 'primary' : 'secondary'} onClick={() => chooseDocumentType(value)}>{label}</Button>)}
+              <Button variant="primary" onClick={() => chooseDocumentType('invoice')}>Invoice</Button>
             </div>
             <div className="form-grid">
               {(documentChoice === 'invoice' || documentChoice === 'both') && <label className="invoice-upload-zone"><strong>{invoiceReview ? `Invoice: ${invoiceReview.source?.name}` : 'Upload Invoice'}</strong><span>PDF, JPG, JPEG or PNG</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={event => readCustomerDocument(event.target.files?.[0], 'invoice')} /></label>}
@@ -597,11 +604,24 @@ export function CustomersPage({
       <Modal open={Boolean(accountProfile)} title={accountProfile ? `${accountProfile.companyName} - ${accountProfile.customerNumber}` : 'Customer Account'} onClose={() => setAccountProfile(null)} wide>
         {accountProfile && (() => {
           const myInvoices=invoices.filter(i=>i.customerId===accountProfile.id), myPayments=payments.filter(p=>p.customerId===accountProfile.id)
-          const invoiced=myInvoices.reduce((s,i)=>s+i.amount,0), paid=myInvoices.reduce((s,i)=>s+(i.amountPaid??0),0), outstanding=Math.max(0,invoiced-paid)
-          const overdue=myInvoices.filter(i=>i.status!=='Paid'&&i.dueDate<new Date().toISOString().slice(0,10)).reduce((s,i)=>s+Math.max(0,i.amount-(i.amountPaid??0)),0)
-          return <div className="stack"><div className="customer-action-bar"><button onClick={()=>{setAccountProfile(null);onNavigate?.('create-invoice')}}>+ Create Invoice</button><button onClick={()=>{setAccountProfile(null);openImport(accountProfile)}}>+ Add Invoice</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('outstanding')}}>Record Payment</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('expenses')}}>Record Expense</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('files')}}>Upload Document</button>{onSendWhatsApp&&<button onClick={()=>setWhatsappTarget(accountProfile)}>Send Message</button>}</div><div className="customer-finance-grid">{[['Total Invoiced',invoiced],['Total Paid',paid],['Outstanding',outstanding],['Overdue',overdue],['Current S/L Balance',outstanding]].map(([l,v])=><div key={String(l)}><span>{l}</span><strong>{fmtMoney(Number(v))}</strong></div>)}</div><div className="profile-tabs">{['Overview','Invoices','Outstanding','Payments','Documents','Statements','Activity'].map(t=><button className={profileTab===t?'active':''} onClick={()=>setProfileTab(t)} key={t}>{t}</button>)}</div>{profileTab==='Overview'&&<div className="form-grid"><div><strong>Email</strong><p>{accountProfile.email}</p></div><div><strong>Telephone</strong><p>{accountProfile.phone||'—'}</p></div><div className="wide"><strong>Address</strong><p>{accountProfile.address||'—'}</p></div></div>}{['Invoices','Outstanding'].includes(profileTab)&&<DataTable columns={['Invoice','Date','Due','Total','Paid','Outstanding','Status']}>{myInvoices.filter(i=>profileTab!=='Outstanding'||i.status!=='Paid').map(i=><tr key={i.id}><td>{i.invoiceNumber}</td><td>{i.date}</td><td>{i.dueDate}</td><td>{fmtMoney(i.amount)}</td><td>{fmtMoney(i.amountPaid)}</td><td>{fmtMoney(i.amount-(i.amountPaid??0))}</td><td>{i.status}</td></tr>)}</DataTable>}{profileTab==='Payments'&&<DataTable columns={['Reference','Date','Method','Amount']}>{myPayments.map(p=><tr key={p.id}><td>{p.paymentReference}</td><td>{p.date}</td><td>{p.method}</td><td>{fmtMoney(p.amount)}</td></tr>)}</DataTable>}{profileTab==='Documents'&&<button className="btn btn-primary" onClick={()=>{setAccountProfile(null);onNavigate?.('files')}}>Open Customer Files</button>}{profileTab==='Statements'&&<button className="btn btn-primary" onClick={()=>{setAccountProfile(null);setStatementTarget(accountProfile)}}>View Statement</button>}{profileTab==='Activity'&&<p className="empty-state">Customer invoice uploads, payments and communications appear in Recent Activity and communication history.</p>}</div>
+          const myCredits=creditNotes.filter(note=>note.customerId===accountProfile.id), myAllocations=creditNoteAllocations.filter(allocation=>myCredits.some(note=>note.id===allocation.creditNoteId))
+          const invoiced=myInvoices.reduce((s,i)=>s+i.amount,0), paid=myInvoices.reduce((s,i)=>s+(i.amountPaid??0),0), credited=myAllocations.reduce((s,a)=>s+a.amount,0), outstanding=myInvoices.reduce((s,i)=>s+invoiceOutstanding(i),0)
+          const overdue=myInvoices.filter(i=>i.dueDate<new Date().toISOString().slice(0,10)).reduce((s,i)=>s+invoiceOutstanding(i),0)
+          const transactions=[...myInvoices.map(i=>({date:i.date||i.dueDate,type:'Invoice',reference:i.invoiceNumber,debit:i.amount,credit:0})),...myPayments.map(p=>({date:p.date,type:'Payment',reference:p.paymentReference,debit:0,credit:p.amount})),...myAllocations.map(a=>({date:a.date,type:'Credit Note',reference:myCredits.find(note=>note.id===a.creditNoteId)?.creditNumber??a.creditNoteId,debit:0,credit:a.amount}))].sort((a,b)=>a.date.localeCompare(b.date)); let running=0; const ledger=transactions.map(entry=>({...entry,balance:running=Math.max(0,running+entry.debit-entry.credit)}))
+          return <div className="stack"><div className="customer-action-bar"><button onClick={()=>{setAccountProfile(null);onNavigate?.('create-invoice')}}>+ Create Invoice</button><button onClick={()=>{setAccountProfile(null);openImport(accountProfile)}}>+ Add Invoice</button>{canCreditNotes&&onAddCreditNote&&<button onClick={()=>setCreditNoteTarget(accountProfile)}>+ Add Credit Note</button>}<button onClick={()=>{setAccountProfile(null);onNavigate?.('outstanding')}}>Record Payment</button><button onClick={()=>{setAccountProfile(null);onNavigate?.('files')}}>Upload Document</button>{onSendWhatsApp&&<button onClick={()=>setWhatsappTarget(accountProfile)}>Send Message</button>}</div><div className="customer-finance-grid">{[['Total Invoiced',invoiced],['Cash Paid',paid],['Credits Applied',credited],['Outstanding',outstanding],['Overdue',overdue]].map(([l,v])=><div key={String(l)}><span>{l}</span><strong>{fmtMoney(Number(v))}</strong></div>)}</div><div className="profile-tabs">{['Overview','Transactions','Invoices','Outstanding','Payments','Credit Notes','Documents','Statements','Activity'].map(t=><button className={profileTab===t?'active':''} onClick={()=>setProfileTab(t)} key={t}>{t}</button>)}</div>{profileTab==='Overview'&&<div className="form-grid"><div><strong>Email</strong><p>{accountProfile.email}</p></div><div><strong>Telephone</strong><p>{accountProfile.phone||'—'}</p></div><div className="wide"><strong>Address</strong><p>{accountProfile.address||'—'}</p></div></div>}{profileTab==='Transactions'&&<DataTable columns={['Date','Type','Reference','Debit','Credit','Balance']}>{ledger.map((entry,index)=><tr key={`${entry.type}-${entry.reference}-${index}`}><td>{entry.date}</td><td>{entry.type}</td><td>{entry.reference}</td><td>{entry.debit?fmtMoney(entry.debit):'—'}</td><td>{entry.credit?fmtMoney(entry.credit):'—'}</td><td><strong>{fmtMoney(entry.balance)}</strong></td></tr>)}</DataTable>}{['Invoices','Outstanding'].includes(profileTab)&&<DataTable columns={['Invoice','Date','Due','Total','Cash Paid','Credits','Outstanding','Status']}>{myInvoices.filter(i=>profileTab!=='Outstanding'||invoiceOutstanding(i)>0).map(i=><tr key={i.id}><td>{i.invoiceNumber}</td><td>{i.date}</td><td>{i.dueDate}</td><td>{fmtMoney(i.amount)}</td><td>{fmtMoney(i.amountPaid)}</td><td>{fmtMoney(i.creditApplied)}</td><td>{fmtMoney(invoiceOutstanding(i))}</td><td>{invoiceDisplayStatus(i)}</td></tr>)}</DataTable>}{profileTab==='Payments'&&<DataTable columns={['Reference','Date','Method','Amount']}>{myPayments.map(p=><tr key={p.id}><td>{p.paymentReference}</td><td>{p.date}</td><td>{p.method}</td><td>{fmtMoney(p.amount)}</td></tr>)}</DataTable>}{profileTab==='Credit Notes'&&<DataTable columns={['Credit Note','Date','Amount','Applied','Unallocated','Original Invoice','Status']}>{myCredits.map(note=><tr key={note.id}><td>{note.creditNumber}</td><td>{note.date}</td><td>{fmtMoney(note.amount)}</td><td>{fmtMoney(note.amount-note.remainingBalance)}</td><td>{fmtMoney(note.remainingBalance)}</td><td>{note.originalInvoiceReference||'—'}</td><td>{note.remainingBalance>0&&note.status==='Active'?'Unallocated Credit':note.status}</td></tr>)}</DataTable>}{profileTab==='Documents'&&<button className="btn btn-primary" onClick={()=>{setAccountProfile(null);onNavigate?.('files')}}>Open Customer Files</button>}{profileTab==='Statements'&&<button className="btn btn-primary" onClick={()=>{setAccountProfile(null);setStatementTarget(accountProfile)}}>View Statement</button>}{profileTab==='Activity'&&<p className="empty-state">Customer invoice uploads, payments and communications appear in Recent Activity and communication history.</p>}</div>
         })()}
       </Modal>
+
+      <CustomerCreditNoteModal
+        open={Boolean(creditNoteTarget)}
+        customer={creditNoteTarget}
+        invoices={invoices}
+        onClose={() => setCreditNoteTarget(null)}
+        onConfirm={async (document, invoiceId) => {
+          if (!creditNoteTarget || !onAddCreditNote) return
+          await onAddCreditNote(creditNoteTarget, document, invoiceId)
+        }}
+      />
 
       <Modal open={Boolean(editing)} title={editing ? `Edit ${editing.companyName || 'Customer'}` : 'Edit Customer'} onClose={() => setEditing(null)}>
         {editing ? (

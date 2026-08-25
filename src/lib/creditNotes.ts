@@ -1,15 +1,32 @@
-import type { CreditNote, Invoice } from "../types"
+import type { CreditNote, CreditNoteAllocation, Invoice } from "../types"
+
+const money = (value: number) => Math.round(value * 100) / 100
+
+export function creditAppliedToInvoice(invoiceId: string, allocations: CreditNoteAllocation[]): number {
+  return money(allocations.filter(allocation => allocation.invoiceId === invoiceId).reduce((sum, allocation) => sum + allocation.amount, 0))
+}
+
+export function attachCreditAllocations(invoices: Invoice[], allocations: CreditNoteAllocation[]): Invoice[] {
+  const byInvoice = new Map<string, number>()
+  for (const allocation of allocations) byInvoice.set(allocation.invoiceId, money((byInvoice.get(allocation.invoiceId) ?? 0) + allocation.amount))
+  return invoices.map(invoice => ({ ...invoice, creditApplied: byInvoice.get(invoice.id) ?? 0 }))
+}
 
 /** Outstanding balance still owed on an invoice, accounting for partial
     payments and/or credit already applied. */
 export function invoiceOutstanding(invoice: Invoice): number {
-  return Math.max(0, invoice.amount - (invoice.amountPaid ?? 0))
+  return money(Math.max(0, invoice.amount - (invoice.amountPaid ?? 0) - (invoice.creditApplied ?? 0)))
 }
 
-export function invoiceStatusFor(amount: number, amountPaid: number): Invoice["status"] {
-  if (amountPaid <= 0) return "Unpaid"
-  if (amountPaid >= amount) return "Paid"
+export function invoiceStatusFor(amount: number, amountPaid: number, creditApplied = 0): Invoice["status"] {
+  if (amountPaid + creditApplied >= amount) return "Paid"
+  if (amountPaid <= 0 && creditApplied <= 0) return "Unpaid"
   return "Part Paid"
+}
+
+export function invoiceDisplayStatus(invoice: Invoice): string {
+  if (invoiceOutstanding(invoice) <= 0 && (invoice.creditApplied ?? 0) >= invoice.amount && (invoice.amountPaid ?? 0) <= 0) return "Fully Credited"
+  return invoiceStatusFor(invoice.amount, invoice.amountPaid ?? 0, invoice.creditApplied ?? 0)
 }
 
 /** Applies as much of a credit note's remaining balance as possible to one
@@ -22,11 +39,11 @@ export function computeCreditApplication(creditNote: CreditNote, invoice: Invoic
   const outstanding = invoiceOutstanding(invoice)
   const cap = Math.min(creditNote.remainingBalance, outstanding, requestedAmount ?? Infinity)
   const appliedAmount = Math.max(0, Math.round(cap * 100) / 100)
-  const newAmountPaid = (invoice.amountPaid ?? 0) + appliedAmount
+  const newCreditApplied = (invoice.creditApplied ?? 0) + appliedAmount
   return {
     appliedAmount,
-    newInvoiceAmountPaid: newAmountPaid,
-    newInvoiceStatus: invoiceStatusFor(invoice.amount, newAmountPaid),
+    newInvoiceCreditApplied: newCreditApplied,
+    newInvoiceStatus: invoiceStatusFor(invoice.amount, invoice.amountPaid ?? 0, newCreditApplied),
     newCreditRemainingBalance: Math.max(0, Math.round((creditNote.remainingBalance - appliedAmount) * 100) / 100),
   }
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Customer, Invoice } from '../../types'
+import { invoiceOutstanding } from '../../lib/creditNotes'
 import { Card } from '../../components/ui/Card'
 import { createInvoice, updateInvoice } from '../../services/invoiceService'
 import { saveInvoiceItems } from '../../services/invoiceItemService'
@@ -88,7 +89,7 @@ export function CreateInvoicePage({ customers, invoices, userName, onCreated }: 
     const official = await uploadFile(generated.pdfFileName, 'application/pdf', generated.pdf.size, generated.pdfDataUri, `Invoices: ${generated.invoiceNumber}`, savedCustomer.id, savedCustomer.companyName, { invoiceId: savedInvoice.id, invoiceNumber: savedInvoice.invoiceNumber, invoiceAmount: savedInvoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
     const linkedInvoice = await updateInvoice(savedInvoice.id, { canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
     if (!linkedInvoice) throw new Error('The invoice PDF was saved but could not be linked to the invoice record.')
-    const previousOutstanding = invoices.filter(invoice => invoice.customerId === savedCustomer.id).reduce((sum, invoice) => sum + Math.max(0, invoice.amount - (invoice.amountPaid ?? 0)), 0)
+    const previousOutstanding = invoices.filter(invoice => invoice.customerId === savedCustomer.id).reduce((sum, invoice) => sum + invoiceOutstanding(invoice), 0)
     await updateCustomer(savedCustomer.id, { balance: previousOutstanding + totals.total })
     const next = { ...generated, customer: savedCustomer, savedInvoice: linkedInvoice }; setGenerated(next); await onCreated(); return next
   }

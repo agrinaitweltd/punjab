@@ -1,7 +1,7 @@
 import type { CreditNote, CreditNoteAllocation, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
-import { invoiceOutstanding } from '../../lib/creditNotes'
+import { invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 
 export function InvoicesPage({ invoices, creditNotes = [], allocations = [], onOpenCreditNote }: {
   invoices: Invoice[]
@@ -9,7 +9,7 @@ export function InvoicesPage({ invoices, creditNotes = [], allocations = [], onO
   allocations?: CreditNoteAllocation[]
   onOpenCreditNote?: (creditNoteId: string) => void
 }) {
-  const unpaid = invoices.filter((invoice) => invoice.status !== 'Paid')
+  const unpaid = invoices.filter((invoice) => invoiceOutstanding(invoice) > 0)
 
   return (
     <div className="stack">
@@ -23,7 +23,7 @@ export function InvoicesPage({ invoices, creditNotes = [], allocations = [], onO
       </div>
 
       <Card title="Invoice Register">
-        <DataTable columns={['Invoice Number', 'Customer ID', 'Amount', 'Outstanding', 'Due Date', 'Status', 'Credit Notes']}>
+        <DataTable columns={['Invoice Number', 'Customer ID', 'Amount', 'Cash Paid', 'Credits', 'Outstanding', 'Due Date', 'Status', 'Credit Notes']}>
           {invoices.map((invoice) => {
             const invAllocations = allocations.filter(a => a.invoiceId === invoice.id)
             const notes = invAllocations
@@ -34,9 +34,11 @@ export function InvoicesPage({ invoices, creditNotes = [], allocations = [], onO
                 <td>{invoice.invoiceNumber}</td>
                 <td>{invoice.customerId}</td>
                 <td>£{invoice.amount.toFixed(2)}</td>
+                <td>£{(invoice.amountPaid ?? 0).toFixed(2)}</td>
+                <td>£{(invoice.creditApplied ?? 0).toFixed(2)}</td>
                 <td>£{invoiceOutstanding(invoice).toFixed(2)}</td>
                 <td>{invoice.dueDate}</td>
-                <td>{invoice.status}</td>
+                <td>{invoiceDisplayStatus(invoice)}</td>
                 <td>
                   {notes.length === 0 ? '—' : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

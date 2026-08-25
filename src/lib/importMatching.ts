@@ -40,3 +40,9 @@ export function findDuplicateCreditNote(creditNotes: CreditNote[], identity: { c
   const number = identity.creditNumber.trim().toLowerCase()
   return creditNotes.find(note => note.customerId === identity.customerId && note.creditNumber.trim().toLowerCase() === number && note.date === identity.date)
 }
+
+export function findCreditInvoiceMatch(invoices: Invoice[], customerId: string, referencedInvoiceNumber = '') {
+  const reference = normalizeAccountNumber(referencedInvoiceNumber)
+  if (!reference) return undefined
+  return invoices.find(invoice => invoice.customerId === customerId && normalizeAccountNumber(invoice.invoiceNumber) === reference)
+}

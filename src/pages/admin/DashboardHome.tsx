@@ -4,6 +4,7 @@ import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { CountUp } from "../../components/CountUp"
 import { isStockFresh, latestStockUpdate, nextCycleStart, formatLondonTime, formatWallWeekday } from "../../lib/stockCycle"
+import { invoiceOutstanding } from '../../lib/creditNotes'
 
 const PAGE_SIZE = 8
 
@@ -91,11 +92,11 @@ export function DashboardHome({
   const activeOrders  = orders.filter(o => o.status !== "Delivered" && o.status !== "Cancelled").length
   const orderRevenue  = orders.reduce((s, o) => s + o.amount, 0)
 
-  const outstandingFor = (invoice: Invoice) => Math.max(0, invoice.amount - (invoice.amountPaid ?? (invoice.status === 'Paid' ? invoice.amount : 0)))
+  const outstandingFor = (invoice: Invoice) => invoiceOutstanding(invoice)
   const totalBusiness = invoices.reduce((sum, invoice) => sum + Math.max(0, invoice.amount), 0)
   const totalPaid = invoices.reduce((sum, invoice) => {
     const invoiceTotal = Math.max(0, invoice.amount)
-    return sum + Math.min(invoiceTotal, Math.max(0, invoice.amountPaid ?? (invoice.status === 'Paid' ? invoiceTotal : 0)))
+    return sum + Math.min(invoiceTotal, Math.max(0, invoiceTotal - invoiceOutstanding(invoice)))
   }, 0)
   const totalOutstanding = invoices.reduce((sum, invoice) => sum + outstandingFor(invoice), 0)
   const todayKey = new Date().toISOString().slice(0, 10)

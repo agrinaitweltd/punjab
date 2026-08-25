@@ -8,7 +8,7 @@ import { getCustomers } from "../../api/customersApi"
 import { getStock } from "../../api/stockApi"
 import { showNotice } from "../../lib/appDialogs"
 import { getCreditStatus } from "../../lib/creditControl"
-import { invoiceOutstanding } from "../../lib/creditNotes"
+import { attachCreditAllocations, invoiceDisplayStatus, invoiceOutstanding } from "../../lib/creditNotes"
 import { sendEmail, URGENT_SUPPORT_PHONE, ADMIN_NOTIFY_EMAIL, paymentProofSubmittedEmailHtml, paymentProofAdminAlertEmailHtml } from "../../lib/emailService"
 import { uploadPaymentProof, listPaymentProofsForCustomer, MAX_PROOF_BYTES, type PaymentProof } from "../../lib/paymentProofService"
 import type { Customer, CreditNote, CreditNoteAllocation, CustomerSubAccount, Invoice, Order, Payment, Product, StockItem, SupportTicket, User } from "../../types"
@@ -183,7 +183,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
       getProducts(), getStock(), getOrders(), getInvoices(), getPayments(), getTickets(), getCustomers(),
       getCreditNotes(), getCreditNoteAllocations(), getDayTrades(), getCustomerSubAccounts(),
     ])
-    setProducts(p); setStock(s); setOrders(o); setInvoices(inv); setPayments(pay); setTickets(tix)
+    setProducts(p); setStock(s); setOrders(o); setInvoices(attachCreditAllocations(inv, cna)); setPayments(pay); setTickets(tix)
     setCreditNotes(cn); setCreditNoteAllocations(cna)
     setMySubAccounts(subs.filter(a => a.customerId === user.id))
     setTradingDate(currentTradingDate(dt))
@@ -344,7 +344,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
     () => creditNoteAllocations.filter(a => myCreditNotes.some(c => c.id === a.creditNoteId)),
     [creditNoteAllocations, myCreditNotes],
   )
-  const myBalance  = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + invoiceOutstanding(i), 0)
+  const myBalance  = myInvoices.reduce((s, i) => s + invoiceOutstanding(i), 0)
   const outstandingInvoices = myInvoices.filter(i => invoiceOutstanding(i) > 0)
   const nextPaymentDue = [...outstandingInvoices].filter(i => i.dueDate).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]?.dueDate
   const availableCredit = Math.max(0, (me?.creditLimit ?? 0) - myBalance)
@@ -775,7 +775,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
                       <td style={{ color: isOverdue ? "#b91c1c" : "#6b7280" }}>{inv.dueDate}</td>
                       <td>
                         {inv.status === "Paid" ? (
-                          <span className="cd-status-badge" style={{ background: "#dcfce7", color: "#15803d" }}>Paid</span>
+                          <span className="cd-status-badge" style={{ background: "#dcfce7", color: "#15803d" }}>{invoiceDisplayStatus(inv)}</span>
                         ) : pendingProof ? (
                           <span className="cd-status-badge" style={{ background: "#dbeafe", color: "#1d4ed8" }}>Awaiting Review</span>
                         ) : inv.status === "Part Paid" ? (
@@ -1241,7 +1241,7 @@ export function CustomerPortal({ user, onLogout }: { user: User; onLogout: () =>
         {invoiceDetail && (
           <div>
             <div className="ord-review">
-              <div className="ord-row"><span>Status</span><span className="cd-status-badge" style={{ background: invoiceDetail.status === "Paid" ? "#dcfce7" : "#fee2e2", color: invoiceDetail.status === "Paid" ? "#15803d" : "#b91c1c" }}>{invoiceDetail.status}</span></div>
+              <div className="ord-row"><span>Status</span><span className="cd-status-badge" style={{ background: invoiceDetail.status === "Paid" ? "#dcfce7" : "#fee2e2", color: invoiceDetail.status === "Paid" ? "#15803d" : "#b91c1c" }}>{invoiceDisplayStatus(invoiceDetail)}</span></div>
               <div className="ord-row"><span>Due date</span><strong>{invoiceDetail.dueDate}</strong></div>
               <div className="ord-row"><span>Invoice Total</span><strong>£{invoiceDetail.amount.toFixed(2)}</strong></div>
               <div className="ord-row"><span>Amount Paid</span><strong style={{ color: "#15803d" }}>£{(invoiceDetail.amountPaid ?? 0).toFixed(2)}</strong></div>

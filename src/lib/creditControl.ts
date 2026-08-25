@@ -6,6 +6,7 @@
       back under it. */
 
 import type { Customer, Invoice } from "../types"
+import { invoiceOutstanding } from './creditNotes'
 
 export type OverdueInvoice = { invoiceNumber: string; amount: number; daysOverdue: number; id: string }
 
@@ -35,10 +36,10 @@ export function getCreditStatus(customer: Customer, invoices: Invoice[], now = n
   const creditDays = customer.creditDays ?? 14
   const creditLimit = customer.creditLimit ?? 0
   const unpaid = invoices
-    .filter(i => i.customerId === customer.id && i.status !== "Paid")
+    .filter(i => i.customerId === customer.id && invoiceOutstanding(i) > 0)
     .sort((a, b) => (a.date ?? a.dueDate).localeCompare(b.date ?? b.dueDate)) // oldest first
 
-  const outstanding = unpaid.reduce((s, i) => s + i.amount, 0)
+  const outstanding = unpaid.reduce((s, i) => s + invoiceOutstanding(i), 0)
 
   // An invoice that has REACHED its agreed credit days (age >= creditDays,
   // not just past it) must be paid — e.g. 14-day terms and an invoice that's
@@ -46,7 +47,7 @@ export function getCreditStatus(customer: Customer, invoices: Invoice[], now = n
   const overdueInvoices: OverdueInvoice[] = unpaid
     .map(i => {
       const age = daysPast(i.date || i.dueDate, now)
-      return { id: i.id, invoiceNumber: i.invoiceNumber, amount: i.amount, daysOverdue: age - creditDays }
+      return { id: i.id, invoiceNumber: i.invoiceNumber, amount: invoiceOutstanding(i), daysOverdue: age - creditDays }
     })
     .filter(i => i.daysOverdue >= 0)
 
@@ -62,8 +63,8 @@ export function getCreditStatus(customer: Customer, invoices: Invoice[], now = n
     for (const inv of unpaid) {
       if (remainingBalance <= creditLimit) break
       if (overdueIds.has(inv.id)) continue
-      minimumDue += inv.amount
-      remainingBalance -= inv.amount
+      minimumDue += invoiceOutstanding(inv)
+      remainingBalance -= invoiceOutstanding(inv)
     }
   }
 

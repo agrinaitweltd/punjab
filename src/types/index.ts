@@ -222,9 +222,11 @@ export interface Invoice {
   /** Issue date (from the imported statement or order date) — used with the
       customer's creditDays to work out when the invoice becomes overdue. */
   date?: string
-  /** Total paid so far via payments and/or applied credit notes. amount -
-      amountPaid is the outstanding balance shown on statements. */
+  /** Cash payments applied to this invoice. Credit-note allocations are kept
+      separately and exposed through `creditApplied`. */
   amountPaid?: number
+  /** Derived from credit_note_allocations when invoices are loaded. */
+  creditApplied?: number
   /** Archived legacy upload and the regenerated official PDF used by every
       customer download and reminder workflow. */
   sourceDocumentId?: string
@@ -287,6 +289,8 @@ export interface CreditNote {
   sourceDocumentId?: string
   sourceFileName?: string
   importedMetadata?: Record<string, unknown>
+  createdBy?: string
+  createdAt?: string
 }
 
 export interface CreditNoteItem {

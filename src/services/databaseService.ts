@@ -1,4 +1,5 @@
 ﻿import { supabase as _sb } from "../lib/supabase"
+import { isRuntimeTestMode } from "../lib/runtimeMode"
 import type {
   ActivityLog, AdminRole, AdminStaff, AssignedTask, BuyingPrice, BuyingSession, Customer, CreditNote, CreditNoteAllocation, CustomerApplication,
   CustomerSubAccount, DayTrade, DeliveryArea, Invoice, NotificationLog, Order, Payment, Product, Salesman, StockItem, Supplier, SupportTicket,
@@ -97,6 +98,8 @@ function mapCreditNote(r: any): CreditNote {
     sourceDocumentId: r.source_document_id ?? undefined,
     sourceFileName: r.source_file_name ?? undefined,
     importedMetadata: r.imported_metadata ?? undefined,
+    createdBy: r.created_by ?? undefined,
+    createdAt: r.created_at ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -709,14 +712,11 @@ class SupabaseDatabaseService {
     if (error) { console.error("getCreditNoteAllocations", error); return [] }
     return (data ?? []).map(mapCreditNoteAllocation)
   }
-  async createCreditNoteAllocation(input: Omit<CreditNoteAllocation, "id">): Promise<CreditNoteAllocation> {
-    const row = {
-      id: genId("cna"), credit_note_id: input.creditNoteId, invoice_id: input.invoiceId,
-      amount: input.amount, date: input.date,
-    }
-    const { data, error } = await db().from("credit_note_allocations").insert(row).select().single()
-    if (error) throw error
-    return mapCreditNoteAllocation(data)
+  async applyCreditNote(creditNoteId: string, invoiceId: string, amount: number, date: string): Promise<void> {
+    const { error } = await db().rpc(isRuntimeTestMode() ? "apply_test_credit_note" : "apply_credit_note", {
+      p_credit_note_id: creditNoteId, p_invoice_id: invoiceId, p_amount: amount, p_date: date,
+    })
+    if (error) throw new Error(error.message)
   }
 
   // ── CUSTOMER APPLICATIONS ──────────────────────────────────────────
