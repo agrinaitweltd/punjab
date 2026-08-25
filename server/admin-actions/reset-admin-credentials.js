@@ -29,7 +29,9 @@ export default async function handler(req, res) {
 
     // A fresh, unguessable password immediately invalidates the old one and
     // revokes any existing Supabase sessions/refresh tokens for this user.
-    const invalidated = await admin.auth.admin.updateUserById(target.data.auth_user_id, { password: `Pef1!${randomUUID()}${randomUUID()}` })
+    // Supabase Auth rejects passwords over 72 characters (bcrypt's limit) -
+    // "Pef1!" + one UUID is 41 chars, comfortably under that.
+    const invalidated = await admin.auth.admin.updateUserById(target.data.auth_user_id, { password: `Pef1!${randomUUID()}` })
     if (invalidated.error) throw invalidated.error
 
     const host = String(req.headers?.['x-forwarded-host'] || req.headers?.host || '').split(',')[0].trim()
