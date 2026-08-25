@@ -24,7 +24,13 @@ export default async function handler(req, res) {
     const rowMarker = '<w:t>[LINE]</w:t>'
     const markerIndex = xml.indexOf(rowMarker)
     if (markerIndex < 0) throw new Error('Product row placeholder is missing from the master template')
-    const rowStart = xml.lastIndexOf('<w:tr', markerIndex)
+    // Plain lastIndexOf('<w:tr', ...) also matches sibling tags like
+    // <w:trPr>/<w:trHeight> that share the prefix, truncating the captured
+    // row and leaving an unmatched </w:tr> per clone - corrupts the OOXML
+    // enough that Word/ConvertAPI reject the file outright.
+    const rowOpenTags = [...xml.slice(0, markerIndex).matchAll(/<w:tr(?=[ >])/g)]
+    const rowStart = rowOpenTags.length ? rowOpenTags.at(-1).index : -1
+    if (rowStart < 0) throw new Error('Product row start tag is missing from the master template')
     const rowEnd = xml.indexOf('</w:tr>', markerIndex) + '</w:tr>'.length
     const productRow = xml.slice(rowStart, rowEnd)
     const productRows = body.items.map(item => {
