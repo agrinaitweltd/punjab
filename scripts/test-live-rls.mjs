@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createClient } from '@supabase/supabase-js'
 
 const project = process.env.SUPABASE_PROJECT_REF
 const pat = process.env.SUPABASE_ACCESS_TOKEN
@@ -14,13 +15,11 @@ const anonEntry = keys.find(key => key.name === 'anon')
 const anonKey = anonEntry?.api_key || anonEntry?.key
 assert.ok(anonKey)
 
-const login = await fetch(`${origin}/api/login`, {
-  method: 'POST',
-  headers: { Origin: origin, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ role: 'admin', identifier: 'info@kavotech.uk', password }),
-})
-assert.equal(login.status, 200)
-const { accessToken } = await login.json()
+// Admin login is a direct Supabase Auth sign-in — no /api/login bridge for admins.
+const authClient = createClient(`https://${project}.supabase.co`, anonKey, { auth: { autoRefreshToken: false, persistSession: false } })
+const signIn = await authClient.auth.signInWithPassword({ email: 'info@kavotech.uk', password })
+assert.equal(signIn.error, null)
+const accessToken = signIn.data.session?.access_token
 assert.ok(accessToken)
 
 const rest = async (table, token) => {

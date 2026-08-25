@@ -106,6 +106,7 @@ export function AdminsPage({
   onUpdate,
   onDelete,
   onToggleActive,
+  onResetCredentials,
   loadRoles,
   currentUserIsSystemDeveloper = false,
 }: {
@@ -115,6 +116,7 @@ export function AdminsPage({
   onUpdate?: (id: string, data: Partial<AdminStaff>, sensitiveToken: string) => Promise<void>
   onDelete?: (id: string, sensitiveToken: string) => Promise<void>
   onToggleActive?: (id: string, active: boolean, sensitiveToken: string) => Promise<void>
+  onResetCredentials?: (id: string, sensitiveToken: string) => Promise<void>
   loadRoles?: () => Promise<AdminRole[]>
   currentUserIsSystemDeveloper?: boolean
 }) {
@@ -288,6 +290,16 @@ export function AdminsPage({
                               <button className="ps-action-btn" title="Edit" onClick={() => setEditing({ ...admin })}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                               </button>
+                              {onResetCredentials && (
+                                <button className="ps-action-btn" title="Reset & Resend Setup Link" onClick={() => setSensitiveAction({
+                                  title: "Reset & resend setup link",
+                                  warning: "This immediately revokes their current password and any active sessions. They'll receive a new one-time setup link by email.",
+                                  actionLabel: "Verify & Reset Access",
+                                  run: async token => { await onResetCredentials(admin.id, token); setSensitiveAction(null) },
+                                })}>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                </button>
+                              )}
                               <button className="ps-action-btn ps-action-danger" title="Remove access" onClick={() => setSensitiveAction({
                                 title: "Remove administrator access",
                                 warning: "This safely disables the account and revokes sign-in access. Historical audit records are preserved.",

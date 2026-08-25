@@ -18,10 +18,12 @@ export default async function handler(req, res) {
   const identifier = String(req.body?.identifier || '').trim()
   const password = String(req.body?.password || '')
   const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)
-  if (!['admin', 'customer'].includes(role) || !identifier || identifier.length > 254 || !password || password.length > 256) {
+  // Admin sign-in goes straight to Supabase Auth from the client
+  // (supabase.auth.signInWithPassword) — this endpoint only bridges legacy
+  // customer accounts into a real Auth session.
+  if (role !== 'customer' || !identifier || identifier.length > 254 || !password || password.length > 256) {
     return res.status(400).json({ error: 'Invalid login request' })
   }
-  if (role === 'admin' && !isEmail) return res.status(400).json({ error: 'Invalid login request' })
 
   const url = process.env.VITE_SUPABASE_URL
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY
@@ -33,30 +35,22 @@ export default async function handler(req, res) {
 
   try {
     let account = null
-    let table = ''
-    if (role === 'admin') {
-      table = 'admin_staff'
-      const { data, error } = await admin.from(table).select('id,email,password,active,auth_user_id').ilike('email', identifier).maybeSingle()
-      if (error) throw error
-      if (data?.active) account = data
-    } else {
-      table = 'customers'
-      const byNumber = await admin.from(table).select('id,email,password,status,blocked,auth_user_id').eq('customer_number', identifier).maybeSingle()
-      if (byNumber.error) throw byNumber.error
-      account = byNumber.data
-      if (!account && isEmail) {
-        const byEmail = await admin.from(table).select('id,email,password,status,blocked,auth_user_id').ilike('email', identifier).maybeSingle()
-        if (byEmail.error) throw byEmail.error
-        account = byEmail.data
-      }
-      if (!account && isEmail) {
-        table = 'customer_sub_accounts'
-        const subAccount = await admin.from(table).select('id,email,password,status,active,auth_user_id,customer_id').ilike('email', identifier).maybeSingle()
-        if (subAccount.error) throw subAccount.error
-        if (subAccount.data?.active && subAccount.data.status === 'Approved') account = subAccount.data
-      }
-      if (account?.blocked || String(account?.status || '').toLowerCase() === 'inactive') account = null
+    let table = 'customers'
+    const byNumber = await admin.from(table).select('id,email,password,status,blocked,auth_user_id').eq('customer_number', identifier).maybeSingle()
+    if (byNumber.error) throw byNumber.error
+    account = byNumber.data
+    if (!account && isEmail) {
+      const byEmail = await admin.from(table).select('id,email,password,status,blocked,auth_user_id').ilike('email', identifier).maybeSingle()
+      if (byEmail.error) throw byEmail.error
+      account = byEmail.data
     }
+    if (!account && isEmail) {
+      table = 'customer_sub_accounts'
+      const subAccount = await admin.from(table).select('id,email,password,status,active,auth_user_id,customer_id').ilike('email', identifier).maybeSingle()
+      if (subAccount.error) throw subAccount.error
+      if (subAccount.data?.active && subAccount.data.status === 'Approved') account = subAccount.data
+    }
+    if (account?.blocked || String(account?.status || '').toLowerCase() === 'inactive') account = null
 
     const recordLogin = async (success, failureCode, userId) => {
       const ip = String(req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim()
@@ -83,7 +77,7 @@ export default async function handler(req, res) {
       if (error) throw error
       authUser = data.user
     } else {
-      const authEmail = role === 'admin' ? account.email : customerAuthEmail(account.id)
+      const authEmail = customerAuthEmail(account.id)
       const { data, error } = await admin.auth.admin.createUser({
         email: authEmail,
         password: bridgePassword,

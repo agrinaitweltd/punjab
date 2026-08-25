@@ -139,7 +139,7 @@ import { GlobalSearchPage } from './GlobalSearchPage'
 import { CommunicationHistoryPage } from './CommunicationHistoryPage'
 import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
-import { inviteAdmin, inviteCustomer, manageAdmin } from '../../lib/secureAdminApi'
+import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials } from '../../lib/secureAdminApi'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -1304,6 +1304,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             const target = admins.find(a => a.id === id)
             await manageAdmin({ action: 'set_active', id, active }, sensitiveToken)
             void logActivity(user.displayName, `${active ? "activated" : "deactivated"} admin account${target ? ` for ${target.name}` : ""}`)
+            await load()
+          }}
+          onResetCredentials={async (id, sensitiveToken) => {
+            const target = admins.find(a => a.id === id)
+            await resetAdminCredentials(id, sensitiveToken)
+            void logActivity(user.displayName, `reset account access and resent setup link${target ? ` for ${target.name}` : ""}`)
             await load()
           }}
         />

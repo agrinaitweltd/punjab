@@ -33,6 +33,10 @@ export async function manageAdmin(input: Record<string, unknown>, sensitiveToken
   return api<{ ok: true }>('/api/admin-security?action=manage-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)
 }
 
+export async function resetAdminCredentials(id: string, sensitiveToken: string) {
+  return api<{ ok: true; simulated?: boolean; message?: string }>('/api/admin-security?action=reset-admin-credentials', { method: 'POST', body: JSON.stringify({ id }) }, sensitiveToken)
+}
+
 export async function getSystemOverview() { return api<SystemOverview>('/api/admin-security?action=system-overview') }
 export async function getSystemMode() { return api<{ testMode: boolean; changedAt: string | null; generation?: string | null; startedAt?: string | null }>('/api/admin-security?action=system-mode') }
 export async function setSystemMode(enabled: boolean, sensitiveToken: string) {

@@ -28,6 +28,28 @@ async function trySupabaseAuth(role: UserRole, identifier: string, password: str
   }
 }
 
+// Admin login goes straight to Supabase Auth with the password the person
+// actually typed — no bridge/DB-password layer in between. This is the
+// account Supabase itself enforces the password policy and re-auth against.
+async function recordAdminLoginAttempt(email: string, success: boolean, failureCode?: string, userId?: string, accountId?: string) {
+  try {
+    await fetch('/api/admin-security?action=record-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, success, failureCode, userId, accountId }),
+    })
+  } catch { /* best-effort audit log — never block login on this */ }
+}
+
+async function trySupabaseAdminAuth(email: string, password: string) {
+  if (!supabase) return null
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error || !data.session) {
+    await recordAdminLoginAttempt(email, false, error?.message === 'Email not confirmed' ? 'unconfirmed' : 'invalid_credentials')
+    return null
+  }
+  return data.session
+}
+
 class AuthService {
   private currentUser: User | null = null
 
@@ -35,21 +57,35 @@ class AuthService {
     await new Promise(r => setTimeout(r, 200))
 
     if (role === "admin") {
-      // Production logins must come from the live roster. Mock accounts are
-      // available only when Supabase is not configured (local/offline use).
-      let roster = mockAdmins
+      const email = usernameOrEmail.trim().toLowerCase()
       if (supabaseReady) {
-        if (!(await trySupabaseAuth(role, usernameOrEmail, password))) return null
-        try {
-          const dbAdmins = await databaseService.getAdmins()
-          roster = dbAdmins
-        } catch { roster = [] }
+        // The password is verified by Supabase Auth itself — there is no
+        // separate/legacy password store in the loop for admins.
+        const session = await trySupabaseAdminAuth(email, password)
+        if (!session || !supabase) return null
+        const { data, error } = await supabase.from("admin_staff")
+          .select("*").eq("auth_user_id", session.user.id).maybeSingle()
+        if (error || !data || data.active === false) {
+          await recordAdminLoginAttempt(email, false, 'no_active_staff_row', session.user.id)
+          await supabase.auth.signOut()
+          return null
+        }
+        await recordAdminLoginAttempt(email, true, undefined, session.user.id, data.id)
+        this.currentUser = {
+          id: data.id,
+          role: "admin",
+          username: String(data.name ?? "").toLowerCase().replace(/\s+/g, "."),
+          email: data.email,
+          displayName: data.name,
+          isSuperAdmin: data.is_super_admin ?? false,
+          isSystemDeveloper: data.role === "System Developer",
+          permissions: { ...(data.permissions ?? {}), customers: true, customersCreate: true },
+        }
+        return this.currentUser
       }
-      const candidate = roster.find(a => a.email.toLowerCase() === usernameOrEmail.trim().toLowerCase() && a.active)
-      const candidateOk = candidate
-        ? supabaseReady || passwordMatches(candidate.password, password)
-        : false
-      const admin = candidateOk ? candidate : undefined
+      // Offline/local dev only — no Supabase env vars configured.
+      const candidate = mockAdmins.find(a => a.email.toLowerCase() === email && a.active)
+      const admin = candidate && passwordMatches(candidate.password, password) ? candidate : undefined
       if (admin) {
         this.currentUser = {
           id: admin.id,
