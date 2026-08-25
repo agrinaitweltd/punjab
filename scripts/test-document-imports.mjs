@@ -14,6 +14,13 @@ function loadModule(file, replacements = []) {
 const matching = await loadModule('../src/lib/importMatching.ts', [
   ["import type { Customer, CreditNote, Invoice } from '../types'", ''],
 ])
+const importErrors = await loadModule('../src/lib/importErrors.ts')
+
+assert.match(importErrors.importFailureMessage({ code: '23505', message: 'duplicate key value violates unique constraint' }, 'fallback'), /already exists/i)
+assert.match(importErrors.importFailureMessage({ code: '42501', message: 'new row violates row-level security policy' }, 'fallback'), /permission/i)
+assert.match(importErrors.importFailureMessage({ message: 'Failed to fetch' }, 'fallback'), /connection was interrupted/i)
+assert.equal(importErrors.importFailureMessage({ message: 'Canonical PDF could not be linked' }, 'fallback'), 'Import failed: Canonical PDF could not be linked')
+assert.equal(importErrors.importFailureMessage({}, 'fallback'), 'fallback')
 
 const customers = [
   { id: 'customer-a', customerNumber: '828310', companyName: 'CBD Supply Chain UK Co. Ltd' },
@@ -45,6 +52,8 @@ assert.doesNotMatch(customersPage, /Both Invoice & Credit Note/)
 assert.match(customersPage, /CustomerCreditNoteModal/)
 assert.match(customersPage, /onCreateFromDocuments/)
 assert.match(customersPage, /Import Customer & Document/)
+assert.match(customersPage, /importFailureMessage\(error/)
+assert.match(customersPage, /finally\s*\{\s*setAdding\(false\)/)
 assert.doesNotMatch(customersPage, /Import it from the Credit Notes page/)
 assert.doesNotMatch(customersPage, /label="Credit Note Number"/)
 assert.doesNotMatch(customersPage, /Enter the credit note number/)

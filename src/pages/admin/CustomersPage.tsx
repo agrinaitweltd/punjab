@@ -18,6 +18,7 @@ import { SALESMEN } from '../../lib/salesmen'
 import { parseFinancialDocument, type ImportedCreditNote, type ImportedFinancialDocument, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
 import { matchImportedCustomer } from '../../lib/importMatching'
 import { invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
+import { importFailureMessage } from '../../lib/importErrors'
 
 const initialForm = {
   companyName: '',
@@ -289,7 +290,7 @@ export function CustomersPage({
           else setCreditReview(parsed)
         }
       }
-    } catch { setAddError('Could not read that document. Try the original PDF, JPG or PNG file.') }
+    } catch (error) { setAddError(importFailureMessage(error, 'Could not read that document. Try the original PDF, JPG or PNG file.')) }
     setInvoiceReading('')
   }
 
@@ -310,8 +311,12 @@ export function CustomersPage({
       setInvoiceReview(null); setCreditReview(null); setImportCustomer(emptyImportedCustomer)
       setOnboardingCustomer(imported.customerName); setOnboardingAccount(imported.accountNumber)
       setContactEmail(importCustomer.email); setContactPhone(importCustomer.phone)
-    } catch (error) { setAddError(error instanceof Error ? error.message : 'Could not import the customer documents.') }
-    setAdding(false)
+    } catch (error) {
+      console.error('Customer document import failed', error)
+      setAddError(importFailureMessage(error, 'Could not import the customer documents. Refresh Customers and try again.'))
+    } finally {
+      setAdding(false)
+    }
   }
 
   const handleStatementFile = async (file: File | undefined) => {
