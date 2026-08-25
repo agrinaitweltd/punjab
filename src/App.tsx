@@ -15,6 +15,7 @@ import type { User } from './types'
 import { getSystemMode } from './lib/secureAdminApi'
 import { setRuntimeTestMode } from './lib/runtimeMode'
 import { AppDialogs } from './components/AppDialogs'
+import { supabase } from './lib/supabase'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   constructor(props: { children: ReactNode }) {
@@ -82,9 +83,26 @@ function App() {
       return () => { active = false }
     }
     setModeReady(false)
-    getSystemMode()
-      .then(mode => { if (active) { setRuntimeTestMode(mode.testMode); setModeReady(true) } })
-      .catch(() => { if (active) { setRuntimeTestMode(false); setModeReady(true) } })
+    const restoreSession = async () => {
+      const sessionResult = supabase ? await supabase.auth.getSession() : null
+      const session = sessionResult?.data.session
+      const expectedAccountId = session?.user.app_metadata?.legacy_id
+      if (supabase && (sessionResult?.error || !session || (expectedAccountId && expectedAccountId !== user.id))) {
+        try { localStorage.removeItem(SESSION_KEY) } catch { /* ignore */ }
+        setRuntimeTestMode(false)
+        if (active) { setUser(null); setModeReady(true) }
+        return
+      }
+      try {
+        const mode = await getSystemMode()
+        if (active) setRuntimeTestMode(mode.testMode)
+      } catch {
+        if (active) setRuntimeTestMode(false)
+      } finally {
+        if (active) setModeReady(true)
+      }
+    }
+    void restoreSession()
     return () => { active = false }
   }, [user])
 

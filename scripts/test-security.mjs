@@ -4,6 +4,7 @@ import login from '../api/login.js'
 import requestPasswordReset from '../api/request-password-reset.js'
 import { guardApi, requireUser } from '../server/security.js'
 import { issueSensitiveToken, verifySensitiveToken } from '../server/sensitive-actions.js'
+import fs from 'node:fs'
 
 function response() {
   return { statusCode: 200, body: null, headers: {}, status(code) { this.statusCode = code; return this }, json(value) { this.body = value; return this }, setHeader(key, value) { this.headers[key] = value } }
@@ -36,6 +37,14 @@ assert.equal(blockedReset.statusCode, 403)
 const missingToken = response()
 assert.equal(await requireUser({ headers: {} }, missingToken), null)
 assert.equal(missingToken.statusCode, 401)
+
+const appSource = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+assert.match(appSource, /supabase\.auth\.getSession\(\)/)
+assert.match(appSource, /setUser\(null\)/)
+const authSource = fs.readFileSync(new URL('../src/services/authService.ts', import.meta.url), 'utf8')
+assert.match(authSource, /customers:\s*true,\s*customersCreate:\s*true/)
+const loginSource = fs.readFileSync(new URL('../api/login.js', import.meta.url), 'utf8')
+assert.match(loginSource, /passwordMatches\(account\.password, password\)[\s\S]*updateUserById\(authUser\.id, \{ password \}\)/)
 
 delete process.env.CRON_SECRET
 const cronResponse = response()

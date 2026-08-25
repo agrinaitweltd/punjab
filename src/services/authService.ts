@@ -59,7 +59,7 @@ class AuthService {
           displayName: admin.name,
           isSuperAdmin: admin.isSuperAdmin ?? false,
           isSystemDeveloper: admin.role === "System Developer",
-          permissions: admin.permissions ?? {},
+          permissions: { ...(admin.permissions ?? {}), customers: true, customersCreate: true },
         }
         return this.currentUser
       }

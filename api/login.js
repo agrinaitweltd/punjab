@@ -101,7 +101,15 @@ export default async function handler(req, res) {
     }
 
     if (!authUser?.email) throw new Error('Linked Auth user has no email address')
-    const { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password })
+    let { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password })
+    // Accounts created before the Auth cutover still carry their verified
+    // bcrypt password in the roster. If Auth drifted, a valid legacy password
+    // safely repairs the Auth credential instead of locking that admin out.
+    if ((signInError || !signedIn.session) && await passwordMatches(account.password, password)) {
+      const synchronized = await admin.auth.admin.updateUserById(authUser.id, { password })
+      if (synchronized.error) throw synchronized.error
+      ;({ data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({ email: authUser.email, password }))
+    }
     if (signInError || !signedIn.session) { await recordLogin(false, 'invalid_credentials', authUser.id); return res.status(401).json({ error: 'Invalid credentials' }) }
 
     await recordLogin(true, null, authUser.id)
