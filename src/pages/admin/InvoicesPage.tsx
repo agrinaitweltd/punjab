@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { CreditNote, CreditNoteAllocation, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
@@ -9,27 +10,26 @@ export function InvoicesPage({ invoices, creditNotes = [], allocations = [], onO
   allocations?: CreditNoteAllocation[]
   onOpenCreditNote?: (creditNoteId: string) => void
 }) {
-  const unpaid = invoices.filter((invoice) => invoiceOutstanding(invoice) > 0)
+  const unpaid = useMemo(() => invoices.filter((invoice) => invoiceOutstanding(invoice) > 0), [invoices])
 
-  return (
-    <div className="stack">
-      <div className="overview-grid">
-        <Card title="Total Invoices">
-          <p className="metric">{invoices.length}</p>
-        </Card>
-        <Card title="Outstanding Invoices">
-          <p className="metric">{unpaid.length}</p>
-        </Card>
-      </div>
+  // DataTable only renders one page of these <tr>s at a time, but building
+  // them (including the per-invoice allocation scan below) still happens for
+  // the full list on every render - memoize it instead of recomputing on
+  // every keystroke/unrelated state change elsewhere on the page.
+  const notesByInvoiceId = useMemo(() => {
+    const map = new Map<string, CreditNote[]>()
+    for (const allocation of allocations) {
+      const note = creditNotes.find(c => c.id === allocation.creditNoteId)
+      if (!note) continue
+      const list = map.get(allocation.invoiceId)
+      if (list) list.push(note); else map.set(allocation.invoiceId, [note])
+    }
+    return map
+  }, [allocations, creditNotes])
 
-      <Card title="Invoice Register">
-        <DataTable columns={['Invoice Number', 'Customer ID', 'Amount', 'Cash Paid', 'Credits', 'Outstanding', 'Due Date', 'Status', 'Credit Notes']}>
-          {invoices.map((invoice) => {
-            const invAllocations = allocations.filter(a => a.invoiceId === invoice.id)
-            const notes = invAllocations
-              .map(a => creditNotes.find(c => c.id === a.creditNoteId))
-              .filter((c): c is CreditNote => Boolean(c))
-            return (
+  const rows = useMemo(() => invoices.map((invoice) => {
+    const notes = notesByInvoiceId.get(invoice.id) ?? []
+    return (
               <tr key={invoice.id}>
                 <td>{invoice.invoiceNumber}</td>
                 <td>{invoice.customerId}</td>
@@ -53,8 +53,23 @@ export function InvoicesPage({ invoices, creditNotes = [], allocations = [], onO
                   )}
                 </td>
               </tr>
-            )
-          })}
+    )
+  }), [invoices, notesByInvoiceId, onOpenCreditNote])
+
+  return (
+    <div className="stack">
+      <div className="overview-grid">
+        <Card title="Total Invoices">
+          <p className="metric">{invoices.length}</p>
+        </Card>
+        <Card title="Outstanding Invoices">
+          <p className="metric">{unpaid.length}</p>
+        </Card>
+      </div>
+
+      <Card title="Invoice Register">
+        <DataTable columns={['Invoice Number', 'Customer ID', 'Amount', 'Cash Paid', 'Credits', 'Outstanding', 'Due Date', 'Status', 'Credit Notes']}>
+          {rows}
         </DataTable>
       </Card>
     </div>

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { showAppError, showSuccess } from '../lib/appDialogs'
+import { Spinner } from '../components/ui/Spinner'
 
 export function isPasswordRecoveryUrl() {
   const authType = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type')
@@ -34,13 +36,18 @@ export function SetPasswordPage({ onDone }: { onDone: () => void }) {
     if (!supabase) { setError('Secure account setup is temporarily unavailable.'); return }
     setBusy(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
-    if (updateError) { setBusy(false); setError('Your password could not be saved. The link may have expired; request a new one.'); return }
+    if (updateError) {
+      setBusy(false); setError('Your password could not be saved. The link may have expired; request a new one.')
+      showAppError(updateError, { feature: 'Set Password', fallbackCode: 503, retry: () => submit(event) })
+      return
+    }
     const { data } = await supabase.auth.getSession()
     if (data.session?.access_token) {
       await fetch('/api/admin-security?action=complete-account-setup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token }, body: '{}' }).catch(() => null)
     }
     window.history.replaceState(null, '', window.location.pathname)
     setBusy(false); setComplete(true)
+    showSuccess('Password saved')
   }
 
   return <main className="setup-page">
@@ -55,7 +62,7 @@ export function SetPasswordPage({ onDone }: { onDone: () => void }) {
             <label>Confirm Password<input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} autoComplete="new-password" required /></label>
             <ul className="password-rules"><li className={password.length >= 10 ? 'met' : ''}>At least 10 characters</li><li className={/[A-Z]/.test(password) && /[a-z]/.test(password) ? 'met' : ''}>Uppercase and lowercase letters</li><li className={/\d/.test(password) && /[^A-Za-z0-9]/.test(password) ? 'met' : ''}>A number and a symbol</li></ul>
             {error && <div className="form-error" role="alert">{error}</div>}
-            <button className="setup-submit" type="submit" disabled={busy}>{busy ? 'Saving securely…' : 'Save password'}</button>
+            <button className="setup-submit" type="submit" disabled={busy}>{busy ? <><Spinner size={15} color="#fff" /> Saving securely…</> : 'Save password'}</button>
           </form>}
         </>}
       </div>

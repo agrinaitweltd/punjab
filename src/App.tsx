@@ -15,7 +15,20 @@ import type { User } from './types'
 import { getSystemMode } from './lib/secureAdminApi'
 import { setRuntimeTestMode } from './lib/runtimeMode'
 import { AppDialogs } from './components/AppDialogs'
+import { SuccessToastStack } from './components/SuccessToastStack'
 import { supabase } from './lib/supabase'
+import { showAppError } from './lib/appDialogs'
+
+// Blanket coverage for the ~30+ action handlers across the app that don't
+// individually handle their errors (fired with `void`) - anything that
+// slips through still surfaces as a coded 801 error instead of failing
+// silently. Flows that matter enough to get a precise code do so at their
+// own throw site via resolveAppError/appError instead.
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', event => {
+    showAppError(event.reason, { feature: 'Unhandled', fallbackCode: 801 })
+  })
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   constructor(props: { children: ReactNode }) {
@@ -161,6 +174,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AppDialogs />
+      <SuccessToastStack />
       {!user ? <LoginPage onLogin={handleLogin} error={error} /> : null}
       {user?.role === 'admin' ? <AdminPortal user={user} onLogout={handleLogout} /> : null}
       {user?.role === 'customer' ? <CustomerPortal user={user} onLogout={handleLogout} /> : null}

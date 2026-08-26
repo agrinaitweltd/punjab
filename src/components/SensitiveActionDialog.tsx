@@ -3,6 +3,7 @@ import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { verifySensitiveAction } from '../lib/secureAdminApi'
+import { resolveAppError } from '../lib/appErrors'
 
 export function SensitiveActionDialog({ open, title, warning, actionLabel = 'Verify & Continue', onClose, onVerified }: {
   open: boolean; title: string; warning?: string; actionLabel?: string; onClose: () => void; onVerified: (token: string) => Promise<void>
@@ -18,7 +19,10 @@ export function SensitiveActionDialog({ open, title, warning, actionLabel = 'Ver
       const verified = await verifySensitiveAction(password)
       setPassword('')
       await onVerified(verified.token)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Verification failed.') }
+    } catch (reason) {
+      const resolved = resolveAppError(reason, 402)
+      setError(`Error ${resolved.code} — ${resolved.title}. ${resolved.message}`)
+    }
     finally { setBusy(false) }
   }
 

@@ -5,6 +5,8 @@ import { updateCustomer } from "../api/customersApi"
 import { updateAdmin, createCustomerApplication } from "../api/miscApi"
 import { sendEmail, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
 import { Boxes, CreditCard, Eye, EyeOff, FileText, LockKeyhole, Mail, UsersRound } from "lucide-react"
+import { showAppError, showSuccess } from "../lib/appDialogs"
+import { Spinner } from "../components/ui/Spinner"
 
 function EyeIcon({ open }: { open: boolean }) {
   return open ? <Eye size={17} /> : <EyeOff size={17} />
@@ -152,10 +154,14 @@ function ActivateFlow({ role, onBack, onDone }: { role: UserRole; onBack: () => 
     try {
       const em = email.trim().toLowerCase()
       const response = await fetch('/api/request-password-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, email: em }) })
-      if (!response.ok) throw new Error('Recovery request failed')
+      if (!response.ok) throw new Error('Password reset email could not be sent')
       setAccount({ kind: role, id: '', name: '', email: em })
       setStage("done")
-    } catch { setErr("Something went wrong — please try again.") }
+      showSuccess("Setup email sent")
+    } catch (error) {
+      setErr("Something went wrong — please try again.")
+      showAppError(error, { feature: 'Account Activation', fallbackCode: 503, retry: () => lookupAndSend(e) })
+    }
     setBusy(false)
   }
 
@@ -342,10 +348,14 @@ function ForgotPasswordFlow({ role, onBack, onDone }: { role: UserRole; onBack: 
     try {
       const em = email.trim().toLowerCase()
       const response = await fetch('/api/request-password-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, email: em }) })
-      if (!response.ok) throw new Error('Recovery request failed')
+      if (!response.ok) throw new Error('Password reset email could not be sent')
       setAccount({ kind: role, id: '', name: '', email: em })
       setStage("done")
-    } catch { setErr("Something went wrong — please try again.") }
+      showSuccess("Password reset email sent")
+    } catch (error) {
+      setErr("Something went wrong — please try again.")
+      showAppError(error, { feature: 'Forgot Password', fallbackCode: 503, retry: () => lookupAndSend(e) })
+    }
     setBusy(false)
   }
 
@@ -666,7 +676,7 @@ export function LoginPage({ onLogin, error }: {
           {error && <p className="lx-error">{error}</p>}
 
           <button type="submit" className="lx-login-btn" disabled={loading}>
-            {loading ? "Signing in…" : "Log in"}
+            {loading ? <><Spinner size={15} color="#3b2a00" /> Signing in…</> : "Log in"}
           </button>
 
           <p className="lx-signup-note">First time here?</p>

@@ -6,7 +6,7 @@ import { ADMIN_NOTIFY_EMAIL, sendEmail, welcomeEmailHtml, paymentReceivedEmailHt
 import { getCreditStatus } from '../../lib/creditControl'
 import { APPROVED_INVOICE_TEMPLATE_ID, dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
 import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
-import { confirmAction, showNotice } from '../../lib/appDialogs'
+import { confirmAction, showNotice, showAppError, showSuccess } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
 import { saveCreditNoteItems } from '../../services/creditNoteItemService'
 import { findDuplicateCreditNote, findDuplicateInvoice, matchImportedCustomer } from '../../lib/importMatching'
@@ -259,14 +259,23 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setCommunicationLogs(communicationLogsData)
   }, [])
 
-  // Re-fetch on every page change so dashboards never show stale data
+  // Load once on mount. Individual actions patch their own slice of state
+  // directly (see e.g. importCustomerDocuments) instead of triggering a full
+  // 26-table reload, so we don't need to re-run this on every page click.
   useEffect(() => {
     load()
-  }, [load, current])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Keep polling in the background so notifications fire even while the
-  // admin stays on one page (e.g. a new order arrives while browsing Stock).
-  usePoll(load, 20000)
+  // The background poll only needs to catch orders/tickets created by other
+  // users while this admin stays on one page — it doesn't need the other 24
+  // tables `load()` fetches, so it gets its own much cheaper query.
+  const loadLive = useCallback(async () => {
+    const [ordersData, ticketsData] = await Promise.all([getOrders(), getTickets()])
+    setOrders(ordersData)
+    setTickets(ticketsData)
+  }, [])
+  usePoll(loadLive, 20000)
 
   const { unseenCount: newOrders, markAllSeen: markOrdersSeen } = useUnseenCount(orders, `punjab-seen-orders-${user.id}`)
   const { unseenCount: newTickets, markAllSeen: markTicketsSeen } = useUnseenCount(tickets, `punjab-seen-tickets-${user.id}`)
@@ -385,17 +394,20 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setCurrent(newOrders > 0 ? 'orders' : newTickets > 0 ? 'tickets' : pendingProofsCount > 0 ? 'payment-proofs' : 'orders')
   }
 
-  const importCustomerDocuments = async (documents: ImportedFinancialDocument[]) => {
+  const importCustomerDocuments = async (documents: ImportedFinancialDocument[], onProgress?: (stage: string) => void) => {
     if (!documents.length) throw new Error('Select at least one document to import.')
+    onProgress?.('Checking existing customers')
     const importedCustomer = documents[0].customer
     const accounts = new Set(documents.map(document => document.customer.accountNumber.replace(/[^a-z0-9]/gi, '').toLowerCase()).filter(Boolean))
     if (accounts.size > 1) throw new Error('The selected documents belong to different customer accounts.')
     let customer = matchImportedCustomer(customers, importedCustomer)
+    const isNewCustomer = !customer
     if (!customer && documents.every(document => document.documentType === 'credit_note')) {
       throw new Error('Create the customer from an invoice first, then add the credit note from their customer account.')
     }
     if (!customer) {
       if (!importedCustomer.companyName.trim() || !importedCustomer.accountNumber.trim()) throw new Error('Confirm the customer name and account number before importing.')
+      onProgress?.('Saving to Supabase')
       customer = await createCustomer({
         companyName: importedCustomer.companyName, contactPerson: '',
         email: importedCustomer.email || `${importedCustomer.accountNumber}@pending.punjab.local`,
@@ -415,49 +427,61 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       })
       if (updatedCustomer) customer = updatedCustomer
     }
+    const savedCustomer = customer
 
     const availableInvoices = [...invoices]
     const availableCredits = [...creditNotes]
-    let workingBalance = invoices.filter(invoice => invoice.customerId === customer.id).reduce((sum, invoice) => sum + invoiceOutstanding(invoice), 0)
+    const newInvoices: Invoice[] = []
+    const newCreditNotes: CreditNote[] = []
+    let workingBalance = invoices.filter(invoice => invoice.customerId === savedCustomer.id).reduce((sum, invoice) => sum + invoiceOutstanding(invoice), 0)
 
+    onProgress?.('Validating')
     for (const document of documents) {
       if (document.documentType === 'invoice') {
         const issueDate = document.invoice.date || new Date().toISOString().slice(0, 10)
-        if (findDuplicateInvoice(availableInvoices, { invoiceNumber: document.invoice.invoiceNumber, customerId: customer.id, date: issueDate })) throw new Error('This invoice has already been imported for that customer and date.')
+        if (findDuplicateInvoice(availableInvoices, { invoiceNumber: document.invoice.invoiceNumber, customerId: savedCustomer.id, date: issueDate })) throw new Error('This invoice has already been imported for that customer and date.')
         if (availableInvoices.some(invoice => invoice.invoiceNumber.trim().toLowerCase() === document.invoice.invoiceNumber.trim().toLowerCase())) throw new Error('That invoice number already exists.')
-        const due = new Date(`${issueDate}T00:00:00`); due.setDate(due.getDate() + (customer.creditDays ?? 14))
+        const due = new Date(`${issueDate}T00:00:00`); due.setDate(due.getDate() + (savedCustomer.creditDays ?? 14))
+        onProgress?.('Saving to Supabase')
         const createdInvoice = await createInvoice({
-          customerId: customer.id, invoiceNumber: document.invoice.invoiceNumber, date: issueDate,
+          customerId: savedCustomer.id, invoiceNumber: document.invoice.invoiceNumber, date: issueDate,
           dueDate: due.toISOString().slice(0, 10), amount: document.invoice.grandTotal,
           amountPaid: 0, status: document.invoice.grandTotal > 0 ? 'Unpaid' : 'Paid',
           totalGoods: document.invoice.totalGoods, totalVat: document.invoice.vat, packages: document.invoice.packages,
           importedMetadata: { accountNumber: importedCustomer.accountNumber, deliveryAccount: document.invoice.deliveryAccount, salesman: document.invoice.salesman, vatSummary: document.vatSummary },
         })
         await saveInvoiceItems(createdInvoice.id, document.items)
-        let sourceDocumentId: string | undefined
-        if (document.source) {
-          const source = await uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'legacy_source' })
-          sourceDocumentId = source.id
-        }
-        const canonical = await generateCanonicalInvoicePdf(createdInvoice, customer, document.items)
-        const official = await uploadFile(canonical.fileName, 'application/pdf', canonical.blob.size, canonical.dataUri, `Invoices: ${createdInvoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
-        const linked = await updateInvoice(createdInvoice.id, { sourceDocumentId, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
+        onProgress?.('Saving PDF')
+        // The source upload and canonical-PDF generation don't depend on each
+        // other - only on the invoice/customer/items above - so they run
+        // concurrently instead of as two sequential round trips.
+        const [source, canonical] = await Promise.all([
+          document.source
+            ? uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Invoices: Original source for ${createdInvoice.invoiceNumber}`, savedCustomer.id, savedCustomer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'legacy_source' })
+            : Promise.resolve(undefined),
+          generateCanonicalInvoicePdf(createdInvoice, savedCustomer, document.items),
+        ])
+        const official = await uploadFile(canonical.fileName, 'application/pdf', canonical.blob.size, canonical.dataUri, `Invoices: ${createdInvoice.invoiceNumber}`, savedCustomer.id, savedCustomer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
+        const linked = await updateInvoice(createdInvoice.id, { sourceDocumentId: source?.id, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
         if (!linked) throw new Error('The invoice was imported, but its PDF references could not be linked.')
-        availableInvoices.push(createdInvoice)
+        const finalInvoice = { ...createdInvoice, sourceDocumentId: source?.id, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, creditApplied: 0 }
+        availableInvoices.push(finalInvoice)
+        newInvoices.push(finalInvoice)
         workingBalance = Math.max(0, workingBalance + document.invoice.grandTotal)
-        void logActivity(user.displayName, `imported invoice ${createdInvoice.invoiceNumber} for ${customer.companyName} (${document.items.length} product rows)`)
+        void logActivity(user.displayName, `imported invoice ${createdInvoice.invoiceNumber} for ${savedCustomer.companyName} (${document.items.length} product rows)`)
         continue
       }
 
       const sourceCreditNumber = document.creditNote.creditNumber.trim()
       if (sourceCreditNumber) {
-        const identity = { creditNumber: sourceCreditNumber, customerId: customer.id, date: document.creditNote.date }
+        const identity = { creditNumber: sourceCreditNumber, customerId: savedCustomer.id, date: document.creditNote.date }
         if (findDuplicateCreditNote(availableCredits, identity)) throw new Error('This credit note has already been imported for that customer and date.')
         if (availableCredits.some(note => note.creditNumber.trim().toLowerCase() === sourceCreditNumber.toLowerCase())) throw new Error('That credit note number already exists.')
       }
       const accountingAmount = Math.abs(document.creditNote.grandTotal)
+      onProgress?.('Saving to Supabase')
       const note = await createCreditNote({
-        creditNumber: sourceCreditNumber || undefined, customerId: customer.id, amount: accountingAmount,
+        creditNumber: sourceCreditNumber || undefined, customerId: savedCustomer.id, amount: accountingAmount,
         reason: document.creditNote.originalInvoiceReference ? `Imported credit for invoice ${document.creditNote.originalInvoiceReference}` : 'Imported credit note',
         date: document.creditNote.date, status: 'Active', remainingBalance: accountingAmount,
         originalInvoiceReference: document.creditNote.originalInvoiceReference,
@@ -467,18 +491,31 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       })
       await saveCreditNoteItems(note.id, document.items)
       let sourceDocumentId: string | undefined
+      let finalNote = note
       if (document.source) {
-        const source = await uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Credit Notes: Original source for ${note.creditNumber}`, customer.id, customer.companyName, { creditNoteId: note.id, creditNoteNumber: note.creditNumber, creditNoteAmount: note.amount, documentRole: 'credit_note_source' })
+        onProgress?.('Saving PDF')
+        const source = await uploadFile(document.source.name, document.source.type, document.source.size, document.source.dataUri, `Credit Notes: Original source for ${note.creditNumber}`, savedCustomer.id, savedCustomer.companyName, { creditNoteId: note.id, creditNoteNumber: note.creditNumber, creditNoteAmount: note.amount, documentRole: 'credit_note_source' })
         sourceDocumentId = source.id
         if (!await updateCreditNote(note.id, { sourceDocumentId, sourceFileName: source.name })) throw new Error('The credit note was imported, but its source PDF could not be linked.')
+        finalNote = { ...note, sourceDocumentId, sourceFileName: source.name }
       }
-      availableCredits.push(note)
-      void logActivity(user.displayName, `imported credit note ${note.creditNumber} for ${customer.companyName} (${document.items.length} product rows)`)
+      availableCredits.push(finalNote)
+      newCreditNotes.push(finalNote)
+      void logActivity(user.displayName, `imported credit note ${note.creditNumber} for ${savedCustomer.companyName} (${document.items.length} product rows)`)
     }
 
-    await updateCustomer(customer.id, { balance: workingBalance })
-    await load()
-    return { customerName: customer.companyName, accountNumber: customer.customerNumber }
+    await updateCustomer(savedCustomer.id, { balance: workingBalance })
+    onProgress?.('Complete')
+
+    // Patch local state directly instead of a full 26-table reload - this is
+    // the whole "Import Customer -> Continue" latency the full `load()` used
+    // to add on top of an already-multi-step operation.
+    const updatedCustomer = { ...savedCustomer, balance: workingBalance }
+    setCustomers(cs => isNewCustomer ? [...cs, updatedCustomer] : cs.map(c => c.id === updatedCustomer.id ? updatedCustomer : c))
+    if (newInvoices.length) setInvoices(list => [...list, ...newInvoices])
+    if (newCreditNotes.length) setCreditNotes(list => [...list, ...newCreditNotes])
+
+    return { customerName: savedCustomer.companyName, accountNumber: savedCustomer.customerNumber }
   }
 
   const page = () => {
@@ -499,7 +536,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'global-search') return <GlobalSearchPage customers={customers} invoices={invoices} onNavigate={navigate} />
-    if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
+    if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'error-log', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
       return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
     }
     if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} deliveryLogs={communicationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
@@ -952,21 +989,25 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         if (amount <= 0) throw new Error('Payment amount must be greater than zero.')
         if (amount > outstanding + 0.005) throw new Error(`Payment exceeds the £${outstanding.toFixed(2)} outstanding balance.`)
         const newPaid = (invoice.amountPaid ?? 0) + amount
-        await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
-        await updateInvoice(invoice.id, { amountPaid: newPaid, status: invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0) })
+        const newStatus = invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0)
+        const newPayment = await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
+        await updateInvoice(invoice.id, { amountPaid: newPaid, status: newStatus })
+        setInvoices(list => list.map(item => item.id === invoice.id ? { ...item, amountPaid: newPaid, status: newStatus } : item))
+        setPayments(list => [...list, newPayment])
         const customer = customers.find(c => c.id === invoice.customerId)
         if (customer) {
           const synchronizedBalance = invoices
             .filter(item => item.customerId === customer.id)
             .reduce((sum, item) => sum + invoiceOutstanding(item.id === invoice.id ? { ...item, amountPaid: newPaid } : item), 0)
           await updateCustomer(customer.id, { balance: synchronizedBalance })
-          if (invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0) === 'Paid') {
+          setCustomers(list => list.map(c => c.id === customer.id ? { ...c, balance: synchronizedBalance } : c))
+          if (newStatus === 'Paid') {
             void sendPaymentReceived(invoice, customer, amount, user.displayName)
             if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)), undefined, { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, communicationType: 'payment_received' })
           }
         }
         void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
-        await load()
+        showSuccess('Payment recorded successfully')
       }} />
     }
 
@@ -1148,11 +1189,16 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             if (!invoice) return
             const result = computeCreditApplication(note, invoice, amount)
             if (result.appliedAmount <= 0) return
-            await applyCreditNoteToInvoice(note.id, invoice.id, result.appliedAmount, new Date().toISOString().slice(0, 10))
-            const customer = customers.find(c => c.id === note.customerId)
-            if (customer) await updateCustomer(customer.id, { balance: Math.max(0, invoices.filter(item => item.customerId === customer.id).reduce((sum, item) => sum + invoiceOutstanding(item), 0) - result.appliedAmount) })
-            void logActivity(user.displayName, `applied £${result.appliedAmount.toFixed(2)} credit from ${note.creditNumber} to ${invoice.invoiceNumber}`)
-            await load()
+            try {
+              await applyCreditNoteToInvoice(note.id, invoice.id, result.appliedAmount, new Date().toISOString().slice(0, 10))
+              const customer = customers.find(c => c.id === note.customerId)
+              if (customer) await updateCustomer(customer.id, { balance: Math.max(0, invoices.filter(item => item.customerId === customer.id).reduce((sum, item) => sum + invoiceOutstanding(item), 0) - result.appliedAmount) })
+              void logActivity(user.displayName, `applied £${result.appliedAmount.toFixed(2)} credit from ${note.creditNumber} to ${invoice.invoiceNumber}`)
+              await load()
+              showSuccess('Credit note applied successfully')
+            } catch (error) {
+              showAppError(error, { feature: 'Apply Credit Note', context: { creditNumber: note.creditNumber, invoiceNumber: invoice.invoiceNumber }, fallbackCode: 213 })
+            }
           }}
         />
       )

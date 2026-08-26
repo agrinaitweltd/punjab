@@ -3,13 +3,14 @@ import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { SensitiveActionDialog } from '../../components/SensitiveActionDialog'
-import { createApplicationBackup, downloadApplicationBackup, getSystemOverview, sendEmailTestSuite, setSystemMode, type EmailSuiteResult, type SystemOverview } from '../../lib/secureAdminApi'
+import { createApplicationBackup, downloadApplicationBackup, getErrorLog, getSystemOverview, sendEmailTestSuite, setErrorResolved, setSystemMode, type EmailSuiteResult, type LoggedError, type SystemOverview } from '../../lib/secureAdminApi'
 
 const SECTION_TITLES: Record<string, { title: string; subtitle: string }> = {
   'system-overview': { title: 'System Overview', subtitle: 'Production health, account totals and security status.' },
   'system-users': { title: 'System Users', subtitle: 'Authorised staff accounts and recent authentication state.' },
   'login-activity': { title: 'Login Activity', subtitle: 'Restricted, non-sensitive authentication audit information.' },
   'audit-logs': { title: 'Security Audit Log', subtitle: 'Important administrative and system actions.' },
+  'error-log': { title: 'Error Log', subtitle: 'Application errors reported by users and caught automatically.' },
   'test-mode': { title: 'Global Test Mode', subtitle: 'Production-safe workflow isolation controls.' },
   'backup-recovery': { title: 'Backup & Recovery', subtitle: 'Supabase backup availability and recovery safeguards.' },
   'system-health': { title: 'Integrations & Health', subtitle: 'Safe connectivity checks without exposing credentials.' },
@@ -27,12 +28,23 @@ export function SystemDeveloperPage({ section }: { section: string }) {
   const [emailResults, setEmailResults] = useState<EmailSuiteResult[]>([])
   const [selectedBackupId, setSelectedBackupId] = useState('')
   const [restoreInfo, setRestoreInfo] = useState(false)
+  const [errors, setErrors] = useState<LoggedError[] | null>(null)
+  const [errorFilter, setErrorFilter] = useState<'unresolved' | 'all'>('unresolved')
   const title = SECTION_TITLES[section] ?? SECTION_TITLES['system-overview']
   const load = () => {
     setError('')
+    if (section === 'error-log') {
+      getErrorLog().then(result => setErrors(result.errors)).catch(reason => setError(reason instanceof Error ? reason.message : 'Error log could not be loaded.'))
+      return
+    }
     getSystemOverview().then(setData).catch(reason => setError(reason instanceof Error ? reason.message : 'System status could not be loaded.'))
   }
   useEffect(load, [section])
+  const visibleErrors = useMemo(() => (errors ?? []).filter(item => errorFilter === 'all' || !item.resolved), [errors, errorFilter])
+  const toggleResolved = async (item: LoggedError) => {
+    await setErrorResolved(item.id, !item.resolved)
+    setErrors(list => list?.map(row => row.id === item.id ? { ...row, resolved: !row.resolved } : row) ?? null)
+  }
   const users = useMemo(() => data?.users.filter(user => filter === 'All' || user.role === filter) ?? [], [data?.users, filter])
   const bytes = (value?: number | null) => value ? `${(value / 1024 / 1024).toFixed(2)} MB` : '-'
   const finishSensitiveAction = async (token: string) => {
@@ -68,10 +80,11 @@ export function SystemDeveloperPage({ section }: { section: string }) {
   return <div className="system-page stack">
     <header className="system-page-head">
       <div><span className="control-centre-label">Restricted Technical Administration</span><h2>{title.title}</h2><p>{title.subtitle}</p></div>
-      <Button variant="secondary" onClick={load} disabled={!data}>Refresh</Button>
+      <Button variant="secondary" onClick={load} disabled={section === 'error-log' ? !errors : !data}>Refresh</Button>
     </header>
     {error && <div className="system-error" role="alert">{error}<Button className="btn-sm" variant="secondary" onClick={load}>Retry</Button></div>}
-    {!data && !error && <div className="system-skeleton-grid">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>}
+    {section !== 'error-log' && !data && !error && <div className="system-skeleton-grid">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>}
+    {section === 'error-log' && !errors && !error && <div className="system-skeleton-grid">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>}
 
     {data && section === 'system-overview' && <>
       <div className="system-status-strip"><span className="status-dot good" />Production systems operational <small>Environment: {data.health.environment}</small></div>
@@ -107,6 +120,24 @@ export function SystemDeveloperPage({ section }: { section: string }) {
     {data && section === 'audit-logs' && <section className="system-panel system-table-panel">
       <div className="system-table-tools"><div><strong>Restricted Audit Trail</strong><span>Administrative actions are append-only for normal users</span></div></div>
       <div className="table-wrap"><table><thead><tr><th>Action</th><th>Target</th><th>Time</th></tr></thead><tbody>{data.audit.map(item => <tr key={item.id}><td><strong>{prettyAction(item.action)}</strong></td><td>{item.target_type || 'System'}{item.target_id ? ' / ' + item.target_id : ''}</td><td>{dateTime(item.created_at)}</td></tr>)}</tbody></table></div>
+    </section>}
+
+    {errors && section === 'error-log' && <section className="system-panel system-table-panel">
+      <div className="system-table-tools">
+        <div><strong>Application Errors</strong><span>{visibleErrors.length} {errorFilter === 'unresolved' ? 'unresolved' : 'total'}</span></div>
+        <select value={errorFilter} onChange={event => setErrorFilter(event.target.value as 'unresolved' | 'all')}><option value="unresolved">Unresolved only</option><option value="all">All errors</option></select>
+      </div>
+      <div className="table-wrap"><table><thead><tr><th>Code</th><th>Title</th><th>Feature</th><th>Reported By</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        {visibleErrors.map(item => <tr key={item.id}>
+          <td><strong>{item.error_code}</strong></td>
+          <td>{item.title}</td>
+          <td>{item.feature || '—'}</td>
+          <td>{item.user_email || '—'}</td>
+          <td>{dateTime(item.created_at)}</td>
+          <td><span className={item.resolved ? 'sys-status active' : 'sys-status disabled'}>{item.resolved ? 'Resolved' : 'Unresolved'}</span></td>
+          <td><Button className="btn-sm" variant="secondary" onClick={() => toggleResolved(item)}>{item.resolved ? 'Reopen' : 'Mark Resolved'}</Button></td>
+        </tr>)}
+      </tbody></table>{!visibleErrors.length && <EmptyState title={errorFilter === 'unresolved' ? 'No unresolved errors' : 'No errors logged yet'} />}</div>
     </section>}
 
     {data && section === 'test-mode' && <section className="system-panel mode-panel">

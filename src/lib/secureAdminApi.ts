@@ -20,6 +20,26 @@ export async function verifySensitiveAction(password: string) {
   return api<{ token: string; expiresIn: number }>('/api/admin-security?action=verify-sensitive-action', { method: 'POST', body: JSON.stringify({ password }) })
 }
 
+export type ErrorReportInput = {
+  code: number; title: string; message: string; technicalDetail: string
+  feature?: string; context?: Record<string, unknown>; note?: string
+}
+export async function reportError(input: ErrorReportInput) {
+  return api<{ ok: true }>('/api/admin-security?action=report-error', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export type LoggedError = {
+  id: string; error_code: number; title: string; message: string; severity: string
+  user_email: string | null; feature: string | null; technical_detail: string | null
+  context: Record<string, unknown> | null; correlation_id: string | null; resolved: boolean; created_at: string
+}
+export async function getErrorLog() {
+  return api<{ errors: LoggedError[] }>('/api/admin-security?action=error-log', { method: 'GET' })
+}
+export async function setErrorResolved(id: string, resolved: boolean) {
+  return api<{ ok: true }>('/api/admin-security?action=error-log', { method: 'POST', body: JSON.stringify({ id, resolved }) })
+}
+
 export type AdminInvitationInput = { name: string; email: string; role: string; jobTitle: string; permissions: PermissionSet; isSalesman: boolean; salesmanIds: string[] }
 export async function inviteAdmin(input: AdminInvitationInput, sensitiveToken: string) {
   return api<{ ok: true }>('/api/admin-security?action=invite-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)

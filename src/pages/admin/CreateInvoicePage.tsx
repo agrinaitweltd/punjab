@@ -10,6 +10,7 @@ import { APPROVED_INVOICE_TEMPLATE_ID, uploadFile } from '../../lib/fileService'
 import { sendEmail } from '../../lib/emailService'
 import { sendWhatsAppDocument } from '../../lib/whatsapp'
 import { authenticatedFetch } from '../../lib/apiFetch'
+import { showAppError, showSuccess } from '../../lib/appDialogs'
 
 type Line = { line: string; qty: string; product: string; variety: string; size: string; price: string; vatRate: string; vatCode: string }
 type ManualCustomer = { name: string; accountNumber: string; address: string; email: string; phone: string }
@@ -75,7 +76,10 @@ export function CreateInvoicePage({ customers, invoices, userName, onCreated }: 
       const result: Generated = { customer: customer ?? null, manual: { ...activeCustomer }, invoiceNumber: generatedNumber, dueDate: due.toISOString().slice(0, 10), pdf, pdfDataUri, pdfBase64, pdfFileName, docx, docxFileName, provider: pdfResponse.headers.get('X-PDF-Provider') || 'PDF service' }
       download(pdf, pdfFileName); setGenerated(result); setWordFallback(null); setSendEmailAddress(activeCustomer.email || ''); setSendPhone(activeCustomer.phone || '')
       setSendMessage(`Hello ${activeCustomer.name},\n\nPlease find attached invoice ${generatedNumber} for ${money(totals.total)}.\nInvoice date: ${invoiceDate}\nDue date: ${result.dueDate}\nAccount: ${activeCustomer.accountNumber}\n\nKind regards,\nPunjab Exotic Foods Limited`)
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'PDF generation failed.'); setGenerated(null) }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'PDF generation failed.'); setGenerated(null)
+      showAppError(error, { feature: 'Create Invoice', retry: generate, fallbackCode: 205 })
+    }
     finally { setProgress('') }
   }
 
@@ -103,7 +107,7 @@ export function CreateInvoicePage({ customers, invoices, userName, onCreated }: 
     if (sendMode === 'whatsapp' || sendMode === 'both') { const result = await sendWhatsAppDocument(sendPhone, sendMessage, generated.pdfFileName, generated.pdfBase64, { customerId: generated.savedInvoice?.customerId, customerName: generated.customer?.companyName || generated.manual.name, createdBy: userName }); results.push(result.status === 'Sent') }
     setActionBusy(''); setMessage(results.every(Boolean) ? 'Invoice PDF sent successfully.' : generated.savedInvoice ? 'Invoice saved, but sending failed. Check Communication History and retry.' : 'Sending failed. Check the contact details and retry.'); if (results.every(Boolean)) { setSendPanel(false); setGenerated(null) }
   }
-  const chooseSave = async (andSend: boolean) => { setActionBusy(andSend ? 'save-send' : 'save'); setMessage(''); try { const saved = await ensureSaved(); if (andSend) { setGenerated(saved); setSendPanel(true) } else { setMessage(`Invoice ${saved.invoiceNumber} saved to the customer account.`); setGenerated(null) } } catch (error) { setMessage(error instanceof Error ? error.message : 'Invoice could not be saved. Nothing was sent.') } finally { setActionBusy('') } }
+  const chooseSave = async (andSend: boolean) => { setActionBusy(andSend ? 'save-send' : 'save'); setMessage(''); try { const saved = await ensureSaved(); if (andSend) { setGenerated(saved); setSendPanel(true) } else { setMessage(`Invoice ${saved.invoiceNumber} saved to the customer account.`); setGenerated(null); showSuccess('Invoice created successfully') } } catch (error) { setMessage(error instanceof Error ? error.message : 'Invoice could not be saved. Nothing was sent.'); showAppError(error, { feature: 'Create Invoice', retry: () => chooseSave(andSend) }) } finally { setActionBusy('') } }
 
   return <div className="stack create-invoice-page"><div className="page-heading"><div><h1>Create Invoice</h1><p>Build an official invoice, generate its PDF, then choose whether to save or send it.</p></div></div>
     {wordFallback && !generated && <div className="modal-backdrop"><div className="modal-card"><h2>PDF Generation Failed</h2><p>The invoice Word document was generated successfully, but PDF conversion was unsuccessful.</p><div className="modal-actions"><button className="btn btn-primary" onClick={generate}>Retry PDF Generation</button><button className="btn btn-secondary" onClick={() => download(wordFallback.blob, wordFallback.fileName)}>Download Word Copy</button><button className="btn btn-ghost" onClick={() => setWordFallback(null)}>Close</button></div></div></div>}

@@ -10,6 +10,8 @@
     "test:credit-accounting": "node scripts/test-credit-accounting.mjs",
     "test:invoice-parser": "node scripts/test-invoice-parser.mjs",
     "test:invoice-docx": "node scripts/test-invoice-docx-generation.mjs",
+    "test:app-errors": "node scripts/test-app-errors.mjs",
+    "test:error-reporting": "node scripts/test-error-reporting.mjs",
     "test:document-imports": "node scripts/test-document-imports.mjs",
     "test:security": "node scripts/test-security.mjs",
     "test:backup": "node scripts/test-backup-archive.mjs",

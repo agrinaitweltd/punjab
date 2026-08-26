@@ -66,6 +66,7 @@ const adminNavigation: NavigationGroup[] = [
     { key: "system-users", label: "Users", icon: "admin", access: "systemDeveloper" },
     { key: "login-activity", label: "Login Activity", icon: "clock", access: "systemDeveloper" },
     { key: "audit-logs", label: "Audit Logs", icon: "documents", access: "systemDeveloper" },
+    { key: "error-log", label: "Error Log", icon: "documents", access: "systemDeveloper" },
     { key: "test-mode", label: "Test Mode", icon: "settings", access: "systemDeveloper" },
     { key: "backup-recovery", label: "Backup & Recovery", icon: "documents", access: "systemDeveloper" },
     { key: "system-health", label: "Integrations & Health", icon: "communications", access: "systemDeveloper" },

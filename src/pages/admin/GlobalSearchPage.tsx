@@ -5,7 +5,15 @@ import { listFiles, type StoredFile } from '../../lib/fileService'
 
 export function GlobalSearchPage({ customers, invoices, onNavigate }: { customers:Customer[]; invoices:Invoice[]; onNavigate:(page:string)=>void }) {
   const [query,setQuery]=useState(''), [files,setFiles]=useState<StoredFile[]>([])
-  useEffect(()=>{listFiles().then(setFiles).catch(()=>setFiles([]))},[])
+  // listFiles() pulls every stored document's full base64 data out of
+  // activity_log - multiple MB. Only fetch it once the user actually types a
+  // search, and only once per visit (not on every keystroke).
+  const [filesLoaded,setFilesLoaded]=useState(false)
+  useEffect(()=>{
+    if(!query.trim()||filesLoaded)return
+    setFilesLoaded(true)
+    listFiles().then(setFiles).catch(()=>setFiles([]))
+  },[query,filesLoaded])
   const results=useMemo(()=>{const q=query.trim().toLowerCase(); if(!q)return [] as {kind:string;title:string;detail:string;page:string}[]; const out:{kind:string;title:string;detail:string;page:string}[]=[]; for(const c of customers)if(`${c.companyName} ${c.customerNumber} ${c.phone} ${c.email}`.toLowerCase().includes(q))out.push({kind:'Customer',title:`${c.companyName} - ${c.customerNumber}`,detail:`${c.email} · ${c.phone}`,page:'customers'}); for(const i of invoices)if(i.invoiceNumber.toLowerCase().includes(q)){const c=customers.find(x=>x.id===i.customerId);out.push({kind:'Invoice',title:i.invoiceNumber,detail:`${c?.companyName??i.customerId} · £${invoiceOutstanding(i).toFixed(2)} outstanding`,page:i.status==='Paid'?'invoices':'outstanding'})} for(const f of files)if(`${f.name} ${f.note} ${f.customerName}`.toLowerCase().includes(q))out.push({kind:'Document',title:f.name,detail:f.customerName,page:'files'}); return out.slice(0,50)},[query,customers,invoices,files])
   return <div className="stack"><div className="page-heading"><div><h1>Global Search</h1><p>Find customers, account numbers, invoices, phone numbers, emails and documents.</p></div></div><div className="global-search-box"><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search customers, accounts, invoices, phone, email or files..." /></div><div className="search-results">{results.map((r,i)=><button key={`${r.kind}-${r.title}-${i}`} onClick={()=>onNavigate(r.page)}><span>{r.kind}</span><strong>{r.title}</strong><small>{r.detail}</small><b>Open</b></button>)}{query&&results.length===0&&<div className="empty-state">No matching records found.</div>}</div></div>
 }

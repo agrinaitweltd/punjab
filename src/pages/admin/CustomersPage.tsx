@@ -19,6 +19,10 @@ import { parseFinancialDocument, type ImportedCreditNote, type ImportedFinancial
 import { matchImportedCustomer } from '../../lib/importMatching'
 import { invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 import { importFailureMessage } from '../../lib/importErrors'
+import { showAppError, showSuccess } from '../../lib/appDialogs'
+import { StagedProgress } from '../../components/ui/StagedProgress'
+
+const IMPORT_STAGES = ['Checking existing customers', 'Validating', 'Saving to Supabase', 'Saving PDF', 'Complete']
 
 const initialForm = {
   companyName: '',
@@ -89,7 +93,7 @@ export function CustomersPage({
   whatsappTemplates?: WhatsAppTemplate[]
   onSendWhatsApp?: (phone: string, message: string, customer: Customer) => Promise<void>
   onSaveWhatsAppTemplate?: (name: string, message: string) => Promise<void>
-  onCreateFromDocuments?: (documents: ImportedFinancialDocument[]) => Promise<{ customerName: string; accountNumber: string }>
+  onCreateFromDocuments?: (documents: ImportedFinancialDocument[], onProgress?: (stage: string) => void) => Promise<{ customerName: string; accountNumber: string }>
   onAddCreditNote?: (customer: Customer, document: ImportedCreditNote, invoiceId?: string) => Promise<void>
   onNavigate?: (page: string) => void
   onInviteCustomer?: (accountNumber: string, email: string, phone: string) => Promise<void>
@@ -113,6 +117,7 @@ export function CustomersPage({
   const [creditReview, setCreditReview] = useState<ImportedCreditNote | null>(null)
   const [importCustomer, setImportCustomer] = useState<ImportedLegacyInvoice['customer']>(emptyImportedCustomer)
   const [invoiceReading, setInvoiceReading] = useState('')
+  const [importStage, setImportStage] = useState('')
   const [onboardingCustomer, setOnboardingCustomer] = useState('')
   const [onboardingContact, setOnboardingContact] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
@@ -305,17 +310,19 @@ export function CustomersPage({
     if (invoiceReview && !invoiceReview.invoice.invoiceNumber.trim()) { setAddError('Enter the invoice number shown on the source invoice before saving.'); return }
     if (creditReview && creditReview.creditNote.grandTotal === 0) { setAddError('Enter a non-zero credit total before saving.'); return }
     if (documents.some(document => !document.items.length || document.items.some(item => !item.product.trim()))) { setAddError('Each document needs at least one valid product row. Negative and zero values are allowed.'); return }
-    setAdding(true); setAddError('')
+    setAdding(true); setAddError(''); setImportStage(IMPORT_STAGES[0])
     try {
-      const imported = await onCreateFromDocuments(documents.map(document => ({ ...document, customer: { ...importCustomer } })))
+      const imported = await onCreateFromDocuments(documents.map(document => ({ ...document, customer: { ...importCustomer } })), setImportStage)
       setInvoiceReview(null); setCreditReview(null); setImportCustomer(emptyImportedCustomer)
       setOnboardingCustomer(imported.customerName); setOnboardingAccount(imported.accountNumber)
       setContactEmail(importCustomer.email); setContactPhone(importCustomer.phone)
+      showSuccess('Customer imported successfully')
     } catch (error) {
       console.error('Customer document import failed', error)
       setAddError(importFailureMessage(error, 'Could not import the customer documents. Refresh Customers and try again.'))
+      showAppError(error, { feature: 'Import Customer', context: { accountNumber: importCustomer.accountNumber }, retry: submitCustomerDocuments })
     } finally {
-      setAdding(false)
+      setAdding(false); setImportStage('')
     }
   }
 
@@ -482,7 +489,8 @@ export function CustomersPage({
               {creditReview.warnings.map(warning => <p className="error-message" key={warning}>{warning}</p>)}
             </section>}
             {addError && <p className="error-message">{addError}</p>}
-            {(invoiceReview || creditReview) && <div className="actions-row"><Button onClick={submitCustomerDocuments} disabled={adding}>{adding ? 'Saving...' : 'Import Customer & Document'}</Button><Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button></div>}
+            {adding && <StagedProgress stages={IMPORT_STAGES} activeStage={importStage} />}
+            {(invoiceReview || creditReview) && <div className="actions-row"><Button onClick={submitCustomerDocuments} disabled={adding}>{adding ? 'Saving...' : 'Import Customer & Document'}</Button><Button variant="secondary" onClick={() => setShowAdd(false)} disabled={adding}>Cancel</Button></div>}
             </>}
           </div>
         ) : addMode === 'invite' ? (
