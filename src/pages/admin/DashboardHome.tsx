@@ -3,7 +3,6 @@ import type { Customer, Order, Product, StockItem, ActivityLog, OrderStatus, Inv
 import { exportToCsv } from "../../lib/exportCsv"
 import { GmtClock } from "../../components/GmtClock"
 import { CountUp } from "../../components/CountUp"
-import { isStockFresh, latestStockUpdate, nextCycleStart, formatLondonTime, formatWallWeekday } from "../../lib/stockCycle"
 import { invoiceOutstanding } from '../../lib/creditNotes'
 import { DashboardAnalyticsTab } from './DashboardAnalyticsTab'
 
@@ -121,8 +120,6 @@ export function DashboardHome({
   const orderSeries = days.map(d => byDay[d].n)
   const revSeries   = days.map(d => byDay[d].rev)
 
-  const stockFresh     = isStockFresh(stock)
-  const stockUpdatedAt = latestStockUpdate(stock)
   const inStock        = stock.filter(s => s.status === "available").length
   const lowStockItems  = stock.filter(s => s.status === "low")
   const outStockItems  = stock.filter(s => s.status === "out")
@@ -283,29 +280,6 @@ export function DashboardHome({
             Customers {customers.length > 0 && <span className="hd-tab-count">{customers.length}</span>}
           </button>
         </div>
-      </div>
-
-      {/* ── Daily stock cycle banner (refreshes 10:00 UK time) ── */}
-      <div className={"stk-banner " + (stockFresh ? "ok" : "due")}>
-        <span className="stk-banner-ico">
-          {stockFresh
-            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-        </span>
-        <div className="stk-banner-body">
-          {stockFresh ? (
-            <>
-              <strong>Today's stock is live.</strong> Updated {stockUpdatedAt ? `at ${formatLondonTime(stockUpdatedAt)}` : "today"} — valid until {formatWallWeekday(nextCycleStart())} 10:00 UK time.
-            </>
-          ) : (
-            <>
-              <strong>Daily stock update due.</strong> Stock refreshes every day at 10:00 UK time — please update today's quantities and prices for customers.
-            </>
-          )}
-        </div>
-        <button className="stk-banner-btn" onClick={() => onNavigate?.(stockFresh ? "stock" : "session")}>
-          {stockFresh ? "Review Stock" : "Go to Buying Desk"}
-        </button>
       </div>
 
       {/* ═══ ANALYTICS TAB (real Supabase-aggregated dashboard analytics) ═══ */}
