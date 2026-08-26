@@ -21,8 +21,24 @@ const INTERNAL = "__internal__"
 const DOCUMENT_CATEGORIES = ['All','Invoices','Statements','Payment Notices','Credit Notes','Delivery Documents','Receipts','Other Documents']
 function categoryFor(file: StoredFile) { const text=`${file.name} ${file.note}`.toLowerCase(); if(text.includes('statement'))return 'Statements'; if(text.includes('payment notice'))return 'Payment Notices'; if(text.includes('credit note'))return 'Credit Notes'; if(text.includes('delivery'))return 'Delivery Documents'; if(text.includes('receipt'))return 'Receipts'; if(text.includes('invoice'))return 'Invoices'; return 'Other Documents' }
 
-const documentTypeLabel = (f: StoredFile) => f.documentRole === 'canonical_invoice' ? 'Invoice PDF' : f.documentRole === 'credit_note_source' ? 'Credit Note' : categoryFor(f)
+const documentTypeLabel = (f: StoredFile) => {
+  if (f.documentRole === 'canonical_invoice') return 'Generated Invoice'
+  if (f.documentRole === 'credit_note_source') return 'Credit Note'
+  if (f.documentRole === 'legacy_source' && f.invoiceId) return 'Original Invoice'
+  return categoryFor(f)
+}
+const documentSubtitle = (f: StoredFile) => {
+  if (f.documentRole === 'canonical_invoice') return 'Punjab Exotic Foods PDF'
+  if (f.documentRole === 'credit_note_source') return 'Source Credit Note'
+  if (f.documentRole === 'legacy_source' && f.invoiceId) return 'Source PDF'
+  return null
+}
 const documentReference = (f: StoredFile) => f.invoiceNumber ?? f.creditNoteNumber ?? '—'
+/** Email-import writes always tag the source PDF's note with "(email
+    import)" (see server/email-import/create-records.js's uploadFileServer
+    calls) - the manual "Add Customer via PDF" path never does, so this is a
+    reliable enough signal without needing a dedicated column. */
+const importSource = (f: StoredFile) => /\(email import\)/i.test(f.note ?? '') ? 'Email' : 'Manual'
 
 export function FilesPage({ customers, invoices = [] }: { customers: Customer[]; invoices?: Invoice[] }) {
   const [files, setFiles] = useState<StoredFile[]>([])
@@ -86,8 +102,15 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
     })
   }, [customers, invoices, folderQuery])
 
+  const invoiceById = useMemo(() => new Map(invoices.map(i => [i.id, i])), [invoices])
+  const customerByIdMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
+
+  // Every source or generated invoice/credit-note document, customer- and
+  // account-labelled, so an incorrect association is easy to spot at a
+  // glance - excludes only uncategorised internal uploads ('general'),
+  // which have no invoice/credit-note to relate to.
   const generatedDocs = useMemo(
-    () => files.filter(f => f.documentRole && f.documentRole !== 'legacy_source' && f.documentRole !== 'general')
+    () => files.filter(f => f.documentRole && f.documentRole !== 'general')
       .filter(f => !folderQuery.trim() || `${f.name} ${f.customerName} ${documentReference(f)}`.toLowerCase().includes(folderQuery.trim().toLowerCase()))
       .sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || '')),
     [files, folderQuery],
@@ -149,7 +172,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
 
       <div className="invoice-tabs">
         <button className={`invoice-tab${view === 'folders' ? ' active' : ''}`} onClick={() => setView('folders')}>By Customer</button>
-        <button className={`invoice-tab${view === 'generated' ? ' active' : ''}`} onClick={() => setView('generated')}>Generated Documents</button>
+        <button className={`invoice-tab${view === 'generated' ? ' active' : ''}`} onClick={() => setView('generated')}>All Invoice/Credit Note Documents</button>
       </div>
 
       {view === 'generated' ? (
@@ -160,14 +183,24 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
           </div>
           <div className="ps-table-wrap">
             <table className="ps-table">
-              <thead><tr><th>Document Type</th><th>Customer</th><th>Reference</th><th>Date</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+              <thead><tr><th>Document</th><th>Customer</th><th>Account No.</th><th>Reference</th><th>Date</th><th>Source</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
               <tbody>
-                {generatedDocs.map(f => (
+                {generatedDocs.map(f => {
+                  const invoice = f.invoiceId ? invoiceById.get(f.invoiceId) : undefined
+                  const customer = f.customerId ? customerByIdMap.get(f.customerId) : undefined
+                  const subtitle = documentSubtitle(f)
+                  return (
                   <tr key={f.id}>
-                    <td><span className="doc-role-badge generated">{documentTypeLabel(f)}</span></td>
+                    <td>
+                      <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>{documentTypeLabel(f)}</span>
+                      {subtitle && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{subtitle}</div>}
+                    </td>
                     <td>{f.customerName || 'Internal'}</td>
+                    <td>{customer?.customerNumber || '—'}</td>
                     <td>{documentReference(f)}</td>
                     <td>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                    <td>{importSource(f)}</td>
+                    <td>{invoice ? invoice.status : (f.creditNoteId ? 'Active' : '—')}</td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         {(f.type.startsWith("image/") || f.type === "application/pdf") && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>View</Button>}
@@ -175,10 +208,11 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
-            {generatedDocs.length === 0 && <div className="db-empty">No system-generated documents yet.</div>}
+            {generatedDocs.length === 0 && <div className="db-empty">No invoice or credit-note documents yet.</div>}
           </div>
         </div>
       ) : (
@@ -265,9 +299,11 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
                     <div className="fl-info">
                       <div className="fl-name">
                         {f.name}{" "}
-                        <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>
-                          {f.documentRole === 'legacy_source' ? 'Uploaded Source' : 'System Generated'}
-                        </span>
+                        {f.documentRole && f.documentRole !== 'general' && (
+                          <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>
+                            {documentTypeLabel(f)}{documentSubtitle(f) ? ` — ${documentSubtitle(f)}` : ''}
+                          </span>
+                        )}
                       </div>
                       <div className="fl-meta">
                         {f.note && <>{f.note} · </>}

@@ -142,6 +142,12 @@ export function assessConfidence(document, resolution) {
   if (document.documentType === 'invoice') {
     if (!document.invoice.invoiceNumber) reasons.push('No invoice number was detected.')
     if (!(document.invoice.grandTotal > 0)) reasons.push('No positive invoice total was detected.')
+    // A negative quantity/price/goods value on an invoice is never silently
+    // auto-corrected or auto-imported as-is - it always needs an admin's eyes
+    // in Review Invoice, since it could be a genuine sign error (would
+    // under/overcharge the customer) or a real PDF extraction artefact, and
+    // guessing which is exactly what must not happen unattended.
+    if (document.items?.some(item => item.suspiciousNegative)) reasons.push('One or more product lines have a suspicious negative quantity, price, or goods value - confirm in Review Invoice.')
   } else {
     if (!(Math.abs(document.creditNote.grandTotal) > 0)) reasons.push('No credit note total was detected.')
   }
@@ -220,14 +226,29 @@ export async function createRecordFromImport(admin, table, document, customer, s
       if (itemsErr) throw itemsErr
     }
 
-    const [sourceFile, officialFile] = await Promise.all([
+    // The source PDF and the invoice record itself are the financial data -
+    // once those are safely saved, a PDF-generation failure must not throw
+    // the whole import back to "failed" and imply nothing was saved (item
+    // 11: "do not pretend the workflow is fully complete", but also do not
+    // pretend a saved invoice doesn't exist). It's caught here and recorded
+    // as "PDF generation pending" instead - the nightly health check already
+    // finds and safely retries exactly this condition (see
+    // server/health-check.js's invoicesNeedingPdf pass).
+    const [sourceFile, officialResult] = await Promise.all([
       source
         ? uploadFileServer(admin, table, { name: source.name, type: source.type, size: source.size, dataUri: source.dataUri, note: `Invoices: Original source for ${createdInvoice.invoice_number} (email import)`, customerId: customer.id, customerName: customer.company_name, document: { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoice_number, invoiceAmount: createdInvoice.amount, documentRole: 'legacy_source' } })
         : Promise.resolve(undefined),
-      generateAndAttachCanonicalPdf(admin, table, createdInvoice, customer, document.items.map(item => ({ line_number: item.line, quantity: item.quantity, product: item.product, variety: item.variety, size: item.size, price: item.price, vat_rate: item.vatRate }))),
+      generateAndAttachCanonicalPdf(admin, table, createdInvoice, customer, document.items.map(item => ({ line_number: item.line, quantity: item.quantity, product: item.product, variety: item.variety, size: item.size, price: item.price, vat_rate: item.vatRate })))
+        .then(file => ({ ok: true, file }))
+        .catch(error => ({ ok: false, error })),
     ])
     const { error: linkErr } = await admin.from(table('invoices')).update({ source_document_id: sourceFile?.id }).eq('id', createdInvoice.id)
     if (linkErr) throw linkErr
+    const officialFile = officialResult.ok ? officialResult.file : undefined
+    if (!officialResult.ok) {
+      await admin.from(table('invoices')).update({ imported_metadata: { ...invoiceRow.imported_metadata, pdfGenerationPending: true, pdfGenerationError: String(officialResult.error?.message || officialResult.error).slice(0, 300) } }).eq('id', createdInvoice.id)
+      await notify(admin, table, { type: 'pdf_generation_failed', title: 'PDF generation failed - pending retry', message: `Invoice ${createdInvoice.invoice_number} for ${customer.company_name} was saved, but its official PDF could not be generated yet. The nightly check will retry it automatically.`, targetType: 'invoice', targetId: createdInvoice.id })
+    }
 
     const { data: customerInvoices } = await admin.from(table('invoices')).select('amount,amount_paid,status').eq('customer_id', customer.id)
     const workingBalance = (customerInvoices || []).filter(row => row.status !== 'Paid').reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0) - Number(row.amount_paid || 0)), 0)
@@ -241,7 +262,7 @@ export async function createRecordFromImport(admin, table, document, customer, s
       targetType: 'invoice', targetId: createdInvoice.id,
     })
 
-    return { invoiceId: createdInvoice.id, fileId: officialFile.id }
+    return { invoiceId: createdInvoice.id, fileId: officialFile?.id ?? sourceFile?.id }
   }
 
   const sourceCreditNumber = document.creditNote.creditNumber.trim()

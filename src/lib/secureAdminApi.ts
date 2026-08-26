@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { PermissionSet } from '../types'
+import type { ImportedFinancialDocument } from './invoiceImport'
 
 async function accessToken() {
   const { data } = await supabase?.auth.getSession() ?? { data: { session: null } }
@@ -57,7 +58,7 @@ export async function resetAdminCredentials(id: string, sensitiveToken: string) 
   return api<{ ok: true; simulated?: boolean; message?: string }>('/api/admin-security?action=reset-admin-credentials', { method: 'POST', body: JSON.stringify({ id }) }, sensitiveToken)
 }
 
-export type EmailImportStatus = 'processing' | 'imported' | 'needs_review' | 'failed' | 'duplicate'
+export type EmailImportStatus = 'processing' | 'imported' | 'needs_review' | 'failed' | 'duplicate' | 'rejected'
 export type EmailImportRow = {
   id: string; message_id: string; received_at: string | null; sender: string | null; subject: string | null
   attachment_filename: string; attachment_size: number | null; status: EmailImportStatus
@@ -69,6 +70,20 @@ export type EmailImportRow = {
 export async function getEmailImports() { return api<{ imports: EmailImportRow[] }>('/api/admin-security?action=email-imports', { method: 'GET' }) }
 export async function retryEmailImport(id: string, customerId?: string) {
   return api<{ ok: true; status: string }>('/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ id, customerId }) })
+}
+
+export async function getReviewDocument(id: string) {
+  return api<{ ok: true; row: EmailImportRow; document: ImportedFinancialDocument; sourcePdfDataUri: string }>(
+    '/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ op: 'get-review', id }) },
+  )
+}
+export async function approveReviewedDocument(id: string, document: ImportedFinancialDocument, customerId?: string) {
+  return api<{ ok: true; status: string; invoiceId?: string; creditNoteId?: string; changes: Array<{ field: string; from: unknown; to: unknown }> }>(
+    '/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ op: 'approve', id, document, customerId }) },
+  )
+}
+export async function rejectReviewedDocument(id: string, reason?: string) {
+  return api<{ ok: true; status: string }>('/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ op: 'reject', id, reason }) })
 }
 
 export type DatabaseResetStatus = { pinConfigured: boolean; pinSetAt: string | null; tables: string[] }

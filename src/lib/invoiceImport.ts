@@ -11,6 +11,12 @@ export type ImportedInvoiceItem = {
   vatCode: string
   vatRate: number
   vatAmount?: number
+  /** Set only for invoices (never credit notes, where negatives are a
+      legitimate part of the source accounting document) when quantity,
+      price, or goods value is negative - almost always a PDF
+      extraction/sign artefact on an invoice, but never silently flipped:
+      surfaced to the admin in Review Invoice to confirm before approval. */
+  suspiciousNegative?: boolean
 }
 
 export type ImportDocumentType = 'invoice' | 'credit_note'
@@ -273,6 +279,22 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   if (!items.length) warnings.push('No product rows were found. Add or correct the products before saving.')
   if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The goods total plus VAT does not match the grand total - the printed Grand Total has been used as-is.')
   if (items.length && Math.abs(items.reduce((sum, item) => sum + item.goodsValue, 0) - totalGoods) > TOTALS_TOLERANCE) warnings.push('The product values do not match the goods total - the printed Total Goods has been used as-is.')
+
+  // Negative quantity/price/goods value on an INVOICE is almost always a PDF
+  // extraction sign artefact (never a legitimate negative charge) - but it is
+  // never silently flipped to positive here. Flagged for the admin to
+  // confirm during Review Invoice instead (see suspiciousNegative on each
+  // item and the summary warning below). Credit notes are handled entirely
+  // separately in parseCreditNoteLines and never get this treatment, since
+  // negative values there are a normal part of the source document.
+  const negativeLines: string[] = []
+  for (const item of items) {
+    if (item.quantity < 0 || item.price < 0 || item.goodsValue < 0) {
+      item.suspiciousNegative = true
+      negativeLines.push(item.line)
+    }
+  }
+  if (negativeLines.length) warnings.push(`Negative quantity/price/goods value detected on line(s) ${negativeLines.join(', ')} - confirm during review before approving.`)
 
   return {
     documentType: 'invoice',
