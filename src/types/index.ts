@@ -387,6 +387,19 @@ export type WhatsAppMessageType =
 
 /** One WhatsApp send attempt via UltraMsg — logged whether it succeeds or
     fails, so Retry can resend the exact same message. */
+export type NotificationTargetType = 'customer' | 'invoice' | 'payment' | 'credit_note' | 'email_import' | 'system'
+export interface AppNotification {
+  id: string
+  type: string
+  title: string
+  message?: string
+  targetType?: NotificationTargetType
+  targetId?: string
+  read: boolean
+  createdBy?: string
+  createdAt: string
+}
+
 export interface WhatsAppLog {
   id: string
   customerId?: string

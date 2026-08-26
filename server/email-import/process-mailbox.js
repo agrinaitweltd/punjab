@@ -6,7 +6,7 @@ import { extractPdfTextLines } from './extract-pdf-text.js'
 // (part of `npm run build`) - see create-records.js's comment on the same
 // import for why the raw .ts source can't be imported directly here.
 import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../server-dist/lib/invoiceImport.js'
-import { assessConfidence, createRecordFromImport, resolveOrCreateCustomer, safeFileName, uploadFileServer, MAX_FILE_BYTES } from './create-records.js'
+import { assessConfidence, createRecordFromImport, resolveOrCreateCustomer, safeFileName, uploadFileServer, notify, MAX_FILE_BYTES } from './create-records.js'
 
 const SCAN_WINDOW_DAYS = 14 // bounds the IMAP search; the (message_id, attachment_filename) unique row is what actually prevents reprocessing
 const MAX_MESSAGE_DOWNLOAD_BYTES = 20 * 1024 * 1024
@@ -93,10 +93,11 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
     const dataUri = `data:application/pdf;base64,${attachment.content.toString('base64')}`
     document.source = { name: filename, type: 'application/pdf', size, dataUri }
 
-    // Resolve to an existing customer, or create one from the invoice's own
-    // details when none matches (never for a credit note on its own - same
-    // rule the manual "Add Customer via PDF" flow uses).
-    const resolution = await resolveOrCreateCustomer(admin, table, document.customer, { allowCreate: documentType === 'invoice' })
+    // Resolve to an existing customer, or create one from the document's own
+    // details when none matches - invoices and credit notes both count as
+    // sufficient grounds to onboard a new customer automatically, as long as
+    // the document itself carries a company name and account number.
+    const resolution = await resolveOrCreateCustomer(admin, table, document.customer)
     const customerRow = resolution.customer ?? null
     const detectedNumber = documentType === 'credit_note' ? document.creditNote.creditNumber : document.invoice.invoiceNumber
     const { confident, reasons } = assessConfidence(document, resolution)
@@ -111,6 +112,7 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
         detected_customer_name: customerRow?.company_name || document.customer.companyName || null, detected_invoice_number: detectedNumber || null,
         file_id: pending.id, error_message: reasons.join(' ').slice(0, 500), processed_at: new Date().toISOString(),
       }).eq('id', baseRow.id)
+      await notify(admin, table, { type: 'email_import_needs_review', title: 'Email import needs review', message: `"${filename}" could not be imported automatically: ${reasons.join(' ')}`, targetType: 'email_import', targetId: baseRow.id })
       return 'needs_review'
     }
 
@@ -132,6 +134,9 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
       } catch { /* storing the fallback copy is best-effort - the failure status/reason is what matters */ }
     }
     await admin.from(table('email_imports')).update(update).eq('id', baseRow.id)
+    if (status === 'failed') {
+      await notify(admin, table, { type: 'email_import_failed', title: 'Email import failed', message: `"${filename}" failed to import: ${String(error?.message || error).slice(0, 300)}`, targetType: 'email_import', targetId: baseRow.id })
+    }
     return status
   }
 }
@@ -238,7 +243,7 @@ export async function retryEmailImport(admin, table, emailImportId, customerIdOv
     const { data } = await admin.from(table('customers')).select('*').eq('id', customerIdOverride).maybeSingle()
     customerRow = data || null
   } else {
-    const resolution = await resolveOrCreateCustomer(admin, table, document.customer, { allowCreate: documentType === 'invoice' })
+    const resolution = await resolveOrCreateCustomer(admin, table, document.customer)
     if (resolution.status === 'ambiguous' || resolution.status === 'insufficient') {
       await admin.from(table('email_imports')).update({
         status: 'needs_review', document_type: documentType, detected_customer_name: document.customer.companyName || null,

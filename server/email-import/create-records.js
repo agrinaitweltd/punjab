@@ -21,6 +21,14 @@ const ALLOWED_EXTENSIONS = /\.(pdf|jpe?g|png|webp|docx|xlsx|csv)$/i
 // browser-bound sibling code - see fileService.ts's own comment on this).
 const genId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
+/** Best-effort bell notification - never throws, since a notification row
+ *  failing to write must never fail the actual import it's describing. */
+export async function notify(admin, table, { type, title, message, targetType, targetId }) {
+  try {
+    await admin.from(table('notifications')).insert({ type, title, message: message ?? null, target_type: targetType ?? null, target_id: targetId ?? null, created_by: 'email-import' })
+  } catch { /* notification is best-effort */ }
+}
+
 export function safeFileName(name) {
   const withoutControls = [...name].map(c => c.charCodeAt(0) < 32 ? '_' : c).join('')
   const cleaned = withoutControls.replace(/[\\/:*?"<>|]/g, '_').replace(/\.{2,}/g, '.').trim().slice(0, 140)
@@ -71,24 +79,22 @@ function findCustomerMatch(customerRows, importedCustomer) {
   return {}
 }
 
-/** Resolves the customer for a parsed document, creating a new customer
- *  record when none exists yet - the email-import equivalent of the manual
- *  "Add Customer via PDF" flow's own auto-create-if-new-else-match step
- *  (importCustomerDocuments in AdminPortal.tsx), just running server-side
- *  against the live customers table instead of in-memory React state. Only
- *  ever creates a customer when the invoice itself supplied enough to
- *  identify one (company name AND account number) - never guesses, and
- *  never touches an existing row beyond linking the new invoice to it. */
-export async function resolveOrCreateCustomer(admin, table, importedCustomer, { allowCreate = true } = {}) {
+/** Resolves the customer for a parsed document (invoice OR credit note),
+ *  creating a new customer record when none exists yet - the email-import
+ *  equivalent of the manual "Add Customer via PDF" flow's own auto-create-
+ *  if-new-else-match step (importCustomerDocuments in AdminPortal.tsx), just
+ *  running server-side against the live customers table instead of
+ *  in-memory React state. Only ever creates a customer when the document
+ *  itself supplied enough to identify one (company name AND account
+ *  number) - never guesses, and never touches an existing row beyond
+ *  linking the new invoice/credit note to it. */
+export async function resolveOrCreateCustomer(admin, table, importedCustomer) {
   const { data: customerRows, error } = await admin.from(table('customers')).select('*')
   if (error) throw error
   const match = findCustomerMatch(customerRows || [], importedCustomer)
   if (match.ambiguous) return { status: 'ambiguous', reason: match.reason }
   if (match.customer) return { status: 'matched', customer: match.customer, created: false }
 
-  if (!allowCreate) {
-    return { status: 'insufficient', reason: 'No matching customer account was found for this document. Create the customer from an invoice first, then this credit note can be matched to their account.' }
-  }
   const companyName = (importedCustomer.companyName || '').trim()
   const accountNumber = (importedCustomer.accountNumber || '').trim()
   if (!companyName || !accountNumber) {
@@ -104,6 +110,7 @@ export async function resolveOrCreateCustomer(admin, table, importedCustomer, { 
   }
   const { data: created, error: createErr } = await admin.from(table('customers')).insert(row).select().single()
   if (createErr) throw createErr
+  await notify(admin, table, { type: 'customer_auto_created', title: 'New customer auto-created', message: `${created.company_name} was created automatically from an emailed document.`, targetType: 'customer', targetId: created.id })
   return { status: 'matched', customer: created, created: true }
 }
 
@@ -122,6 +129,30 @@ export function assessConfidence(document, resolution) {
     if (!(Math.abs(document.creditNote.grandTotal) > 0)) reasons.push('No credit note total was detected.')
   }
   return { confident: reasons.length === 0, reasons }
+}
+
+/** Generates the official Punjab Exotic Foods PDF for an already-saved
+ *  invoice and links it - shared by createRecordFromImport (new imports)
+ *  and the missing-PDF repair pass (existing invoices that never got one),
+ *  so there's exactly one place that builds this PDF regardless of when
+ *  it's created. `invoiceRow`/`customerRow` are raw snake_case DB rows;
+ *  `items` are invoice_items rows (also snake_case). Returns the uploaded
+ *  file's { id, name }. */
+export async function generateAndAttachCanonicalPdf(admin, table, invoiceRow, customerRow, items) {
+  const address = customerRow.address || ''
+  const official = await buildOfficialInvoicePdf({
+    customer: { name: customerRow.company_name, accountNumber: customerRow.customer_number, address, addressLine1: address.split(',')[0]?.trim() || '', addressLine2: address.split(',').slice(1, -1).join(', '), postcode: address.split(',').at(-1)?.trim() || '', phone: customerRow.phone || '', balance: customerRow.balance ?? 0 },
+    invoice: { invoiceNumber: invoiceRow.invoice_number, date: invoiceRow.date, packages: invoiceRow.packages || 0, totalGoods: invoiceRow.total_goods ?? 0, vatTotal: invoiceRow.total_vat ?? 0, grandTotal: invoiceRow.amount },
+    items: items.map(item => ({ line: item.line_number, qty: item.quantity, product: item.product, variety: item.variety, size: item.size, price: item.price, vatRate: item.vat_rate })),
+  }, buildInvoiceDocx)
+  const officialFile = await uploadFileServer(admin, table, {
+    name: official.fileName, type: 'application/pdf', size: official.buffer.length, dataUri: `data:application/pdf;base64,${official.buffer.toString('base64')}`,
+    note: `Invoices: ${invoiceRow.invoice_number}`, customerId: customerRow.id, customerName: customerRow.company_name,
+    document: { invoiceId: invoiceRow.id, invoiceNumber: invoiceRow.invoice_number, invoiceAmount: invoiceRow.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID },
+  })
+  const { error: linkErr } = await admin.from(table('invoices')).update({ canonical_document_id: officialFile.id, canonical_pdf_file_name: officialFile.name, canonical_pdf_generated_at: new Date().toISOString() }).eq('id', invoiceRow.id)
+  if (linkErr) throw linkErr
+  return officialFile
 }
 
 /** Creates the invoice/credit note + items + source & canonical PDFs for one
@@ -164,23 +195,20 @@ export async function createRecordFromImport(admin, table, document, customer, s
       if (itemsErr) throw itemsErr
     }
 
-    const [sourceFile, official] = await Promise.all([
+    const [sourceFile, officialFile] = await Promise.all([
       source
         ? uploadFileServer(admin, table, { name: source.name, type: source.type, size: source.size, dataUri: source.dataUri, note: `Invoices: Original source for ${createdInvoice.invoice_number} (email import)`, customerId: customer.id, customerName: customer.company_name, document: { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoice_number, invoiceAmount: createdInvoice.amount, documentRole: 'legacy_source' } })
         : Promise.resolve(undefined),
-      buildOfficialInvoicePdf({
-        customer: { name: customer.company_name, accountNumber: customer.customer_number, address: customer.address || '', addressLine1: (customer.address || '').split(',')[0]?.trim() || '', addressLine2: (customer.address || '').split(',').slice(1, -1).join(', '), postcode: (customer.address || '').split(',').at(-1)?.trim() || '', phone: customer.phone || '', balance: customer.balance ?? 0 },
-        invoice: { invoiceNumber: createdInvoice.invoice_number, date: createdInvoice.date, packages: document.invoice.packages || 0, totalGoods: document.invoice.totalGoods, vatTotal: document.invoice.vat, grandTotal: createdInvoice.amount },
-        items: document.items.map(item => ({ line: item.line, qty: item.quantity, product: item.product, variety: item.variety, size: item.size, price: item.price, vatRate: item.vatRate })),
-      }, buildInvoiceDocx),
+      generateAndAttachCanonicalPdf(admin, table, createdInvoice, customer, document.items.map(item => ({ line_number: item.line, quantity: item.quantity, product: item.product, variety: item.variety, size: item.size, price: item.price, vat_rate: item.vatRate }))),
     ])
-    const officialFile = await uploadFileServer(admin, table, { name: official.fileName, type: 'application/pdf', size: official.buffer.length, dataUri: `data:application/pdf;base64,${official.buffer.toString('base64')}`, note: `Invoices: ${createdInvoice.invoice_number} (email import)`, customerId: customer.id, customerName: customer.company_name, document: { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoice_number, invoiceAmount: createdInvoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID } })
-    const { error: linkErr } = await admin.from(table('invoices')).update({ source_document_id: sourceFile?.id, canonical_document_id: officialFile.id, canonical_pdf_file_name: officialFile.name, canonical_pdf_generated_at: new Date().toISOString() }).eq('id', createdInvoice.id)
+    const { error: linkErr } = await admin.from(table('invoices')).update({ source_document_id: sourceFile?.id }).eq('id', createdInvoice.id)
     if (linkErr) throw linkErr
 
     const { data: customerInvoices } = await admin.from(table('invoices')).select('amount,amount_paid,status').eq('customer_id', customer.id)
     const workingBalance = (customerInvoices || []).filter(row => row.status !== 'Paid').reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0) - Number(row.amount_paid || 0)), 0)
     await admin.from(table('customers')).update({ balance: workingBalance }).eq('id', customer.id)
+
+    await notify(admin, table, { type: 'invoice_imported', title: 'New invoice imported', message: `Invoice ${createdInvoice.invoice_number} for ${customer.company_name} - £${Number(createdInvoice.amount).toFixed(2)}.`, targetType: 'invoice', targetId: createdInvoice.id })
 
     return { invoiceId: createdInvoice.id, fileId: officialFile.id }
   }
@@ -220,5 +248,7 @@ export async function createRecordFromImport(admin, table, document, customer, s
     sourceFile = await uploadFileServer(admin, table, { name: source.name, type: source.type, size: source.size, dataUri: source.dataUri, note: `Credit Notes: Original source for ${createdNote.credit_number} (email import)`, customerId: customer.id, customerName: customer.company_name, document: { creditNoteId: createdNote.id, creditNoteNumber: createdNote.credit_number, creditNoteAmount: createdNote.amount, documentRole: 'credit_note_source' } })
     await admin.from(table('credit_notes')).update({ source_document_id: sourceFile.id, source_file_name: sourceFile.name }).eq('id', createdNote.id)
   }
+  await notify(admin, table, { type: 'credit_note_imported', title: 'New credit note received', message: `Credit note ${createdNote.credit_number} for ${customer.company_name} - £${Number(createdNote.amount).toFixed(2)}.`, targetType: 'credit_note', targetId: createdNote.id })
+
   return { creditNoteId: createdNote.id, fileId: sourceFile?.id }
 }

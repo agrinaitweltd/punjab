@@ -146,6 +146,8 @@ import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEma
 import { EmailImportsPage } from './EmailImportsPage'
 import { NotFoundPage } from './NotFoundPage'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
+import { getNotifications, markNotificationRead, markAllNotificationsRead, mapNotificationRow } from '../../lib/notificationsService'
+import type { AppNotification } from '../../types'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [current, setCurrent] = useState('dashboard')
@@ -180,6 +182,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationDeliveryLog[]>([])
   const [emailImports, setEmailImports] = useState<EmailImportRow[]>([])
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -210,6 +213,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       expensesData,
       communicationLogsData,
       emailImportsData,
+      notificationsData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -238,6 +242,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getExpenses(),
       getCommunicationDeliveryLogs(),
       getEmailImports().then(r => r.imports).catch(() => []),
+      getNotifications(),
     ])
 
     setCustomers(customersData)
@@ -267,6 +272,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setExpenses(expensesData)
     setCommunicationLogs(communicationLogsData)
     setEmailImports(emailImportsData)
+    setNotifications(notificationsData)
   }, [])
 
   // Load once on mount. Individual actions patch their own slice of state
@@ -336,6 +342,11 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       map: row => row as EmailImportRow,
       onInsert: row => upsertById(setEmailImports, row),
       onUpdate: row => upsertById(setEmailImports, row),
+    },
+    notifications: {
+      map: mapNotificationRow,
+      onInsert: row => upsertById(setNotifications, row),
+      onUpdate: row => upsertById(setNotifications, row),
     },
   })
 
@@ -459,12 +470,35 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
   }
 
-  // The bell represents ALL notifications, not just one page's — clear
-  // everything and jump to whichever section actually has something new.
-  const openNotifications = () => {
-    markOrdersSeen()
-    markTicketsSeen()
-    setCurrent(newOrders > 0 ? 'orders' : newTickets > 0 ? 'tickets' : pendingProofsCount > 0 ? 'payment-proofs' : 'orders')
+  const handleMarkNotificationRead = (id: string) => {
+    upsertById(setNotifications, { ...(notifications.find(n => n.id === id) as AppNotification), id, read: true })
+    void markNotificationRead(id)
+  }
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications(list => list.map(n => ({ ...n, read: true })))
+    void markAllNotificationsRead()
+  }
+  const handleOpenNotification = (notification: AppNotification) => {
+    switch (notification.targetType) {
+      case 'customer':
+        if (notification.targetId) { setInvoicesCustomerFilter(notification.targetId); navigate('invoices') }
+        break
+      case 'invoice':
+        if (notification.targetId) { setInvoicesCustomerFilter(null); navigate('invoices') }
+        break
+      case 'payment':
+        navigate('payments')
+        break
+      case 'credit_note':
+        if (notification.targetId) setOpenCreditNoteId(notification.targetId)
+        navigate('credit-notes')
+        break
+      case 'email_import':
+        navigate('email-imports')
+        break
+      default:
+        navigate('dashboard')
+    }
   }
 
   const importCustomerDocuments = async (documents: ImportedFinancialDocument[], onProgress?: (stage: string) => void) => {
@@ -1488,8 +1522,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     <AppLayout
       role="admin" user={user} current={current} onNavigate={navigate} onLogout={onLogout}
       badges={{ orders: newOrders, tickets: newTickets, 'payment-proofs': pendingProofsCount }}
-      notifCount={newOrders + newTickets + pendingProofsCount}
-      onBellClick={openNotifications}
+      notifications={notifications}
+      onMarkNotificationRead={handleMarkNotificationRead}
+      onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+      onOpenNotification={handleOpenNotification}
       onDayEnd={dayEnd}
     >
       {page()}

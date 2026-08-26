@@ -1,5 +1,6 @@
-import type { User } from "../../types"
+import type { AppNotification, User } from "../../types"
 import { Bell, LogOut, Menu } from "lucide-react"
+import { NotificationsPanel } from "./NotificationsPanel"
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Overview", products: "Products", orders: "Sales & Orders", customers: "Customers",
@@ -21,9 +22,17 @@ const PAGE_LABELS: Record<string, string> = {
   "system-health": "Integrations & Health", security: "Security",
 }
 
-export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBellClick }: {
+export function Topbar({ user, onLogout, current, onMenuOpen, notifications, onMarkNotificationRead, onMarkAllNotificationsRead, onOpenNotification, notifCount, onBellClick }: {
   user: User; onLogout: () => void; current?: string
-  onMenuOpen?: () => void; notifCount?: number; onBellClick?: () => void
+  onMenuOpen?: () => void
+  notifications?: AppNotification[]
+  onMarkNotificationRead?: (id: string) => void
+  onMarkAllNotificationsRead?: () => void
+  onOpenNotification?: (notification: AppNotification) => void
+  /** Legacy simple unread-count bell, still used by the customer portal
+      (which has no real notification feed, just order/ticket unseen counts). */
+  notifCount?: number
+  onBellClick?: () => void
 }) {
   const title = current ? (PAGE_LABELS[current] ?? current.charAt(0).toUpperCase() + current.slice(1)) : "Dashboard"
   const count = notifCount ?? 0
@@ -34,11 +43,14 @@ export function Topbar({ user, onLogout, current, onMenuOpen, notifCount, onBell
       </button>
       <h1 className="topbar-title">{title}</h1>
       <div className="topbar-actions">
-        {/* Notifications — real unread count of new orders/tickets; clears everything on click */}
-        <button className="tb-icon-btn" onClick={onBellClick} title={count > 0 ? `${count} new notification${count !== 1 ? "s" : ""}` : "No new notifications"}>
-          <Bell size={17} strokeWidth={1.8} />
-          {count > 0 && <span className="tb-bell-count">{count > 9 ? "9+" : count}</span>}
-        </button>
+        {notifications && onMarkNotificationRead && onMarkAllNotificationsRead && onOpenNotification ? (
+          <NotificationsPanel notifications={notifications} onMarkRead={onMarkNotificationRead} onMarkAllRead={onMarkAllNotificationsRead} onOpen={onOpenNotification} />
+        ) : onBellClick ? (
+          <button className="tb-icon-btn" onClick={onBellClick} title={count > 0 ? `${count} new notification${count !== 1 ? "s" : ""}` : "No new notifications"}>
+            <Bell size={17} strokeWidth={1.8} />
+            {count > 0 && <span className="tb-bell-count">{count > 9 ? "9+" : count}</span>}
+          </button>
+        ) : null}
         {/* Signed-in user + sign out */}
         <div className="tb-user" title={`Signed in as ${user.displayName}`}>
           <span className="tb-user-avatar">{user.displayName.slice(0, 2).toUpperCase()}</span>

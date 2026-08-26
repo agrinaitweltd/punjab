@@ -1,0 +1,205 @@
+import { generateAndAttachCanonicalPdf } from './email-import/create-records.js'
+
+/** Europe/London wall-clock hour/minute/date, DST-aware via Intl (no manual
+ *  GMT/BST offset math - the ICU timezone database handles it). */
+export function ukLocalParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date)
+  const get = type => parts.find(p => p.type === type)?.value
+  return { hour: Number(get('hour')), minute: Number(get('minute')), dateKey: `${get('year')}-${get('month')}-${get('day')}` }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Runs the nightly production health check: counts the day's activity,
+ *  repairs a small set of well-defined, non-financial technical problems,
+ *  and flags anything requiring judgement as "Needs Review" instead of
+ *  guessing. Never touches invoice totals, payments, customer balances
+ *  beyond a deterministic recompute from existing invoices, or credit note
+ *  allocations - see the inline comments on each check for exactly why it's
+ *  safe (or not) to auto-repair. */
+export async function runHealthCheck(admin, table) {
+  const since = new Date(Date.now() - DAY_MS).toISOString()
+  const summary = {
+    newCustomers: 0, customersAutoCreated: 0, invoicesImported: 0, creditNotesImported: 0, pdfsGenerated: 0,
+    paymentsRecorded: 0, paidInvoices: 0, outstandingInvoices: 0, emailsSent: 0, remindersSent: 0, emailsFailed: 0,
+    documentsReceived: 0, needsReview: 0, errorsFound: 0, autoFixed: 0,
+  }
+  const issues = [] // { severity: 'fixed' | 'review', text }
+
+  const [customersRes, invoicesRes, creditNotesRes, paymentsRes, emailImportsRes, commLogsRes] = await Promise.all([
+    admin.from(table('customers')).select('id,company_name,balance,created_at'),
+    admin.from(table('invoices')).select('id,invoice_number,customer_id,amount,amount_paid,status,canonical_document_id,source_document_id,created_at'),
+    admin.from(table('credit_notes')).select('id,credit_number,customer_id,amount,remaining_balance,linked_invoice_id,original_invoice_reference,created_at'),
+    admin.from(table('payments')).select('id,created_at').gte('created_at', since),
+    admin.from(table('email_imports')).select('id,status,document_type,attachment_filename,error_message,created_at,invoice_id,credit_note_id'),
+    admin.from(table('communication_logs')).select('id,status,channel,communication_type,created_at').gte('created_at', since),
+  ])
+  const failure = [customersRes, invoicesRes, creditNotesRes, paymentsRes, emailImportsRes, commLogsRes].find(r => r.error)
+  if (failure) throw failure.error
+
+  const customers = customersRes.data || []
+  const invoices = invoicesRes.data || []
+  const creditNotes = creditNotesRes.data || []
+  const emailImports = emailImportsRes.data || []
+  const commLogs = commLogsRes.data || []
+
+  summary.newCustomers = customers.filter(c => c.created_at >= since).length
+  summary.invoicesImported = invoices.filter(i => i.created_at >= since).length
+  summary.creditNotesImported = creditNotes.filter(c => c.created_at >= since).length
+  summary.paymentsRecorded = (paymentsRes.data || []).length
+  summary.paidInvoices = invoices.filter(i => i.status === 'Paid').length
+  summary.outstandingInvoices = invoices.filter(i => i.status !== 'Paid').length
+  summary.documentsReceived = emailImports.filter(e => e.created_at >= since).length
+  summary.customersAutoCreated = emailImports.filter(e => e.created_at >= since && e.status === 'imported').length // approx, refined below once we have the flag
+  summary.emailsSent = commLogs.filter(c => c.status === 'Sent').length
+  summary.emailsFailed = commLogs.filter(c => c.status === 'Failed').length
+  summary.remindersSent = commLogs.filter(c => c.status === 'Sent' && c.communication_type === 'payment_reminder').length
+
+  // --- Check + auto-repair: invoice missing its generated PDF, or the PDF
+  // row it points to no longer exists (broken storage reference). Safe to
+  // auto-fix: regenerating from the invoice's own already-stored line items
+  // reproduces exactly what import-time generation would have produced -
+  // it's not a financial decision, just re-running a deterministic render.
+  const canonicalIds = invoices.map(i => i.canonical_document_id).filter(Boolean)
+  const { data: canonicalFiles } = canonicalIds.length ? await admin.from(table('activity_log')).select('id').in('id', canonicalIds) : { data: [] }
+  const existingCanonicalIds = new Set((canonicalFiles || []).map(f => f.id))
+  const invoicesNeedingPdf = invoices.filter(i => !i.canonical_document_id || !existingCanonicalIds.has(i.canonical_document_id))
+  for (const invoice of invoicesNeedingPdf) {
+    try {
+      const [{ data: customer }, { data: items }] = await Promise.all([
+        admin.from(table('customers')).select('*').eq('id', invoice.customer_id).maybeSingle(),
+        admin.from(table('invoice_items')).select('*').eq('invoice_id', invoice.id),
+      ])
+      if (!customer) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no matching customer to build one from.` }); summary.needsReview += 1; continue }
+      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; continue }
+      await generateAndAttachCanonicalPdf(admin, table, invoice, customer, items)
+      summary.pdfsGenerated += 1; summary.autoFixed += 1
+      issues.push({ severity: 'fixed', text: `Generated the missing official PDF for invoice ${invoice.invoice_number}.` })
+    } catch (error) {
+      summary.needsReview += 1
+      issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and it could not be regenerated automatically: ${error.message}` })
+    }
+  }
+
+  // --- Check (flag only): invoice with zero stored line items. Can't be
+  // auto-repaired - fabricating product rows would be guessing at what was
+  // actually invoiced.
+  const invoiceIds = invoices.map(i => i.id)
+  const { data: itemCounts } = invoiceIds.length ? await admin.from(table('invoice_items')).select('invoice_id').in('invoice_id', invoiceIds) : { data: [] }
+  const invoicesWithItems = new Set((itemCounts || []).map(row => row.invoice_id))
+  for (const invoice of invoices) {
+    if (!invoicesWithItems.has(invoice.id)) {
+      summary.needsReview += 1
+      issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} has no stored product line items.` })
+    }
+  }
+
+  // --- Check + auto-repair: customer.balance doesn't match the deterministic
+  // recompute from their own invoices. Safe to auto-fix - this is exactly
+  // the same formula recordInvoicePayment/createRecordFromImport already use
+  // to set it; correcting it is fixing a stale cache, not inventing a
+  // transaction.
+  const invoicesByCustomer = new Map()
+  for (const invoice of invoices) {
+    if (!invoicesByCustomer.has(invoice.customer_id)) invoicesByCustomer.set(invoice.customer_id, [])
+    invoicesByCustomer.get(invoice.customer_id).push(invoice)
+  }
+  for (const customer of customers) {
+    const theirInvoices = invoicesByCustomer.get(customer.id) || []
+    const expected = theirInvoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + Math.max(0, Number(i.amount || 0) - Number(i.amount_paid || 0)), 0)
+    const actual = Number(customer.balance || 0)
+    if (Math.abs(expected - actual) > 0.01) {
+      const { error } = await admin.from(table('customers')).update({ balance: expected }).eq('id', customer.id)
+      if (!error) {
+        summary.autoFixed += 1
+        issues.push({ severity: 'fixed', text: `Corrected ${customer.company_name}'s balance (was £${actual.toFixed(2)}, recalculated to £${expected.toFixed(2)}).` })
+      } else {
+        summary.needsReview += 1
+        issues.push({ severity: 'review', text: `${customer.company_name}'s balance looks wrong (stored £${actual.toFixed(2)}, expected £${expected.toFixed(2)}) and could not be corrected automatically.` })
+      }
+    }
+  }
+
+  // --- Check + auto-repair: email import stuck in "processing" (the worker
+  // crashed or the invocation was killed mid-way, and it was never resolved
+  // to a final status). Safe to auto-fix - this only changes the tracking
+  // row's own status to "failed" with an explanatory note, so the admin can
+  // retry it from Email Imports; it never touches any invoice/customer data.
+  const stuckCutoff = new Date(Date.now() - 15 * 60_000).toISOString()
+  const stuck = emailImports.filter(e => e.status === 'processing' && e.created_at < stuckCutoff)
+  for (const row of stuck) {
+    const { error } = await admin.from(table('email_imports')).update({ status: 'failed', error_message: 'Stuck in Processing - the mailbox worker did not finish (likely a timeout or crash). Retry it from Email Imports.', processed_at: new Date().toISOString() }).eq('id', row.id)
+    if (!error) {
+      summary.autoFixed += 1
+      issues.push({ severity: 'fixed', text: `Email import "${row.attachment_filename}" was stuck in Processing and has been marked Failed so it can be retried.` })
+    }
+  }
+
+  // --- Check (flag only): credit note never allocated to an invoice despite
+  // referencing one, or sitting unallocated for a while. Applying it
+  // automatically would be an accounting decision - always flagged instead.
+  for (const note of creditNotes) {
+    const untouched = Number(note.remaining_balance) === Number(note.amount)
+    const hasReference = Boolean(note.linked_invoice_id || note.original_invoice_reference)
+    const isOld = note.created_at < since
+    if (untouched && hasReference && isOld) {
+      summary.needsReview += 1
+      issues.push({ severity: 'review', text: `Credit note ${note.credit_number} references an invoice but has not been allocated to it yet.` })
+    }
+  }
+
+  // --- Check (flag only): duplicate invoice/credit-note numbers - should be
+  // prevented at creation time already, this is a safety-net sweep.
+  const invoiceNumberCounts = new Map()
+  for (const invoice of invoices) invoiceNumberCounts.set(invoice.invoice_number, (invoiceNumberCounts.get(invoice.invoice_number) || 0) + 1)
+  for (const [number, count] of invoiceNumberCounts) {
+    if (count > 1) { summary.needsReview += 1; issues.push({ severity: 'review', text: `Invoice number "${number}" appears ${count} times.` }) }
+  }
+  const creditNumberCounts = new Map()
+  for (const note of creditNotes) if (note.credit_number) creditNumberCounts.set(note.credit_number, (creditNumberCounts.get(note.credit_number) || 0) + 1)
+  for (const [number, count] of creditNumberCounts) {
+    if (count > 1) { summary.needsReview += 1; issues.push({ severity: 'review', text: `Credit note number "${number}" appears ${count} times.` }) }
+  }
+
+  // --- Check (flag only): email imports still sitting in Needs Review.
+  const needsReviewImports = emailImports.filter(e => e.status === 'needs_review')
+  if (needsReviewImports.length) {
+    summary.needsReview += needsReviewImports.length
+    issues.push({ severity: 'review', text: `${needsReviewImports.length} email import(s) are waiting in Needs Review.` })
+  }
+
+  // --- Report only: failed emails/reminders in the last 24h (not auto-
+  // retried - could be a real delivery problem worth a human look, not
+  // something to silently resend).
+  const failedComms = commLogs.filter(c => c.status === 'Failed')
+  if (failedComms.length) {
+    summary.needsReview += failedComms.length
+    issues.push({ severity: 'review', text: `${failedComms.length} email(s) failed to send in the last 24 hours.` })
+  }
+
+  summary.errorsFound = summary.needsReview + summary.autoFixed
+
+  // --- Write bell notifications for anything an admin should actually see:
+  // every auto-repaired PDF (so it's visible even though nothing "broke" from
+  // their perspective) and one aggregate notification for review items,
+  // rather than a row per review issue (which could be dozens after a bad
+  // night and would just spam the bell) - the daily summary email carries the
+  // full text list already.
+  for (const issue of issues) {
+    if (issue.severity === 'fixed' && issue.text.startsWith('Generated the missing official PDF')) {
+      await admin.from(table('notifications')).insert({
+        type: 'pdf_regenerated', title: 'PDF successfully regenerated', message: issue.text, target_type: 'system', created_by: 'nightly-health-check',
+      })
+    }
+  }
+  if (summary.needsReview > 0) {
+    await admin.from(table('notifications')).insert({
+      type: 'system_health_issue',
+      title: `Nightly health check: ${summary.needsReview} item${summary.needsReview === 1 ? '' : 's'} need review`,
+      message: issues.filter(i => i.severity === 'review').slice(0, 5).map(i => i.text).join(' · '),
+      target_type: 'system', created_by: 'nightly-health-check',
+    })
+  }
+
+  return { summary, issues }
+}

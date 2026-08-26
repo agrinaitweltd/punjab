@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { User, UserRole } from '../../types'
+import type { AppNotification, User, UserRole } from '../../types'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { URGENT_SUPPORT_PHONE } from '../../lib/emailService'
@@ -15,6 +15,10 @@ export function AppLayout({
   onLogout,
   children,
   badges,
+  notifications,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onOpenNotification,
   notifCount,
   onBellClick,
   onDayEnd,
@@ -26,6 +30,11 @@ export function AppLayout({
   onLogout: () => void
   children: ReactNode
   badges?: Record<string, number>
+  notifications?: AppNotification[]
+  onMarkNotificationRead?: (id: string) => void
+  onMarkAllNotificationsRead?: () => void
+  onOpenNotification?: (notification: AppNotification) => void
+  /** Legacy simple unread-count bell, still used by the customer portal. */
   notifCount?: number
   onBellClick?: () => void
   onDayEnd?: () => void
@@ -84,7 +93,15 @@ export function AppLayout({
       <div className="main-layout">
         {testMode && <div className="global-test-banner" role="status"><strong>TEST MODE</strong><span>Changes made here will not affect live company data. External communications are simulated.</span></div>}
         {simulationNotice && <div className="simulation-toast" role="status"><strong>TEST MODE</strong>{simulationNotice}</div>}
-        <Topbar user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)} notifCount={notifCount} onBellClick={onBellClick} />
+        <Topbar
+          user={user} onLogout={onLogout} current={current} onMenuOpen={() => setMobileOpen(true)}
+          notifications={notifications}
+          onMarkNotificationRead={onMarkNotificationRead}
+          onMarkAllNotificationsRead={onMarkAllNotificationsRead}
+          onOpenNotification={onOpenNotification}
+          notifCount={notifCount}
+          onBellClick={onBellClick}
+        />
         <main className="content">{children}</main>
         <div style={{ padding: '8px 24px', fontSize: 11.5, color: '#9ca3af', textAlign: 'right', borderTop: '1px solid #eef1ee' }}>
           Urgent Support: <strong style={{ color: '#4d7c5f' }}>{URGENT_SUPPORT_PHONE}</strong>

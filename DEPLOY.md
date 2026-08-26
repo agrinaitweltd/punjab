@@ -7,7 +7,7 @@ This app is already deployed at https://punjabuk.vercel.app/
 To ensure Supabase sync works on Vercel, set these environment variables in your Vercel dashboard (Project Settings → Environment Variables):
 
 ```
-VITE_SUPABASE_URL=https://vqnnlorukpzsftfisjrm.supabase.co
+VITE_SUPABASE_URL=D://vqnnlorukpzsftfisjrm.supabase.co
 VITE_SUPABASE_ANON_KEY=sb_publishable_t6BdP1LIIAqn8n74bgN04Q_mTmddtIg
 ```
 
