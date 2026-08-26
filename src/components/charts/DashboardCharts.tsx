@@ -1,103 +1,148 @@
-/** Small, dependency-free SVG charts for the dashboard analytics redesign -
-    matches the rest of the app's convention (AdminLine/TrendChart) of hand-
-    rolled SVG rather than pulling in a charting library. */
+import { useState } from "react"
 
-export function BarSeriesChart({ data, height = 180, color = "var(--green-500)" }: { data: Array<{ period: string; value: number }>; height?: number; color?: string }) {
-  if (!data.length) return <EmptyChart height={height} />
-  const max = Math.max(...data.map(d => d.value), 1)
-  const width = Math.max(data.length * 34, 280)
-  const barWidth = Math.min(24, width / data.length - 8)
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <svg width={width} height={height + 24} viewBox={`0 0 ${width} ${height + 24}`}>
-        {data.map((d, i) => {
-          const x = i * (width / data.length) + (width / data.length - barWidth) / 2
-          const barHeight = Math.max(2, (d.value / max) * height)
-          return (
-            <g key={d.period}>
-              <rect x={x} y={height - barHeight} width={barWidth} height={barHeight} rx={4} fill={color} opacity={0.9}>
-                <title>{`${d.period}: £${d.value.toFixed(2)}`}</title>
-              </rect>
-              <text x={x + barWidth / 2} y={height + 16} textAnchor="middle" fontSize={9} fill="var(--text-muted)">
-                {d.period.length > 7 ? d.period.slice(5) : d.period}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
-  )
+/** Dependency-free SVG charts styled to the Finpay dashboard reference -
+    matches the rest of the app's convention (AdminLine/TrendChart) of
+    hand-rolled SVG rather than pulling in a charting library. */
+
+export const FP_BLUE = "#2563EB"
+export const FP_BLUE_LIGHT = "#A9C4FB"
+
+const money = (n: number) => `£${Math.abs(n).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const axisLabel = (n: number) => {
+  const abs = Math.abs(n)
+  if (abs >= 1000) return `${n < 0 ? "-" : ""}${(abs / 1000).toFixed(abs % 1000 === 0 ? 0 : 1)}K`
+  return String(Math.round(n))
 }
 
-export function DonutChart({ segments, size = 160 }: { segments: Array<{ label: string; value: number; color: string }>; size?: number }) {
-  const total = segments.reduce((sum, s) => sum + s.value, 0)
-  const radius = size / 2 - 14
-  const cx = size / 2, cy = size / 2
-  const circumference = 2 * Math.PI * radius
-  let offset = 0
-  if (total <= 0) return <EmptyChart height={size} />
+/** The reference's "Money Statistics" chart: one bar per period, split
+    across a zero line - invoiced above (dark), payments received below
+    (light) - with a floating tooltip on hover. */
+export function DivergingBarChart({ data, height = 230 }: {
+  data: Array<{ period: string; up: number; down: number }>
+  height?: number
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+  if (!data.length) return <EmptyChart height={height} />
+
+  const maxUp = Math.max(...data.map(d => d.up), 1)
+  const maxDown = Math.max(...data.map(d => d.down), 1)
+  const scaleMax = Math.max(maxUp, maxDown)
+  const plotH = height - 34
+  const zeroY = plotH * (maxUp / (maxUp + maxDown) || 0.5)
+  const upH = zeroY, downH = plotH - zeroY
+  const colW = 100 / data.length
+  const barW = Math.min(60, colW * 0.42)
+
+  const ticks = [scaleMax, scaleMax / 2, 0, -scaleMax / 2, -scaleMax]
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={cx} cy={cy} r={radius} fill="none" stroke="var(--border-light)" strokeWidth={16} />
-        {segments.filter(s => s.value > 0).map(s => {
-          const fraction = s.value / total
-          const dash = fraction * circumference
-          const circle = (
-            <circle
-              key={s.label} cx={cx} cy={cy} r={radius} fill="none" stroke={s.color} strokeWidth={16}
-              strokeDasharray={`${dash} ${circumference - dash}`} strokeDashoffset={-offset} transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt"
-            >
-              <title>{`${s.label}: £${s.value.toFixed(2)} (${(fraction * 100).toFixed(0)}%)`}</title>
-            </circle>
-          )
-          offset += dash
-          return circle
-        })}
-        <text x={cx} y={cy - 4} textAnchor="middle" fontSize={13} fontWeight={800} fill="var(--text-heading)">£{total.toFixed(0)}</text>
-        <text x={cx} y={cy + 12} textAnchor="middle" fontSize={9} fill="var(--text-muted)">Total</text>
-      </svg>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5 }}>
-        {segments.map(s => (
-          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, display: "inline-block" }} />
-            <span style={{ color: "var(--text-muted)" }}>{s.label}</span>
-            <strong style={{ color: "var(--text-heading)" }}>£{s.value.toFixed(2)}</strong>
-          </div>
+    <div className="fp-chart-outer">
+      <div className="fp-chart-axis">
+        {ticks.map(t => <span key={t}>{axisLabel(t)}</span>)}
+      </div>
+      <div className="fp-chart-plot" style={{ height }} onMouseLeave={() => setHover(null)}>
+        {ticks.map((t, i) => (
+          <div key={t} className="fp-chart-gridline" style={{ top: `${(i / (ticks.length - 1)) * plotH}px` }} />
         ))}
+        {data.map((d, i) => {
+          const up = (d.up / scaleMax) * upH
+          const down = (d.down / scaleMax) * downH
+          return (
+            <div
+              key={d.period} className="fp-chart-col"
+              style={{ left: `${i * colW}%`, width: `${colW}%` }}
+              onMouseEnter={() => setHover(i)}
+            >
+              <div className="fp-chart-bar-up" style={{ height: Math.max(d.up > 0 ? 3 : 0, up), bottom: `${plotH - zeroY}px`, width: `${barW}%` }} />
+              <div className="fp-chart-bar-down" style={{ height: Math.max(d.down > 0 ? 3 : 0, down), top: `${zeroY}px`, width: `${barW}%` }} />
+              <span className="fp-chart-xlabel" style={{ top: `${plotH + 10}px` }}>{d.period}</span>
+            </div>
+          )
+        })}
+        {hover !== null && (
+          <div className="fp-tooltip" style={{ left: `${(hover + 0.5) * colW}%` }}>
+            <div className="fp-tooltip-title">{data[hover].period}</div>
+            <div className="fp-tooltip-row"><span>Invoiced</span><strong>{money(data[hover].up)}</strong></div>
+            <div className="fp-tooltip-row"><span>Received</span><strong>{money(data[hover].down)}</strong></div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-export function RankedList({ rows }: { rows: Array<{ label: string; sub?: string; value: number; secondary?: string }> }) {
-  if (!rows.length) return <EmptyChart height={80} />
-  const max = Math.max(...rows.map(r => r.value), 1)
+/** The reference's "Statistics" donut: thick ring with a small gap between
+    segments, total in the middle, legend rendered separately below. */
+export function DonutChart({ segments, size = 168, centreLabel = "Total" }: {
+  segments: Array<{ label: string; value: number; color: string }>
+  size?: number
+  centreLabel?: string
+}) {
+  const total = segments.reduce((sum, s) => sum + s.value, 0)
+  if (total <= 0) return <EmptyChart height={size} label="No figures for this period" />
+  const stroke = 22
+  const radius = size / 2 - stroke / 2 - 2
+  const cx = size / 2, cy = size / 2
+  const circumference = 2 * Math.PI * radius
+  const gap = 2.5
+  let offset = 0
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {rows.map((r, i) => (
-        <div key={r.label + i}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
-            <span style={{ color: "var(--text-heading)", fontWeight: 700 }}>{i + 1}. {r.label}{r.sub ? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {r.sub}</span> : null}</span>
-            <span style={{ color: "var(--text-heading)", fontWeight: 700 }}>£{r.value.toFixed(2)}{r.secondary ? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> ({r.secondary})</span> : null}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 4, background: "var(--border-light)", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${Math.max(3, (r.value / max) * 100)}%`, background: "var(--brand-gradient)", borderRadius: 4 }} />
-          </div>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="fp-donut">
+      <circle cx={cx} cy={cy} r={radius} fill="none" stroke="#EDF1F7" strokeWidth={stroke} />
+      {segments.filter(s => s.value > 0).map(s => {
+        const dash = (s.value / total) * circumference
+        const el = (
+          <circle
+            key={s.label} cx={cx} cy={cy} r={radius} fill="none" stroke={s.color} strokeWidth={stroke}
+            strokeDasharray={`${Math.max(0, dash - gap)} ${circumference - Math.max(0, dash - gap)}`}
+            strokeDashoffset={-offset} transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="round"
+          >
+            <title>{`${s.label}: ${money(s.value)} (${((s.value / total) * 100).toFixed(0)}%)`}</title>
+          </circle>
+        )
+        offset += dash
+        return el
+      })}
+      <text x={cx} y={cy - 4} textAnchor="middle" className="fp-donut-sub">{centreLabel}</text>
+      <text x={cx} y={cy + 16} textAnchor="middle" className="fp-donut-total">{money(total)}</text>
+    </svg>
+  )
+}
+
+/** Legend rows beneath the donut - colour chip, label + share, value on
+    the right, exactly as the reference lays them out. */
+export function DonutLegend({ segments }: { segments: Array<{ label: string; value: number; color: string }> }) {
+  const total = segments.reduce((sum, s) => sum + s.value, 0) || 1
+  return (
+    <div className="fp-legend">
+      {segments.map(s => (
+        <div key={s.label} className="fp-legend-row">
+          <span className="fp-legend-chip" style={{ background: s.color }} />
+          <span className="fp-legend-label">{s.label} <em>{((s.value / total) * 100).toFixed(0)}%</em></span>
+          <span className="fp-legend-value">{money(s.value)}</span>
         </div>
       ))}
     </div>
   )
 }
 
-export function EmptyChart({ height = 120, label = "No data for this period" }: { height?: number; label?: string }) {
+/** Track + fill + dot handle, matching the reference's "Daily Limit" and
+    "Saving Plans" progress bars. */
+export function ProgressBar({ pct, color = FP_BLUE }: { pct: number; color?: string }) {
+  const clamped = Math.max(0, Math.min(100, pct))
   return (
-    <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 12.5, border: "1px dashed var(--border)", borderRadius: 10 }}>
-      {label}
+    <div className="fp-progress">
+      <div className="fp-progress-fill" style={{ width: `${clamped}%`, background: color }} />
+      <span className="fp-progress-dot" style={{ left: `calc(${clamped}% - 5px)`, borderColor: color }} />
     </div>
   )
 }
 
+export function EmptyChart({ height = 120, label = "No data for this period" }: { height?: number; label?: string }) {
+  return <div className="fp-empty" style={{ height }}>{label}</div>
+}
+
 export function ChartSkeleton({ height = 120 }: { height?: number }) {
-  return <div style={{ height, borderRadius: 10, background: "linear-gradient(90deg, var(--border-light) 25%, #f1f4f2 37%, var(--border-light) 63%)", backgroundSize: "400% 100%", animation: "dash-shimmer 1.4s ease infinite" }} />
+  return <div className="fp-skeleton" style={{ height }} />
 }

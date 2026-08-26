@@ -671,6 +671,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           invoices={invoices}
           payments={payments}
           expenses={expenses}
+          userName={user.displayName}
           onNavigate={navigate}
         />
       )

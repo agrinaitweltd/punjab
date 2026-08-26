@@ -70,12 +70,13 @@ type HomeTab = "analytics" | "overview" | "orders" | "customers"
 type CustFilter = "all" | "active" | "inactive"
 
 export function DashboardHome({
-  customers, products, orders, stock = [], activity = [], invoices = [], payments = [], expenses = [], onNavigate,
+  customers, products, orders, stock = [], activity = [], invoices = [], payments = [], expenses = [], userName, onNavigate,
 }: {
   customers: Customer[]; products: Product[]; orders: Order[]; stock?: StockItem[]; activity?: ActivityLog[]
   invoices?: Invoice[]
   payments?: Payment[]
   expenses?: Expense[]
+  userName?: string
   onNavigate?: (page: string) => void
 }) {
   const [tab, setTab]               = useState<HomeTab>("analytics")
@@ -308,7 +309,12 @@ export function DashboardHome({
       </div>
 
       {/* ═══ ANALYTICS TAB (real Supabase-aggregated dashboard analytics) ═══ */}
-      {tab === "analytics" && <DashboardAnalyticsTab onNavigate={onNavigate} />}
+      {tab === "analytics" && (
+        <DashboardAnalyticsTab
+          customers={customers} invoices={invoices} activity={activity}
+          userName={userName} onNavigate={onNavigate}
+        />
+      )}
 
       {/* ═══ OVERVIEW TAB ═══ */}
       {tab === "overview" && (

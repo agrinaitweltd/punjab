@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react"
-import { CountUp } from "../../components/CountUp"
-import { BarSeriesChart, DonutChart, RankedList, ChartSkeleton, EmptyChart } from "../../components/charts/DashboardCharts"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ActivityLog, Customer, Invoice } from "../../types"
+import { invoiceOutstanding } from "../../lib/creditNotes"
+import { DivergingBarChart, DonutChart, DonutLegend, ProgressBar, ChartSkeleton, EmptyChart } from "../../components/charts/DashboardCharts"
 import { getDashboardAnalytics, resolveDateRange, type DashboardAnalytics, type DateRangeKey } from "../../lib/dashboardAnalytics"
 import { showAppError } from "../../lib/appDialogs"
 
@@ -11,24 +12,50 @@ const RANGE_OPTIONS: Array<{ key: DateRangeKey; label: string }> = [
   { key: "thisMonth", label: "This Month" },
   { key: "prevMonth", label: "Previous Month" },
   { key: "thisYear", label: "This Year" },
-  { key: "custom", label: "Custom Range" },
+  { key: "custom", label: "Custom" },
 ]
 
 const REFRESH_MS = 5 * 60_000
+const gbp = (n: number, decimals = 2) => `£${Number(n || 0).toLocaleString("en-GB", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
 
-function StatCard({ label, value, prefix, decimals = 0, tone = "neutral" }: { label: string; value: number; prefix?: string; decimals?: number; tone?: "neutral" | "good" | "warn" | "bad" }) {
+const DONUT_COLOURS = ["#2563EB", "#A9C4FB", "#E3C9F3", "#BFE9F5", "#3B82F6"]
+
+/* ── Icons (stroke-only, 18px, matching the reference's line style) ── */
+const Ico = {
+  invoice: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
+  wallet: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" /></svg>,
+  clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>,
+  user: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>,
+  plus: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>,
+  send: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>,
+  card: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>,
+  folder: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>,
+  dots: <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="12" cy="19" r="1.7" /></svg>,
+}
+
+function StatCard({ icon, label, value, delta, deltaTone }: {
+  icon: React.ReactNode; label: string; value: string; delta?: string; deltaTone?: "up" | "down"
+}) {
   return (
-    <div className="ho-stat">
-      <p className="ho-stat-label">{label}</p>
-      <div className="ho-stat-value"><CountUp value={value} prefix={prefix} decimals={decimals} /></div>
-      <div className="ho-stat-foot">
-        <span className={`ho-chip ${tone}`}>{tone === "good" ? "Healthy" : tone === "warn" ? "Watch" : tone === "bad" ? "Attention" : "Live"}</span>
+    <div className="fp-card fp-stat">
+      <div className="fp-stat-top">
+        <span className="fp-stat-ico">{icon}</span>
+        <button className="fp-dots" type="button" aria-label="Options">{Ico.dots}</button>
       </div>
+      <p className="fp-stat-label">{label}</p>
+      <p className="fp-stat-value">{value}</p>
+      {delta && <p className={`fp-stat-delta ${deltaTone ?? "up"}`}>{delta}</p>}
     </div>
   )
 }
 
-export function DashboardAnalyticsTab({ onNavigate }: { onNavigate?: (page: string) => void }) {
+export function DashboardAnalyticsTab({ customers = [], invoices = [], activity = [], userName, onNavigate }: {
+  customers?: Customer[]
+  invoices?: Invoice[]
+  activity?: ActivityLog[]
+  userName?: string
+  onNavigate?: (page: string) => void
+}) {
   const [rangeKey, setRangeKey] = useState<DateRangeKey>("30d")
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
@@ -46,8 +73,7 @@ export function DashboardAnalyticsTab({ onNavigate }: { onNavigate?: (page: stri
     setError("")
     try {
       const range = resolveDateRange(rangeKey, rangeKey === "custom" ? { start: customStart, end: customEnd } : undefined)
-      const result = await getDashboardAnalytics(range)
-      setData(result)
+      setData(await getDashboardAnalytics(range))
       setLastUpdated(new Date())
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analytics could not be loaded.")
@@ -58,127 +84,265 @@ export function DashboardAnalyticsTab({ onNavigate }: { onNavigate?: (page: stri
     }
   }, [rangeKey, customStart, customEnd])
 
-  // Initial load + on range change.
   useEffect(() => { load(true) }, [load])
 
-  // Refresh automatically every 5 minutes without a full page/browser reload
-  // - only this tab's analytics query re-runs, nothing else on the
-  // dashboard is touched. A quiet background refresh (no spinner) so it
-  // doesn't interrupt whoever's looking at the numbers.
+  // Quiet background refresh every 5 minutes - only this one analytics
+  // query re-runs, no full page reload and nothing else on the dashboard
+  // is disturbed.
   useEffect(() => {
     const timer = window.setInterval(() => load(false), REFRESH_MS)
     return () => window.clearInterval(timer)
   }, [load])
 
   const s = data?.summary
-  const outstandingSegments = s ? [
-    { label: "Paid", value: Math.max(0, s.totalInvoiceValue - s.outstanding), color: "#22c55e" },
-    { label: "Outstanding", value: Math.max(0, s.outstanding), color: "#f5c518" },
-  ] : []
+
+  const chartData = useMemo(() => {
+    if (!data) return []
+    const byPeriod = new Map<string, { period: string; up: number; down: number }>()
+    for (const row of data.salesOverTime) byPeriod.set(row.period, { period: row.period, up: Number(row.value) || 0, down: 0 })
+    for (const row of data.paymentsOverTime) {
+      const existing = byPeriod.get(row.period) ?? { period: row.period, up: 0, down: 0 }
+      existing.down = Number(row.value) || 0
+      byPeriod.set(row.period, existing)
+    }
+    return [...byPeriod.values()]
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .slice(-12)
+      .map(d => ({ ...d, period: d.period.length > 7 ? d.period.slice(5) : d.period }))
+  }, [data])
+
+  const donutSegments = useMemo(() => {
+    if (!s) return []
+    const paid = Math.max(0, s.totalInvoiceValue - s.outstanding)
+    return [
+      { label: "Outstanding", value: s.outstanding, color: DONUT_COLOURS[0] },
+      { label: "Paid", value: paid, color: DONUT_COLOURS[1] },
+      { label: "Credit Notes", value: s.creditNotesValue, color: DONUT_COLOURS[2] },
+    ].filter(seg => seg.value > 0)
+  }, [s])
+
+  const customerById = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
+  const recentInvoices = useMemo(
+    () => [...invoices].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 6),
+    [invoices],
+  )
+  const collectedPct = s && s.totalInvoiceValue > 0
+    ? Math.round(((s.totalInvoiceValue - s.outstanding) / s.totalInvoiceValue) * 100)
+    : 0
+
+  const statusOf = (invoice: Invoice): { label: string; tone: string } => {
+    if (invoiceOutstanding(invoice) <= 0) return { label: "Paid", tone: "ok" }
+    if (invoice.dueDate && invoice.dueDate < new Date().toISOString().slice(0, 10)) return { label: "Overdue", tone: "bad" }
+    return { label: "Open", tone: "warn" }
+  }
 
   return (
-    <div className="da-wrap">
-      <div className="da-toolbar">
-        <div className="da-range-tabs">
-          {RANGE_OPTIONS.map(opt => (
-            <button key={opt.key} className={"da-range-btn" + (rangeKey === opt.key ? " active" : "")} onClick={() => setRangeKey(opt.key)}>
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <div className="da-toolbar-right">
+    <div className="fp">
+      {/* ── Greeting + range filter ── */}
+      <div className="fp-head">
+        <h2 className="fp-greeting">Hey {userName?.split(" ")[0] || "there"}, welcome back! <span>👋</span></h2>
+        <div className="fp-head-right">
           {rangeKey === "custom" && (
-            <div className="da-custom-dates">
+            <div className="fp-dates">
               <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
               <span>to</span>
               <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
             </div>
           )}
-          <span className="da-updated">{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
-          <button className="db-section-btn" onClick={() => load(true)} disabled={loading}>{loading ? "Refreshing…" : "Refresh Now"}</button>
+          <select className="fp-select" value={rangeKey} onChange={e => setRangeKey(e.target.value as DateRangeKey)}>
+            {RANGE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          <button className="fp-refresh" onClick={() => load(true)} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
+      {lastUpdated && <p className="fp-updated">Updated {lastUpdated.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · refreshes automatically every 5 minutes</p>}
+      {error && <div className="fp-error">{error}</div>}
 
-      {error && <p className="error-message" style={{ marginBottom: 12 }}>{error}</p>}
-
-      {loading && !data ? (
-        <div className="ho-stats">{Array.from({ length: 8 }).map((_, i) => <ChartSkeleton key={i} height={70} />)}</div>
-      ) : !s ? (
-        <EmptyChart label="No analytics data available yet." />
-      ) : (
-        <>
-          <div className="ho-stats">
-            <StatCard label="Total Customers" value={s.totalCustomers} />
-            <StatCard label="Total Invoice Value" value={s.totalInvoiceValue} prefix="£" decimals={2} />
-            <StatCard label="Payments Received" value={s.paymentsReceived} prefix="£" decimals={2} tone="good" />
-            <StatCard label="Current Outstanding" value={s.outstanding} prefix="£" decimals={2} tone={s.outstanding > 0 ? "warn" : "good"} />
-            <StatCard label="Paid Invoices" value={s.paidInvoices} tone="good" />
-            <StatCard label="Open Invoices" value={s.openInvoices} />
-            <StatCard label="Overdue Invoices" value={s.overdueInvoices} tone={s.overdueInvoices > 0 ? "bad" : "good"} />
-            <StatCard label="Credit Notes" value={s.creditNotesValue} prefix="£" decimals={2} />
-            <StatCard label="Documents Imported Today" value={s.documentsImportedToday} />
-          </div>
-
-          <div className="ho-grid">
-            <div className="ho-left">
-              <div className="ho-card">
-                <div className="ho-card-head">
-                  <span className="ho-card-title">Sales / Invoice Value Over Time</span>
-                  <button className="db-section-btn" onClick={() => onNavigate?.("invoices")}>View Invoices →</button>
-                </div>
-                <BarSeriesChart data={data.salesOverTime} color="#1f7a3a" />
-              </div>
-
-              <div className="ho-charts">
-                <div className="ho-card">
-                  <div className="ho-card-head"><span className="ho-card-title">Payments Over Time</span></div>
-                  <BarSeriesChart data={data.paymentsOverTime} color="#0ea5e9" height={140} />
-                </div>
-                <div className="ho-card">
-                  <div className="ho-card-head"><span className="ho-card-title">Credit Notes Over Time</span></div>
-                  <BarSeriesChart data={data.creditNotesOverTime} color="#e05c2a" height={140} />
-                </div>
-              </div>
-
-              <div className="ho-card">
-                <div className="ho-card-head"><span className="ho-card-title">Most Purchased Products</span><span className="ho-card-sub">By goods value in range</span></div>
-                <RankedList rows={data.topProducts.map(p => ({ label: p.product, value: p.value, secondary: `${p.qty} units` }))} />
-              </div>
-
-              <div className="ho-card">
-                <div className="ho-card-head"><span className="ho-card-title">Customer Growth</span><span className="ho-card-sub">New accounts created in range</span></div>
-                <BarSeriesChart data={data.customerGrowth} color="#8b5cf6" height={120} />
-              </div>
-            </div>
-
-            <div className="ho-side">
-              <div className="ho-card">
-                <div className="ho-card-head"><span className="ho-card-title">Outstanding vs Paid</span><span className="ho-card-sub">Invoices in range</span></div>
-                <DonutChart segments={outstandingSegments} />
-              </div>
-
-              <div className="ho-card">
-                <div className="ho-card-head"><span className="ho-card-title">Biggest Customers</span><span className="ho-card-sub">By total invoiced in range</span></div>
-                <RankedList rows={data.topCustomers.map(c => ({ label: c.name, value: c.totalInvoiced, secondary: `${c.invoiceCount} invoices` }))} />
-              </div>
-
-              <div className="ho-card">
-                <div className="ho-card-head"><span className="ho-card-title">Credit Notes by Customer</span></div>
-                <RankedList rows={data.creditNotesByCustomer.map(c => ({ label: c.name, value: c.value }))} />
-              </div>
-
-              <div className="ho-card">
-                <div className="ho-card-head"><span className="ho-card-title">Most Credited Products</span></div>
-                {/* Credit-note line items preserve their true sign from the
-                    source document (negative = a genuine reduction) - shown
-                    here as a positive magnitude since the section heading
-                    already establishes these are credits, not charges. */}
-                <RankedList rows={data.creditedProducts.map(p => ({ label: p.product, value: Math.abs(p.value), secondary: `${Math.abs(p.qty)} units` }))} />
-              </div>
+      <div className="fp-grid">
+        {/* ══ LEFT COLUMN ══ */}
+        <div className="fp-col-left">
+          <div className="fp-account">
+            <span className="fp-account-ring" />
+            <span className="fp-account-chip">{Ico.card}</span>
+            <p className="fp-account-label">Total Receivables</p>
+            <p className="fp-account-number">{s ? gbp(s.outstanding) : "—"}</p>
+            <div className="fp-account-foot">
+              <div><span>Customers</span><strong>{s?.totalCustomers ?? "—"}</strong></div>
+              <div><span>Open</span><strong>{s?.openInvoices ?? "—"}</strong></div>
+              <div><span>Overdue</span><strong>{s?.overdueInvoices ?? "—"}</strong></div>
             </div>
           </div>
-        </>
-      )}
+
+          <div className="fp-actions">
+            {[
+              { icon: Ico.plus, label: "Add Customer", page: "customers" },
+              { icon: Ico.invoice, label: "Invoice", page: "create-invoice" },
+              { icon: Ico.send, label: "Payments", page: "payments" },
+              { icon: Ico.folder, label: "Documents", page: "files" },
+            ].map(a => (
+              <button key={a.label} className="fp-action" onClick={() => onNavigate?.(a.page)}>
+                <span className="fp-action-ico">{a.icon}</span>
+                <span>{a.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="fp-card fp-pad">
+            <div className="fp-card-head">
+              <h3 className="fp-card-title">Collection Rate</h3>
+              <button className="fp-dots" type="button" aria-label="Options">{Ico.dots}</button>
+            </div>
+            <ProgressBar pct={collectedPct} />
+            <div className="fp-limit-foot">
+              <span>{s ? gbp(Math.max(0, s.totalInvoiceValue - s.outstanding), 0) : "—"} · {collectedPct}%</span>
+              <span>{s ? gbp(s.totalInvoiceValue, 0) : "—"}</span>
+            </div>
+          </div>
+
+          <div className="fp-card fp-pad">
+            <div className="fp-card-head">
+              <h3 className="fp-card-title">Top Customers</h3>
+              <button className="fp-link" onClick={() => onNavigate?.("customers")}>View all</button>
+            </div>
+            <p className="fp-sub-label">Total Invoiced</p>
+            <p className="fp-sub-value">{s ? gbp(s.totalInvoiceValue) : "—"}</p>
+            <div className="fp-plans">
+              {loading && !data ? <ChartSkeleton height={150} /> : (data?.topCustomers ?? []).slice(0, 3).map(c => {
+                const max = data?.topCustomers?.[0]?.totalInvoiced || 1
+                const pct = Math.round((c.totalInvoiced / max) * 100)
+                return (
+                  <div key={c.customerId} className="fp-plan">
+                    <div className="fp-plan-head">
+                      <span className="fp-plan-ico">{Ico.user}</span>
+                      <span className="fp-plan-name">{c.name}</span>
+                      <button className="fp-dots" type="button" aria-label="Options">{Ico.dots}</button>
+                    </div>
+                    <ProgressBar pct={pct} />
+                    <div className="fp-plan-foot">
+                      <span>{gbp(c.totalInvoiced, 0)} · {pct}%</span>
+                      <span>{c.invoiceCount} inv</span>
+                    </div>
+                  </div>
+                )
+              })}
+              {!loading && !(data?.topCustomers ?? []).length && <EmptyChart height={90} label="No customer activity in this period" />}
+            </div>
+          </div>
+        </div>
+
+        {/* ══ CENTRE COLUMN ══ */}
+        <div className="fp-col-mid">
+          <div className="fp-stats">
+            {loading && !data ? (
+              <><ChartSkeleton height={132} /><ChartSkeleton height={132} /><ChartSkeleton height={132} /></>
+            ) : (
+              <>
+                <StatCard icon={Ico.invoice} label="Total Invoiced" value={s ? gbp(s.totalInvoiceValue, 0) : "—"} delta={s ? `${s.openInvoices} open invoices` : "Not available"} deltaTone="up" />
+                <StatCard icon={Ico.wallet} label="Payments Received" value={s ? gbp(s.paymentsReceived, 0) : "—"} delta={s ? `${s.paidInvoices} paid invoices` : "Not available"} deltaTone="up" />
+                <StatCard icon={Ico.clock} label="Outstanding" value={s ? gbp(s.outstanding, 0) : "—"} delta={s ? `${s.overdueInvoices} overdue` : "Not available"} deltaTone={(s?.overdueInvoices ?? 0) > 0 ? "down" : "up"} />
+              </>
+            )}
+          </div>
+
+          <div className="fp-card fp-pad">
+            <div className="fp-card-head">
+              <h3 className="fp-card-title">Money Statistics</h3>
+              <div className="fp-legend-inline">
+                <span><i style={{ background: "#2563EB" }} />Invoiced</span>
+                <span><i style={{ background: "#A9C4FB" }} />Received</span>
+              </div>
+            </div>
+            <p className="fp-sub-label">Received vs Outstanding</p>
+            <p className="fp-sub-value fp-big">{s ? gbp(s.paymentsReceived - s.outstanding) : "—"}</p>
+            {loading && !data ? <ChartSkeleton height={230} /> : <DivergingBarChart data={chartData} />}
+          </div>
+
+          <div className="fp-card">
+            <div className="fp-card-head fp-pad-x">
+              <h3 className="fp-card-title">Recent Invoices</h3>
+              <button className="fp-link" onClick={() => onNavigate?.("invoices")}>View all</button>
+            </div>
+            <div className="fp-table-wrap">
+              <table className="fp-table">
+                <thead>
+                  <tr><th>Customer</th><th>Date</th><th>Amount</th><th>Outstanding</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {recentInvoices.map(inv => {
+                    const st = statusOf(inv)
+                    const customer = customerById.get(inv.customerId)
+                    return (
+                      <tr key={inv.id}>
+                        <td>
+                          <div className="fp-td-title">{customer?.companyName ?? "Unknown customer"}</div>
+                          <div className="fp-td-sub">Invoice {inv.invoiceNumber}</div>
+                        </td>
+                        <td className="fp-td-muted">{inv.date ?? "—"}</td>
+                        <td className="fp-td-strong">{gbp(inv.amount)}</td>
+                        <td className="fp-td-muted">{gbp(invoiceOutstanding(inv))}</td>
+                        <td><span className={`fp-pill ${st.tone}`}>{st.label}</span></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {recentInvoices.length === 0 && <div className="fp-empty" style={{ height: 120 }}>No invoices yet.</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* ══ RIGHT COLUMN ══ */}
+        <div className="fp-col-right">
+          <div className="fp-card fp-pad">
+            <div className="fp-card-head">
+              <h3 className="fp-card-title">Statistics</h3>
+              <button className="fp-dots" type="button" aria-label="Options">{Ico.dots}</button>
+            </div>
+            <div className="fp-donut-wrap">
+              {loading && !data ? <ChartSkeleton height={168} /> : <DonutChart segments={donutSegments} centreLabel="Total Invoiced" />}
+            </div>
+            <DonutLegend segments={donutSegments} />
+          </div>
+
+          <div className="fp-card fp-pad">
+            <div className="fp-card-head">
+              <h3 className="fp-card-title">Top Products</h3>
+              <button className="fp-link" onClick={() => onNavigate?.("products")}>View all</button>
+            </div>
+            <div className="fp-ranked">
+              {(data?.topProducts ?? []).slice(0, 5).map((p, i) => (
+                <div key={p.product} className="fp-ranked-row">
+                  <span className="fp-ranked-idx">{i + 1}</span>
+                  <span className="fp-ranked-name">{p.product}<em>{p.qty} units</em></span>
+                  <span className="fp-ranked-value">{gbp(p.value, 0)}</span>
+                </div>
+              ))}
+              {!loading && !(data?.topProducts ?? []).length && <EmptyChart height={80} label="No products sold in this period" />}
+            </div>
+          </div>
+
+          <div className="fp-card fp-pad">
+            <div className="fp-card-head">
+              <h3 className="fp-card-title">Recent Activity</h3>
+              <button className="fp-dots" type="button" aria-label="Options">{Ico.dots}</button>
+            </div>
+            <div className="fp-activity">
+              {activity.slice(0, 6).map(a => (
+                <div key={a.id} className="fp-activity-row">
+                  <span className="fp-activity-ico">{Ico.invoice}</span>
+                  <div>
+                    <div className="fp-activity-text"><strong>{a.customerName}</strong> {a.action}</div>
+                    <div className="fp-activity-time">{a.timestamp}</div>
+                  </div>
+                </div>
+              ))}
+              {activity.length === 0 && <EmptyChart height={80} label="No recent activity" />}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
