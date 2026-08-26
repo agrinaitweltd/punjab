@@ -116,14 +116,15 @@ function FruitArt({ kind, size, uid }: { kind: FruitKind; size: number; uid: str
   }
 }
 
+/* Positioned to hug the edges of the (now more compact) brand panel so they
+   float around the dashboard mockup rather than over it. */
 const FRUITS: { kind: FruitKind; top: string; left: string; size: number; delay: string }[] = [
-  { kind: "mango",      top: "8%",  left: "6%",  size: 62, delay: "0s"   },
-  { kind: "watermelon", top: "22%", left: "26%", size: 50, delay: "0.8s" },
-  { kind: "orange",     top: "12%", left: "40%", size: 42, delay: "1.6s" },
-  { kind: "grapes",     top: "58%", left: "8%",  size: 56, delay: "0.4s" },
-  { kind: "kiwi",       top: "70%", left: "30%", size: 46, delay: "1.2s" },
-  { kind: "lime",       top: "40%", left: "15%", size: 40, delay: "2s"   },
-  { kind: "watermelon", top: "84%", left: "16%", size: 44, delay: "0.6s" },
+  { kind: "mango",      top: "6%",  left: "8%",  size: 46, delay: "0s"   },
+  { kind: "orange",     top: "10%", left: "78%", size: 38, delay: "1.6s" },
+  { kind: "watermelon", top: "40%", left: "4%",  size: 40, delay: "0.8s" },
+  { kind: "grapes",     top: "46%", left: "84%", size: 44, delay: "0.4s" },
+  { kind: "kiwi",       top: "78%", left: "10%", size: 36, delay: "1.2s" },
+  { kind: "lime",       top: "82%", left: "76%", size: 34, delay: "2s"   },
 ]
 
 /* ── First-time activation: email → 6-digit code → set password ── */
@@ -575,15 +576,14 @@ export function LoginPage({ onLogin, error }: {
 
   return (
     <div className="lx-page">
-      {/* floating fruits */}
-      {FRUITS.map((f, i) => (
-        <span key={i} className="lx-fruit" style={{ top: f.top, left: f.left, animationDelay: f.delay }}>
-          <FruitArt kind={f.kind} size={f.size} uid={String(i)} />
-        </span>
-      ))}
-
       {/* ─── LEFT BRAND SIDE ─── */}
       <div className="lx-brand">
+        {/* floating fruits */}
+        {FRUITS.map((f, i) => (
+          <span key={i} className="lx-fruit" style={{ top: f.top, left: f.left, animationDelay: f.delay }}>
+            <FruitArt kind={f.kind} size={f.size} uid={String(i)} />
+          </span>
+        ))}
         <div className="lx-integration-map" aria-hidden="true">
           <span><UsersRound /></span>
           <span><FileText /></span>
@@ -603,8 +603,11 @@ export function LoginPage({ onLogin, error }: {
           </div>
         </div>
         <div className="lx-visual-copy">
-          <h2>Punjab Exotic Foods</h2>
-          <p>Freshness starts here</p>
+          <h2>Everything in one place</h2>
+          <p>Invoices, payments, stock and orders — managed the Punjab Exotic Foods way</p>
+        </div>
+        <div className="lx-brand-carousel" aria-hidden="true">
+          <span className="on" /><span /><span />
         </div>
       </div>
 
