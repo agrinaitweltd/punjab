@@ -4,7 +4,7 @@ import type { UserRole } from "../types"
 import { updateCustomer } from "../api/customersApi"
 import { updateAdmin, createCustomerApplication } from "../api/miscApi"
 import { sendEmail, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
-import { Boxes, CreditCard, Eye, EyeOff, FileText, LockKeyhole, Mail, UsersRound } from "lucide-react"
+import { Eye, EyeOff, LockKeyhole, Mail, UsersRound } from "lucide-react"
 import { showAppError, showSuccess } from "../lib/appDialogs"
 import { Spinner } from "../components/ui/Spinner"
 import { supabase } from "../lib/supabase"
@@ -131,15 +131,25 @@ function FruitArt({ kind, size, uid }: { kind: FruitKind; size: number; uid: str
   }
 }
 
-/* Positioned to hug the edges of the (now more compact) brand panel so they
-   float around the dashboard mockup rather than over it. */
+/* Small ambient fruits hugging the far edges of the panel, well clear of
+   the hero cluster and copy in the centre. */
 const FRUITS: { kind: FruitKind; top: string; left: string; size: number; delay: string }[] = [
-  { kind: "mango",      top: "6%",  left: "8%",  size: 46, delay: "0s"   },
-  { kind: "orange",     top: "10%", left: "78%", size: 38, delay: "1.6s" },
-  { kind: "watermelon", top: "40%", left: "4%",  size: 40, delay: "0.8s" },
-  { kind: "grapes",     top: "46%", left: "84%", size: 44, delay: "0.4s" },
-  { kind: "kiwi",       top: "78%", left: "10%", size: 36, delay: "1.2s" },
-  { kind: "lime",       top: "82%", left: "76%", size: 34, delay: "2s"   },
+  { kind: "lime",   top: "6%",  left: "6%",  size: 30, delay: "0s"   },
+  { kind: "kiwi",   top: "8%",  left: "88%", size: 28, delay: "1.6s" },
+  { kind: "orange", top: "88%", left: "8%",  size: 32, delay: "0.8s" },
+  { kind: "grapes", top: "90%", left: "90%", size: 30, delay: "0.4s" },
+]
+
+/* The main hero illustration: a loose, layered cluster of fruit (built from
+   the same FruitArt art, just bigger) instead of a generic dashboard mockup
+   - this is a fresh-produce wholesaler, so the produce itself is the hero. */
+const HERO_FRUITS: { kind: FruitKind; top: string; left: string; size: number; z: number; delay: string }[] = [
+  { kind: "watermelon", top: "8%",  left: "30%", size: 150, z: 1, delay: "0s"   },
+  { kind: "mango",      top: "38%", left: "4%",  size: 108, z: 3, delay: "1.1s" },
+  { kind: "orange",     top: "44%", left: "58%", size: 96,  z: 3, delay: "0.6s" },
+  { kind: "grapes",     top: "2%",  left: "0%",  size: 92,  z: 2, delay: "1.8s" },
+  { kind: "kiwi",       top: "58%", left: "34%", size: 74,  z: 4, delay: "0.3s" },
+  { kind: "lime",       top: "4%",  left: "72%", size: 68,  z: 2, delay: "2.2s" },
 ]
 
 /* ── First-time activation: email → 6-digit code → set password ── */
@@ -605,20 +615,27 @@ export function LoginPage({ onLogin, error }: {
     <div className="lx-page">
       {/* ─── LEFT BRAND SIDE ─── */}
       <div className="lx-brand">
-        {/* floating fruits */}
+        {/* ambient floating fruits */}
         {FRUITS.map((f, i) => (
           <span key={i} className="lx-fruit" style={{ top: f.top, left: f.left, animationDelay: f.delay }}>
             <FruitArt kind={f.kind} size={f.size} uid={String(i)} />
           </span>
         ))}
-        <div className="lx-integration-map" aria-hidden="true">
-          <span><UsersRound /></span>
-          <span><FileText /></span>
-          <span><CreditCard /></span>
-          <span><Boxes /></span>
-          <i />
+
+        <div className="lx-brand-logo">
+          <img src="/logo.png" alt="" />
+          <span>Punjab Exotic Foods</span>
         </div>
-        <div className="lx-dashboard-preview" aria-hidden="true">
+
+        <div className="lx-hero" aria-hidden="true">
+          <div className="lx-hero-glow" />
+          <div className="lx-hero-fruits">
+            {HERO_FRUITS.map((f, i) => (
+              <span key={i} className="lx-hero-fruit" style={{ top: f.top, left: f.left, zIndex: f.z, animationDelay: f.delay }}>
+                <FruitArt kind={f.kind} size={f.size} uid={`hero-${i}`} />
+              </span>
+            ))}
+          </div>
           <div className="lx-stat-card lx-stat-card--income">
             <span>Total Invoiced</span>
             <strong>£17,500</strong>
@@ -629,18 +646,10 @@ export function LoginPage({ onLogin, error }: {
             <strong>£1,200</strong>
             <small>3 invoices due</small>
           </div>
-          <div className="lx-preview-top"><span /><span /><span /></div>
-          <div className="lx-preview-body">
-            <aside>{[0,1,2,3,4].map(item => <i key={item} />)}</aside>
-            <div className="lx-preview-main">
-              <div className="lx-preview-metrics"><i /><i /><i /></div>
-              <div className="lx-preview-chart">{[42,58,46,72,66,88,76,94].map((height, item) => <i key={item} style={{ height: `${height}%` }} />)}</div>
-              <div className="lx-preview-rows">{[0,1,2,3].map(item => <i key={item} />)}</div>
-            </div>
-          </div>
         </div>
+
         <div className="lx-visual-copy">
-          <h2>Stay Stocked. Trade Smarter.</h2>
+          <h2>Freshness, Delivered.</h2>
           <p>Punjab Exotic Foods keeps invoices, payments, stock and orders in one place — without the stress and extra steps.</p>
         </div>
         <div className="lx-brand-carousel" aria-hidden="true">

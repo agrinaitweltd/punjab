@@ -3132,12 +3132,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: none;
 }
 .lx-brand .lx-fruit { position: absolute; z-index: 0; }
-.lx-stat-card { position: absolute; z-index: 2; padding: 10px 13px; border-radius: 10px; background: #fff; box-shadow: 0 14px 30px rgba(6,23,15,.28); color: #1c2b22; }
-.lx-stat-card span { display: block; color: #869087; font-size: 9.5px; font-weight: 650; }
-.lx-stat-card strong { display: block; margin-top: 2px; color: #16251c; font-size: 15px; font-weight: 800; }
-.lx-stat-card small { display: block; margin-top: 1px; color: var(--green-600); font-size: 9px; font-weight: 700; }
-.lx-stat-card--income { top: -6%; left: -4%; transform: rotate(-6deg); }
-.lx-stat-card--balance { bottom: -4%; right: -6%; transform: rotate(4deg); }
 .lx-brand-carousel { position: relative; z-index: 1; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .lx-brand-carousel span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.35); }
 .lx-brand-carousel span.on { width: 18px; border-radius: 4px; background: #fff; }
@@ -3187,29 +3181,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lx-back:hover, .lx-resend:hover:not(:disabled) { color: var(--green-700); }
 .lx-error { color: #a32d2d; background: #fdf0f0; }
 .lx-otp { color: #24332a; background: #fff; border-color: #d9dfdb; }
-.lx-dashboard-preview { position: relative; z-index: 1; width: min(100%, 500px); min-height: 268px; align-self: center; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); border-radius: 7px; background: #f8faf9; box-shadow: 0 22px 42px rgba(6,23,15,0.3); }
-.lx-preview-top { height: 32px; display: flex; align-items: center; gap: 5px; padding: 0 11px; border-bottom: 1px solid #e2e7e4; background: #fff; }
-.lx-preview-top span { width: 6px; height: 6px; border-radius: 50%; background: #d6ddd8; }
-.lx-preview-body { height: 236px; display: grid; grid-template-columns: 76px 1fr; }
-.lx-preview-body aside { padding: 18px 12px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #e3e8e5; background: #f1f4f2; }
-.lx-preview-body aside i { height: 6px; border-radius: 3px; background: #cbd5ce; }
-.lx-preview-main { padding: 20px; }
-.lx-preview-metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
-.lx-preview-metrics i { height: 48px; border: 1px solid #e1e7e3; border-radius: 5px; background: #fff; }
-.lx-preview-chart { height: 92px; margin-top: 12px; padding: 14px 12px 0; display: flex; align-items: flex-end; gap: 8px; border: 1px solid #e1e7e3; border-radius: 5px; background: #fff; }
-.lx-preview-chart i { flex: 1; border-radius: 2px 2px 0 0; background: #3a8b58; opacity: .8; }
-.lx-preview-rows { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
-.lx-preview-rows i { height: 7px; border-radius: 3px; background: #e2e7e4; }
-.lx-integration-map { position: relative; z-index: 1; width: min(82%, 420px); height: 76px; display: flex; align-items: flex-start; justify-content: space-around; }
-.lx-integration-map::before { content: ""; position: absolute; left: 11%; right: 11%; top: 24px; height: 34px; border: 7px solid rgba(255,255,255,.13); border-top: 0; border-radius: 0 0 28px 28px; }
-.lx-integration-map::after { content: ""; position: absolute; left: 50%; top: 52px; width: 7px; height: 29px; transform: translateX(-50%); border-radius: 4px; background: rgba(255,255,255,.13); }
-.lx-integration-map span { position: relative; z-index: 2; width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.28); border-radius: 7px; color: var(--green-600); background: #fff; box-shadow: 0 7px 16px rgba(6,23,15,.25); }
-.lx-integration-map span:nth-child(2), .lx-integration-map span:nth-child(4) { transform: translateY(8px); }
-.lx-integration-map svg { width: 18px; height: 18px; }
-.lx-integration-map i { position: absolute; left: calc(50% - 3px); bottom: -4px; width: 7px; height: 7px; border-radius: 50%; background: #ffd44a; }
+.lx-brand-logo { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; }
+.lx-brand-logo img { width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 3px 8px rgba(6,23,15,.35)); }
+.lx-brand-logo span { color: #fff; font-size: 14px; font-weight: 750; letter-spacing: .2px; }
+.lx-hero { position: relative; z-index: 1; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.lx-hero-glow { position: absolute; top: 50%; left: 50%; width: 380px; height: 380px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 70%); }
+.lx-hero-fruits { position: relative; width: min(88%, 420px); aspect-ratio: 1 / 0.86; }
+.lx-hero-fruit { position: absolute; filter: drop-shadow(0 14px 22px rgba(6,23,15,.4)); animation: lx-float 7s ease-in-out infinite; }
+.lx-stat-card { position: absolute; z-index: 3; padding: 10px 13px; border-radius: 10px; background: #fff; box-shadow: 0 14px 30px rgba(6,23,15,.3); color: #1c2b22; }
+.lx-stat-card span { display: block; color: #869087; font-size: 9.5px; font-weight: 650; }
+.lx-stat-card strong { display: block; margin-top: 2px; color: #16251c; font-size: 15px; font-weight: 800; }
+.lx-stat-card small { display: block; margin-top: 1px; color: var(--green-600); font-size: 9px; font-weight: 700; }
+.lx-stat-card--income { top: 4%; left: -2%; transform: rotate(-6deg); }
+.lx-stat-card--balance { bottom: 8%; right: -4%; transform: rotate(4deg); }
 .lx-visual-copy { position: relative; z-index: 1; margin-top: 3px; text-align: center; }
-.lx-visual-copy h2 { margin: 0; color: #fff; font-size: 20px; font-weight: 750; }
-.lx-visual-copy p { margin: 6px 0 0; color: rgba(255,255,255,.7); font-size: 11.5px; text-transform: uppercase; }
+.lx-visual-copy h2 { margin: 0; color: #fff; font-size: 26px; font-weight: 800; letter-spacing: -.2px; }
+.lx-visual-copy p { max-width: 380px; margin: 8px auto 0; color: rgba(255,255,255,.78); font-size: 13px; line-height: 1.6; }
 .lx-auth-heading { margin-bottom: 20px; text-align: center; }
 .lx-auth-heading .lx-login-subtitle { margin-bottom: 0; }
 .lx-card > form > .lx-title, .lx-card > form > .lx-sub { text-align: center; }
