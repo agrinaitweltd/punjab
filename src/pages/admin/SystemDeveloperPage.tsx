@@ -30,6 +30,7 @@ export function SystemDeveloperPage({ section }: { section: string }) {
   const [restoreInfo, setRestoreInfo] = useState(false)
   const [errors, setErrors] = useState<LoggedError[] | null>(null)
   const [errorFilter, setErrorFilter] = useState<'unresolved' | 'all'>('unresolved')
+  const [loginUserFilter, setLoginUserFilter] = useState('')
   const title = SECTION_TITLES[section] ?? SECTION_TITLES['system-overview']
   const load = () => {
     setError('')
@@ -112,10 +113,20 @@ export function SystemDeveloperPage({ section }: { section: string }) {
       <div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last Login</th><th>Created</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.name}</strong><small className="table-sub">{user.email}</small></td><td><span className="badge badge-blue">{user.role}</span></td><td><span className={user.active ? 'sys-status active' : 'sys-status disabled'}>{user.active ? 'Active' : 'Disabled'}</span></td><td>{dateTime(user.lastLoginAt)}</td><td>{dateTime(user.createdAt)}</td></tr>)}</tbody></table></div>
     </section>}
 
-    {data && section === 'login-activity' && <section className="system-panel system-table-panel">
-      <div className="system-table-tools"><div><strong>Recent Login Attempts</strong><span>Passwords, tokens and sessions are never recorded</span></div></div>
-      <div className="table-wrap"><table><thead><tr><th>Account</th><th>Role</th><th>Result</th><th>Time</th></tr></thead><tbody>{data.logins.map(item => <tr key={item.id}><td>{item.email || 'Account identifier protected'}</td><td>{item.role}</td><td><span className={item.success ? 'sys-status active' : 'sys-status disabled'}>{item.success ? 'Successful' : 'Failed'}</span></td><td>{dateTime(item.login_at)}</td></tr>)}</tbody></table>{!data.logins.length && <EmptyState title="No application login events recorded yet" />}</div>
-    </section>}
+    {data && section === 'login-activity' && (() => {
+      const loginEmails = [...new Set(data.logins.map(item => item.email).filter((email): email is string => Boolean(email)))].sort()
+      const visibleLogins = loginUserFilter ? data.logins.filter(item => item.email === loginUserFilter) : data.logins
+      return <section className="system-panel system-table-panel">
+        <div className="system-table-tools">
+          <div><strong>Recent Login Attempts</strong><span>Passwords, tokens and sessions are never recorded</span></div>
+          <select value={loginUserFilter} onChange={event => setLoginUserFilter(event.target.value)} aria-label="Filter by account">
+            <option value="">All Accounts</option>
+            {loginEmails.map(email => <option key={email} value={email}>{email}</option>)}
+          </select>
+        </div>
+        <div className="table-wrap"><table><thead><tr><th>Account</th><th>Role</th><th>Result</th><th>Time</th></tr></thead><tbody>{visibleLogins.map(item => <tr key={item.id}><td>{item.email || 'Account identifier protected'}</td><td>{item.role}</td><td><span className={item.success ? 'sys-status active' : 'sys-status disabled'}>{item.success ? 'Successful' : 'Failed'}</span></td><td>{dateTime(item.login_at)}</td></tr>)}</tbody></table>{!visibleLogins.length && <EmptyState title={loginUserFilter ? "No login events for this account yet" : "No application login events recorded yet"} />}</div>
+      </section>
+    })()}
 
     {data && section === 'audit-logs' && <section className="system-panel system-table-panel">
       <div className="system-table-tools"><div><strong>Restricted Audit Trail</strong><span>Administrative actions are append-only for normal users</span></div></div>

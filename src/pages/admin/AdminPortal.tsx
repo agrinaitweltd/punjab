@@ -143,6 +143,7 @@ import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
 import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, type EmailImportRow } from '../../lib/secureAdminApi'
 import { EmailImportsPage } from './EmailImportsPage'
+import { NotFoundPage } from './NotFoundPage'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -1469,7 +1470,11 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return <AnalyticsPage orders={orders} products={products} />
     }
 
-    return <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
+    if (current === 'settings') {
+      return <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
+    }
+
+    return <NotFoundPage onNavigate={navigate} />
   }
 
   return (

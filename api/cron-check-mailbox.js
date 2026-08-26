@@ -1,6 +1,13 @@
 import { serviceClient, globalTestMode } from '../server/runtime-mode.js'
 import { processMailbox } from '../server/email-import/process-mailbox.js'
 
+// Vercel Hobby's max for a single function invocation - processMailbox's own
+// internal time budget (see TIME_BUDGET_MS in process-mailbox.js) stops
+// picking up new messages well before this, so a burst of many forwarded
+// invoices spreads across several polls instead of one invocation timing
+// out mid-batch.
+export const config = { maxDuration: 60 }
+
 /** Polls receivables@punjabexoticfoods.com (IONOS IMAP) for new PDF invoices/
  *  credit notes and imports them through the same pipeline the manual
  *  uploader uses. Machine-triggered only - same CRON_SECRET bearer-token

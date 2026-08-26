@@ -10,6 +10,15 @@ import { assessConfidence, createRecordFromImport, resolveOrCreateCustomer, safe
 
 const SCAN_WINDOW_DAYS = 14 // bounds the IMAP search; the (message_id, attachment_filename) unique row is what actually prevents reprocessing
 const MAX_MESSAGE_DOWNLOAD_BYTES = 20 * 1024 * 1024
+// One invocation must finish inside the serverless function's own time
+// limit (api/cron-check-mailbox.js sets maxDuration: 60, the max Vercel
+// Hobby allows) regardless of how many emails are waiting - a burst of 100
+// forwarded invoices must not time out mid-batch and leave the run half
+// done. Each message stops being picked up once this budget is spent; the
+// UID cursor only advances past what was actually finished, so whatever's
+// left is simply picked up by the next poll a few seconds/minutes later -
+// nothing is skipped, it's just spread across more than one invocation.
+const TIME_BUDGET_MS = 50_000
 
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -157,7 +166,12 @@ export async function processMailbox(admin, table, testMode = false) {
       uids = (await client.search({ since }, { uid: true })) || []
     }
     let highestUidSeen = cursor?.last_uid || 0
-    for (const uid of uids) {
+    const startedAt = Date.now()
+    for (const [index, uid] of uids.entries()) {
+      if (Date.now() - startedAt > TIME_BUDGET_MS) {
+        summary.deferred = uids.length - index // remaining, unprocessed - picked up next poll
+        break
+      }
       highestUidSeen = Math.max(highestUidSeen, uid)
       let raw
       try {
