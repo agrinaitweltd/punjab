@@ -88,6 +88,23 @@ function App() {
     role: 'admin' | 'customer'; displayName: string; usernameOrEmail: string; password: string
   } | null>(null)
 
+  // OAuth (e.g. "Continue with Google") signs the user into Supabase Auth
+  // directly - there is no self-service provisioning path yet linking that
+  // account to an admin_staff/customers row, so a fresh OAuth sign-in with
+  // no matching Punjab account would otherwise land back here with a
+  // dangling Supabase session and no explanation. Catch that case once on
+  // mount and surface it clearly instead of silently doing nothing.
+  useEffect(() => {
+    if (user || !supabase || isPasswordRecoveryUrl()) return
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setError('No Punjab Exotic Foods account is linked to this sign-in yet. Ask a System Developer to link your account, or sign in with your email and password.')
+        void supabase!.auth.signOut()
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     let active = true
     if (!user) {

@@ -7,6 +7,21 @@ import { sendEmail, ADMIN_NOTIFY_EMAIL } from "../lib/emailService"
 import { Boxes, CreditCard, Eye, EyeOff, FileText, LockKeyhole, Mail, UsersRound } from "lucide-react"
 import { showAppError, showSuccess } from "../lib/appDialogs"
 import { Spinner } from "../components/ui/Spinner"
+import { supabase } from "../lib/supabase"
+
+function GoogleIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+    <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47c-.28 1.5-1.13 2.78-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82z"/>
+    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.94-2.9l-3.88-3c-1.08.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.94H1.28v3.1C3.26 21.3 7.31 24 12 24z"/>
+    <path fill="#FBBC05" d="M5.29 14.31A7.2 7.2 0 0 1 4.91 12c0-.8.14-1.58.38-2.31v-3.1H1.28A11.98 11.98 0 0 0 0 12c0 1.93.46 3.76 1.28 5.41l4.01-3.1z"/>
+    <path fill="#EA4335" d="M12 4.75c1.76 0 3.35.61 4.6 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.28 6.59l4.01 3.1C6.23 6.86 8.88 4.75 12 4.75z"/>
+  </svg>
+}
+function AppleIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="#111" aria-hidden="true">
+    <path d="M16.36 1.05c.1 1.02-.28 2.02-.9 2.75-.65.76-1.72 1.36-2.75 1.28-.13-1 .33-2.05.94-2.72.68-.75 1.83-1.32 2.71-1.31zM20.9 17.28c-.34.79-.75 1.51-1.24 2.19-.68.94-1.24 1.6-1.68 1.97-.68.62-1.4.94-2.18.96-.56.01-1.23-.16-2.01-.5-.79-.34-1.51-.5-2.18-.5-.7 0-1.44.16-2.24.5-.8.34-1.44.52-1.94.54-.75.03-1.49-.3-2.22-.98-.47-.4-1.06-1.1-1.77-2.09-.76-1.06-1.39-2.29-1.88-3.7-.53-1.52-.79-3-.79-4.42 0-1.63.35-3.03 1.06-4.21.55-.95 1.29-1.7 2.2-2.25.92-.55 1.9-.83 2.97-.85.6 0 1.38.19 2.36.55.98.37 1.6.55 1.87.55.2 0 .9-.21 2.08-.63 1.12-.39 2.06-.55 2.84-.49 2.1.17 3.68 1 4.72 2.5-1.88 1.14-2.81 2.73-2.79 4.77.02 1.59.6 2.91 1.72 3.96.51.49 1.09.86 1.72 1.13-.14.4-.29.79-.46 1.17z"/>
+  </svg>
+}
 
 function EyeIcon({ open }: { open: boolean }) {
   return open ? <Eye size={17} /> : <EyeOff size={17} />
@@ -567,11 +582,23 @@ export function LoginPage({ onLogin, error }: {
   const [remember, setRemember] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [mode, setMode]         = useState<"login" | "activate" | "forgot" | "apply">("login")
+  const [oauthBusy, setOauthBusy] = useState<"" | "google" | "apple">("")
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setLoading(true)
     await onLogin(role, username.trim(), password)
     setLoading(false)
+  }
+
+  // Requires the provider to be enabled in the Supabase project's Auth
+  // settings, and (once a session comes back) an existing admin_staff or
+  // customers row already linked to that account's auth_user_id - there is
+  // no self-service provisioning path for a brand-new OAuth sign-in yet.
+  const signInWithProvider = async (provider: "google" | "apple") => {
+    if (!supabase) { showAppError(new Error('Sign-in is not configured'), { feature: 'OAuth Login' }); return }
+    setOauthBusy(provider)
+    const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } })
+    if (error) { showAppError(error, { feature: 'OAuth Login', fallbackCode: 401 }); setOauthBusy("") }
   }
 
   return (
@@ -592,6 +619,16 @@ export function LoginPage({ onLogin, error }: {
           <i />
         </div>
         <div className="lx-dashboard-preview" aria-hidden="true">
+          <div className="lx-stat-card lx-stat-card--income">
+            <span>Total Invoiced</span>
+            <strong>£17,500</strong>
+            <small>▲ 12% this month</small>
+          </div>
+          <div className="lx-stat-card lx-stat-card--balance">
+            <span>Outstanding</span>
+            <strong>£1,200</strong>
+            <small>3 invoices due</small>
+          </div>
           <div className="lx-preview-top"><span /><span /><span /></div>
           <div className="lx-preview-body">
             <aside>{[0,1,2,3,4].map(item => <i key={item} />)}</aside>
@@ -603,8 +640,8 @@ export function LoginPage({ onLogin, error }: {
           </div>
         </div>
         <div className="lx-visual-copy">
-          <h2>Everything in one place</h2>
-          <p>Invoices, payments, stock and orders — managed the Punjab Exotic Foods way</p>
+          <h2>Stay Stocked. Trade Smarter.</h2>
+          <p>Punjab Exotic Foods keeps invoices, payments, stock and orders in one place — without the stress and extra steps.</p>
         </div>
         <div className="lx-brand-carousel" aria-hidden="true">
           <span className="on" /><span /><span />
@@ -631,8 +668,8 @@ export function LoginPage({ onLogin, error }: {
         <form className="lx-card" onSubmit={submit}>
           <AuthBrand />
           <div className="lx-auth-heading">
-            <h1 className="lx-title">Welcome back</h1>
-            <p className="lx-login-subtitle">Glad to see you again. Select your portal and sign in.</p>
+            <h1 className="lx-title">Hi, Welcome 👋</h1>
+            <p className="lx-login-subtitle">Select your portal and sign in to continue.</p>
           </div>
 
           <div className="lx-role-row">
@@ -682,6 +719,16 @@ export function LoginPage({ onLogin, error }: {
             {loading ? <><Spinner size={15} color="#3b2a00" /> Signing in…</> : "Log in"}
           </button>
 
+          <div className="lx-oauth-divider">or continue with</div>
+          <div className="lx-oauth-row">
+            <button type="button" className="lx-oauth-btn" onClick={() => signInWithProvider("google")} disabled={oauthBusy !== ""}>
+              {oauthBusy === "google" ? <Spinner size={15} /> : <GoogleIcon />} Continue with Google
+            </button>
+            <button type="button" className="lx-oauth-btn" onClick={() => signInWithProvider("apple")} disabled={oauthBusy !== ""}>
+              {oauthBusy === "apple" ? <Spinner size={15} /> : <AppleIcon />} Continue with Apple
+            </button>
+          </div>
+
           <p className="lx-signup-note">First time here?</p>
           <button type="button" className="lx-signup-btn" onClick={() => setMode("activate")}>
             Activate your account with email
@@ -693,7 +740,7 @@ export function LoginPage({ onLogin, error }: {
           )}
         </form>
         )}
-        <small className="lx-auth-footer">Punjab Exotic Foods · Secure account access</small>
+        <small className="lx-auth-footer"><a href="/privacy">Privacy Policy</a><span>© Punjab Exotic Foods {new Date().getFullYear()}</span></small>
       </div>
     </div>
   )
