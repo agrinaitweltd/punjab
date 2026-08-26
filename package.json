@@ -27,6 +27,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.8",
     "@supabase/supabase-js": "^2.110.2",
     "bcryptjs": "^3.0.3",
     "imapflow": "^1.7.6",
