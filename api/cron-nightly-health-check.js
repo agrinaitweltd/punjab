@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { serviceClient, globalTestMode } from '../server/runtime-mode.js'
 import { runHealthCheck, ukLocalParts } from '../server/health-check.js'
-import { brandedEmail, sendTransactionalEmail, summaryTable } from '../server/email-system.js'
+import { brandedEmail, sendTransactionalEmail, summaryTable, sectionHeading, alertBox, dataTable } from '../server/email-system.js'
 
 export const config = { maxDuration: 60 }
 
@@ -48,39 +48,122 @@ export default async function handler(req, res) {
   const table = name => (testMode ? `test_${name}` : name)
 
   try {
-    const { summary, issues } = await runHealthCheck(admin, table)
+    const { summary, issues, details } = await runHealthCheck(admin, table)
     if (!testSend) await admin.from('health_check_runs').upsert({ id: dateKey, ran_at: new Date().toISOString(), summary })
 
     const fixed = issues.filter(item => item.severity === 'fixed')
     const review = issues.filter(item => item.severity === 'review')
-    const rows = [
+    const money = n => `£${Number(n || 0).toFixed(2)}`
+
+    const overviewRows = [
+      ['Date', dateKey],
+      ['System Health', review.length === 0 ? 'Healthy' : `${review.length} item(s) need review`],
       ['New Customers', String(summary.newCustomers)],
-      ['Customers Auto-Created (Email)', String(summary.customersAutoCreated)],
       ['Invoices Imported', String(summary.invoicesImported)],
       ['Credit Notes Imported', String(summary.creditNotesImported)],
-      ['System PDFs Generated', String(summary.pdfsGenerated)],
       ['Payments Recorded', String(summary.paymentsRecorded)],
-      ['Paid Invoices (total)', String(summary.paidInvoices)],
-      ['Outstanding Invoices (total)', String(summary.outstandingInvoices)],
       ['Emails Sent', String(summary.emailsSent)],
-      ['Payment Reminders Sent', String(summary.remindersSent)],
-      ['Emails Failed', String(summary.emailsFailed)],
-      ['Documents Received', String(summary.documentsReceived)],
+      ['Documents Processed', String(summary.documentsReceived)],
       ['Errors Found', String(summary.errorsFound)],
-      ['Automatically Fixed', String(fixed.length)],
-      ['Needs Review', String(review.length)],
+      ['Errors Repaired', String(fixed.length)],
     ]
-    const exceptionsHtml = review.length
-      ? `<p style="margin:18px 0 6px;font-weight:700;color:#a16207">Needs Review</p><ul style="margin:0;padding-left:20px;color:#3e4b43;font-size:13px">${review.slice(0, 25).map(item => `<li>${item.text}</li>`).join('')}</ul>${review.length > 25 ? `<p style="font-size:12px;color:#818b85">+ ${review.length - 25} more - see Email Imports and Customers for detail.</p>` : ''}`
+
+    const newCustomersHtml = details.newCustomers.length
+      ? dataTable(['Customer', 'Account No.', 'Invoices Received', 'Balance'], details.newCustomers.map(c => [c.name, c.accountNumber, String(c.invoiceCount), money(c.balance)]))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">No new customers today.</p>'
+
+    const invoiceSummaryRows = [
+      ['Imported Today', String(summary.invoicesImported)],
+      ['Paid (total)', String(summary.paidInvoices)],
+      ['Open (total)', String(summary.outstandingInvoices)],
+      ['Missing Generated PDFs Repaired', String(summary.pdfsGenerated)],
+      ['Needing Review', String(review.length)],
+    ]
+    const problemInvoicesHtml = details.problemInvoices.length
+      ? dataTable(['Customer', 'Account No.', 'Invoice No.', 'Amount', 'Status', 'Issue'], details.problemInvoices.slice(0, 30).map(i => [i.customerName, i.accountNumber, i.invoiceNumber, money(i.amount), i.status, i.issue]))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">No problem invoices today.</p>'
+
+    const creditNotesHtml = details.creditNotes.length
+      ? dataTable(['Customer', 'Credit Note No.', 'Amount', 'Allocated'], details.creditNotes.map(c => [c.customerName, c.creditNumber, money(c.amount), c.allocated ? 'Yes' : 'No']))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">No credit notes today.</p>'
+    const creditNotesTotal = details.creditNotes.reduce((sum, c) => sum + c.amount, 0)
+
+    const paymentsHtml = details.payments.length
+      ? dataTable(['Customer', 'Reference', 'Amount'], details.payments.map(p => [p.customerName, p.reference, money(p.amount)]))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">No payments recorded today.</p>'
+    const paymentsTotal = details.payments.reduce((sum, p) => sum + p.amount, 0)
+    const largePaymentAlert = details.largePayments.length
+      ? alertBox(`${details.largePayments.length} payment(s) of £500 or more today: ${details.largePayments.slice(0, 5).map(p => `${p.customerName} (${money(p.amount)})`).join(', ')}`, 'good')
       : ''
+
+    const emailActivityHtml = details.emailActivity.length
+      ? dataTable(['Type', 'Sent', 'Failed'], details.emailActivity.map(e => [e.type, String(e.sent), String(e.failed)]))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">No email activity today.</p>'
+
+    const documentsRows = [
+      ['Documents Received', String(summary.documentsReceived)],
+      ['Generated PDFs Created/Repaired', String(summary.pdfsGenerated)],
+      ['Documents Needing Review', String(details.documentsNeedingReview.length)],
+    ]
+    const documentsReviewHtml = details.documentsNeedingReview.length
+      ? dataTable(['Filename', 'Customer', 'Reason'], details.documentsNeedingReview.slice(0, 20).map(d => [d.filename, d.customerName, d.reason]))
+      : ''
+
+    const errorsHtml = review.length
+      ? dataTable(['Issue', 'Auto-Repaired?'], review.slice(0, 40).map(item => [item.text, 'No — admin action required']))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">No unresolved errors today.</p>'
     const fixedHtml = fixed.length
-      ? `<p style="margin:18px 0 6px;font-weight:700;color:#15803d">Automatically Fixed</p><ul style="margin:0;padding-left:20px;color:#3e4b43;font-size:13px">${fixed.slice(0, 25).map(item => `<li>${item.text}</li>`).join('')}</ul>`
-      : ''
+      ? dataTable(['Issue', 'Auto-Repaired?'], fixed.slice(0, 40).map(item => [item.text, 'Yes']))
+      : '<p style="font-size:13px;color:#818b85;margin:6px 0 18px">Nothing needed automatic repair today.</p>'
+
+    const securityHtml = summaryTable([
+      ['Scheduled Job Status', 'Ran successfully'],
+      ['Supabase Connectivity', 'OK - this check itself ran against the live database'],
+      ['Email Provider (Resend)', summary.emailsFailed > 0 ? `${summary.emailsFailed} send(s) failed today - see Email Activity above` : 'No failures detected today'],
+      ['Backup Status', 'Not covered by this automated check - see Backup & Recovery in System Developer tools'],
+    ])
+
+    const contentHtml = [
+      sectionHeading('Daily Overview'),
+      summaryTable(overviewRows),
+      review.length > 0 ? alertBox(`${review.length} item(s) need admin review today - see System Errors below.`, 'warn') : alertBox('No issues need admin attention today.', 'good'),
+
+      sectionHeading('New Customers'),
+      newCustomersHtml,
+
+      sectionHeading('Invoices'),
+      summaryTable(invoiceSummaryRows),
+      problemInvoicesHtml,
+
+      sectionHeading('Credit Notes'),
+      summaryTable([['Total Credit Value', money(creditNotesTotal)], ['Customers Affected', String(new Set(details.creditNotes.map(c => c.customerName)).size)]]),
+      creditNotesHtml,
+
+      sectionHeading('Payments'),
+      summaryTable([['Number of Payments', String(details.payments.length)], ['Total Payment Value', money(paymentsTotal)]]),
+      largePaymentAlert,
+      paymentsHtml,
+
+      sectionHeading('Email Activity'),
+      emailActivityHtml,
+
+      sectionHeading('Documents'),
+      summaryTable(documentsRows),
+      documentsReviewHtml,
+
+      sectionHeading('System Errors', review.length ? 'bad' : 'good'),
+      errorsHtml,
+      sectionHeading('Automatically Fixed', 'good'),
+      fixedHtml,
+
+      sectionHeading('Security / System Health'),
+      securityHtml,
+    ].join('')
 
     const html = brandedEmail({
       heading: testSend ? 'Daily System Summary (MANUAL TEST SEND)' : 'Daily System Summary', preheader: `${dateKey} - ${summary.errorsFound} issue(s), ${fixed.length} auto-fixed`,
       intro: `${testSend ? 'TEST SEND - this is a manual trigger, not the automated 21:00 UK run. ' : ''}Production summary for ${dateKey}${testMode ? ' (Test Mode - sandbox data)' : ''}.`,
-      contentHtml: `${summaryTable(rows)}${fixedHtml}${exceptionsHtml}`,
+      contentHtml,
     })
     const recipients = testSend ? ['info@kavotech.uk'] : SUMMARY_RECIPIENTS
     const subject = `${testSend ? '[TEST] ' : ''}Punjab Exotic Foods - Daily System Summary (${dateKey})`

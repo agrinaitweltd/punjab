@@ -5,6 +5,7 @@ import { GmtClock } from "../../components/GmtClock"
 import { CountUp } from "../../components/CountUp"
 import { isStockFresh, latestStockUpdate, nextCycleStart, formatLondonTime, formatWallWeekday } from "../../lib/stockCycle"
 import { invoiceOutstanding } from '../../lib/creditNotes'
+import { DashboardAnalyticsTab } from './DashboardAnalyticsTab'
 
 const PAGE_SIZE = 8
 
@@ -65,7 +66,7 @@ function AdminLine({ points, color = "#1f7a3a", empty }: { points: number[]; col
   )
 }
 
-type HomeTab = "overview" | "orders" | "customers"
+type HomeTab = "analytics" | "overview" | "orders" | "customers"
 type CustFilter = "all" | "active" | "inactive"
 
 export function DashboardHome({
@@ -77,7 +78,7 @@ export function DashboardHome({
   expenses?: Expense[]
   onNavigate?: (page: string) => void
 }) {
-  const [tab, setTab]               = useState<HomeTab>("overview")
+  const [tab, setTab]               = useState<HomeTab>("analytics")
   const [query, setQuery]           = useState("")
   const [page, setPage]             = useState(1)
   const [selected, setSelected]     = useState<Set<string>>(new Set())
@@ -264,6 +265,10 @@ export function DashboardHome({
           </div>
         </div>
         <div className="hd-tabs">
+          <button className={"hd-tab" + (tab === "analytics" ? " on" : "")} onClick={() => setTab("analytics")}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Analytics
+          </button>
           <button className={"hd-tab" + (tab === "overview" ? " on" : "")} onClick={() => setTab("overview")}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
             Overview
@@ -301,6 +306,9 @@ export function DashboardHome({
           {stockFresh ? "Review Stock" : "Go to Buying Desk"}
         </button>
       </div>
+
+      {/* ═══ ANALYTICS TAB (real Supabase-aggregated dashboard analytics) ═══ */}
+      {tab === "analytics" && <DashboardAnalyticsTab onNavigate={onNavigate} />}
 
       {/* ═══ OVERVIEW TAB ═══ */}
       {tab === "overview" && (

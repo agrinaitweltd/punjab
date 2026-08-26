@@ -42,6 +42,30 @@ function safeFileName(name: string): string {
   return cleaned
 }
 
+/** Verifies the file's actual byte content matches its claimed MIME type -
+    the previous check only compared the data-URI's own type prefix against
+    itself (`type` supplied the value being "checked"), so any content could
+    be uploaded under any allowed label. CSV has no reliable magic bytes
+    (plain text) and is skipped - low risk, and the extension check already
+    covers it. */
+function sniffMatchesType(bytes: Uint8Array, type: string): boolean {
+  const hex = (n: number) => bytes[n]?.toString(16).padStart(2, '0') ?? ''
+  const ascii = (start: number, len: number) => String.fromCharCode(...bytes.slice(start, start + len))
+  if (type === 'application/pdf') return ascii(0, 5) === '%PDF-'
+  if (type === 'image/png') return `${hex(0)}${hex(1)}${hex(2)}${hex(3)}` === '89504e47'
+  if (type === 'image/jpeg') return `${hex(0)}${hex(1)}${hex(2)}` === 'ffd8ff'
+  if (type === 'image/webp') return ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WEBP'
+  if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return ascii(0, 2) === 'PK'
+  if (type === 'text/csv') return true
+  return false
+}
+
+function bytesFromDataUri(dataUri: string): Uint8Array {
+  const base64 = dataUri.slice(dataUri.indexOf(',') + 1)
+  const binary = atob(base64.slice(0, 64)) // only need the first few bytes for a signature check
+  return Uint8Array.from(binary, c => c.charCodeAt(0))
+}
+
 function db() {
   if (!supabase) throw new Error("Not connected to the database")
   return supabase
@@ -138,6 +162,7 @@ export async function uploadFile(
   const sanitizedName = safeFileName(name)
   if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_BYTES) throw new Error('File size is outside the allowed range.')
   if (!ALLOWED_TYPES.has(type) || !dataUri.startsWith(`data:${type};base64,`)) throw new Error('That file content type is not allowed.')
+  if (!sniffMatchesType(bytesFromDataUri(dataUri), type)) throw new Error("This file's content doesn't match its file type - it may be corrupted or mislabelled.")
   const row = {
     id: `f-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
     customer_name: `FILE:${sanitizedName}`,

@@ -26,6 +26,33 @@ export function summaryTable(rows) {
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:22px 0;border:1px solid #dfe6e1;background:#f8faf8">${rows.map(([label, value]) => `<tr><td style="padding:10px 14px;border-bottom:1px solid #e6ebe7;color:#6d786f">${escapeHtml(label)}</td><td align="right" style="padding:10px 14px;border-bottom:1px solid #e6ebe7;color:#1d2b22;font-weight:700">${escapeHtml(value)}</td></tr>`).join('')}</table>`
 }
 
+/** A section heading for the long-form daily summary email - a coloured
+ *  left-bar block so each section is easy to jump to when scanning a long
+ *  email, matching the branded green/amber/red palette used elsewhere. */
+export function sectionHeading(title, tone = 'neutral') {
+  const color = { neutral: '#1f7a3a', warn: '#a16207', bad: '#b91c1c', good: '#15803d' }[tone] || '#1f7a3a'
+  return `<h2 style="margin:28px 0 10px;padding-left:10px;border-left:3px solid ${color};font-size:15px;line-height:20px;font-weight:700;color:#17241c">${escapeHtml(title)}</h2>`
+}
+
+/** A plain-language callout box for an important alert within the email
+ *  (e.g. "3 invoices need review") - distinct from the section heading. */
+export function alertBox(text, tone = 'warn') {
+  const styles = { warn: 'background:#fef9c3;border:1px solid #fde68a;color:#92400e', bad: 'background:#fef2f2;border:1px solid #fecaca;color:#991b1b', good: 'background:#f0fdf4;border:1px solid #bbf7d0;color:#166534' }
+  return `<div style="margin:10px 0;padding:10px 14px;border-radius:6px;font-size:13px;line-height:19px;${styles[tone] || styles.warn}">${escapeHtml(text)}</div>`
+}
+
+/** A genuine multi-column HTML table for the detailed daily-summary email -
+ *  summaryTable() above only supports fixed label/value pairs, this
+ *  supports arbitrary headers and rows (e.g. new-customer or problem-
+ *  invoice detail lists). Cells are pre-escaped by the caller when they
+ *  need markup (e.g. a status badge); a plain string cell is escaped here. */
+export function dataTable(headers, rows) {
+  if (!rows.length) return ''
+  const headHtml = headers.map(h => `<th align="left" style="padding:8px 10px;border-bottom:2px solid #dfe6e1;color:#59655d;font-size:11px;text-transform:uppercase;letter-spacing:0.03em">${escapeHtml(h)}</th>`).join('')
+  const bodyHtml = rows.map(row => `<tr>${row.map(cell => `<td style="padding:8px 10px;border-bottom:1px solid #eef1ee;color:#1d2b22;font-size:12.5px">${typeof cell === 'object' && cell?.html ? cell.html : escapeHtml(cell)}</td>`).join('')}</tr>`).join('')
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:10px 0 20px;border:1px solid #dfe6e1"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`
+}
+
 export async function sendTransactionalEmail({ apiKey = process.env.RESEND_API_KEY, category, to, subject, html, attachments = [], admin = null, customerId = null, invoiceId = null, idempotencyKey = null, communicationType = null, createdBy = 'System' }) {
   const senderCategory = emailCategory(category)
   const sender = EMAIL_SENDERS[senderCategory]

@@ -25,13 +25,17 @@ export async function runHealthCheck(admin, table) {
     documentsReceived: 0, needsReview: 0, errorsFound: 0, autoFixed: 0,
   }
   const issues = [] // { severity: 'fixed' | 'review', text }
+  // Structured detail for the daily email's tables - kept alongside the
+  // free-text `issues` list rather than replacing it, since the bell
+  // notifications and existing callers only need the text form.
+  const details = { newCustomers: [], problemInvoices: [], creditNotes: [], payments: [], largePayments: [] }
 
   const [customersRes, invoicesRes, creditNotesRes, paymentsRes, emailImportsRes, commLogsRes] = await Promise.all([
-    admin.from(table('customers')).select('id,company_name,balance,created_at'),
+    admin.from(table('customers')).select('id,company_name,customer_number,balance,created_at'),
     admin.from(table('invoices')).select('id,invoice_number,customer_id,amount,amount_paid,status,canonical_document_id,source_document_id,created_at'),
     admin.from(table('credit_notes')).select('id,credit_number,customer_id,amount,remaining_balance,linked_invoice_id,original_invoice_reference,created_at'),
-    admin.from(table('payments')).select('id,created_at').gte('created_at', since),
-    admin.from(table('email_imports')).select('id,status,document_type,attachment_filename,error_message,created_at,invoice_id,credit_note_id'),
+    admin.from(table('payments')).select('id,customer_id,amount,payment_reference,created_at').gte('created_at', since),
+    admin.from(table('email_imports')).select('id,status,document_type,attachment_filename,error_message,created_at,invoice_id,credit_note_id,detected_customer_id,detected_customer_name,detected_invoice_number'),
     admin.from(table('communication_logs')).select('id,status,channel,communication_type,created_at').gte('created_at', since),
   ])
   const failure = [customersRes, invoicesRes, creditNotesRes, paymentsRes, emailImportsRes, commLogsRes].find(r => r.error)
@@ -43,7 +47,23 @@ export async function runHealthCheck(admin, table) {
   const emailImports = emailImportsRes.data || []
   const commLogs = commLogsRes.data || []
 
+  const customersById = new Map(customers.map(c => [c.id, c]))
+  const invoiceCountByCustomer = new Map()
+  for (const invoice of invoices) invoiceCountByCustomer.set(invoice.customer_id, (invoiceCountByCustomer.get(invoice.customer_id) || 0) + 1)
+
   summary.newCustomers = customers.filter(c => c.created_at >= since).length
+  details.newCustomers = customers.filter(c => c.created_at >= since).map(c => ({
+    name: c.company_name, accountNumber: c.customer_number, balance: Number(c.balance || 0),
+    invoiceCount: invoiceCountByCustomer.get(c.id) || 0,
+  }))
+  details.payments = (paymentsRes.data || []).map(p => ({
+    customerName: customersById.get(p.customer_id)?.company_name || 'Unknown', reference: p.payment_reference, amount: Number(p.amount || 0),
+  }))
+  details.largePayments = details.payments.filter(p => p.amount >= 500).sort((a, b) => b.amount - a.amount)
+  details.creditNotes = creditNotes.filter(c => c.created_at >= since).map(c => ({
+    customerName: customersById.get(c.customer_id)?.company_name || 'Unknown', creditNumber: c.credit_number, amount: Number(c.amount || 0),
+    allocated: Number(c.remaining_balance) !== Number(c.amount),
+  }))
   summary.invoicesImported = invoices.filter(i => i.created_at >= since).length
   summary.creditNotesImported = creditNotes.filter(c => c.created_at >= since).length
   summary.paymentsRecorded = (paymentsRes.data || []).length
@@ -70,14 +90,15 @@ export async function runHealthCheck(admin, table) {
         admin.from(table('customers')).select('*').eq('id', invoice.customer_id).maybeSingle(),
         admin.from(table('invoice_items')).select('*').eq('invoice_id', invoice.id),
       ])
-      if (!customer) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no matching customer to build one from.` }); summary.needsReview += 1; continue }
-      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; continue }
+      if (!customer) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no matching customer to build one from.` }); summary.needsReview += 1; details.problemInvoices.push({ customerName: 'Unknown', accountNumber: '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no matching customer' }); continue }
+      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; details.problemInvoices.push({ customerName: customer.company_name, accountNumber: customer.customer_number, invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no line items' }); continue }
       await generateAndAttachCanonicalPdf(admin, table, invoice, customer, items)
       summary.pdfsGenerated += 1; summary.autoFixed += 1
       issues.push({ severity: 'fixed', text: `Generated the missing official PDF for invoice ${invoice.invoice_number}.` })
     } catch (error) {
       summary.needsReview += 1
       issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and it could not be regenerated automatically: ${error.message}` })
+      details.problemInvoices.push({ customerName: customersById.get(invoice.customer_id)?.company_name || 'Unknown', accountNumber: customersById.get(invoice.customer_id)?.customer_number || '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'PDF generation failed' })
     }
   }
 
@@ -91,6 +112,7 @@ export async function runHealthCheck(admin, table) {
     if (!invoicesWithItems.has(invoice.id)) {
       summary.needsReview += 1
       issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} has no stored product line items.` })
+      details.problemInvoices.push({ customerName: customersById.get(invoice.customer_id)?.company_name || 'Unknown', accountNumber: customersById.get(invoice.customer_id)?.customer_number || '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'No product line items' })
     }
   }
 
@@ -167,6 +189,9 @@ export async function runHealthCheck(admin, table) {
     summary.needsReview += needsReviewImports.length
     issues.push({ severity: 'review', text: `${needsReviewImports.length} email import(s) are waiting in Needs Review.` })
   }
+  details.documentsNeedingReview = needsReviewImports.map(e => ({
+    filename: e.attachment_filename, customerName: e.detected_customer_name || 'Unidentified', reason: e.error_message || 'Needs review',
+  }))
 
   // --- Report only: failed emails/reminders in the last 24h (not auto-
   // retried - could be a real delivery problem worth a human look, not
@@ -176,6 +201,20 @@ export async function runHealthCheck(admin, table) {
     summary.needsReview += failedComms.length
     issues.push({ severity: 'review', text: `${failedComms.length} email(s) failed to send in the last 24 hours.` })
   }
+
+  // --- Report only: email activity broken down by type - invoice sends,
+  // 14/21-day reminders, password resets, admin invitations, etc, each with
+  // sent vs failed counts, for the "Email Activity" section of the daily
+  // summary.
+  const emailBreakdownMap = new Map()
+  for (const log of commLogs) {
+    const key = log.communication_type || log.channel || 'other'
+    if (!emailBreakdownMap.has(key)) emailBreakdownMap.set(key, { type: key, sent: 0, failed: 0 })
+    const bucket = emailBreakdownMap.get(key)
+    if (log.status === 'Sent') bucket.sent += 1
+    else if (log.status === 'Failed') bucket.failed += 1
+  }
+  details.emailActivity = [...emailBreakdownMap.values()].sort((a, b) => (b.sent + b.failed) - (a.sent + a.failed))
 
   summary.errorsFound = summary.needsReview + summary.autoFixed
 
@@ -201,5 +240,5 @@ export async function runHealthCheck(admin, table) {
     })
   }
 
-  return { summary, issues }
+  return { summary, issues, details }
 }

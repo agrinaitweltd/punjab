@@ -43,6 +43,13 @@ export function safeFileName(name) {
 export async function uploadFileServer(admin, table, { name, type, size, dataUri, note, customerId, customerName, document = {} }) {
   const sanitizedName = safeFileName(name)
   if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_BYTES) throw new Error('File size is outside the allowed range.')
+  // Content sniffing, not just trusting the caller-supplied type string -
+  // this pipeline only ever handles PDFs (email attachments, generated
+  // invoices), so a real signature check is cheap and unambiguous here.
+  if (type === 'application/pdf') {
+    const header = Buffer.from(dataUri.slice(dataUri.indexOf(',') + 1, dataUri.indexOf(',') + 1 + 12), 'base64').toString('latin1')
+    if (!header.startsWith('%PDF-')) throw new Error("This file's content doesn't match its file type - it may be corrupted or mislabelled.")
+  }
   const row = {
     id: genId('f'),
     customer_name: `FILE:${sanitizedName}`,
@@ -202,8 +209,18 @@ export async function createRecordFromImport(admin, table, document, customer, s
       error.code = 'duplicate'
       throw error
     }
-    const { data: numberClash } = await admin.from(table('invoices')).select('id').ilike('invoice_number', document.invoice.invoiceNumber).maybeSingle()
-    if (numberClash) { const error = new Error('That invoice number already exists.'); error.code = 'duplicate'; throw error }
+    // Scoped to this customer only - invoice numbers are not globally unique
+    // across Punjab's whole customer base (independent traders each run
+    // their own numbering, so two different customers legitimately sharing
+    // invoice number "191" is normal, not a duplicate). A global,
+    // cross-customer check here was wrongly rejecting genuine invoices for
+    // brand-new customers whenever their number happened to already exist
+    // for someone else - leaving the customer created with zero invoices/
+    // documents. findDuplicateInvoice above already covers the same
+    // customer + number + date case; this catches the same customer reusing
+    // a number on a different date, which that check alone would miss.
+    const { data: numberClash } = await admin.from(table('invoices')).select('id').eq('customer_id', customer.id).ilike('invoice_number', document.invoice.invoiceNumber).maybeSingle()
+    if (numberClash) { const error = new Error('That invoice number already exists for this customer.'); error.code = 'duplicate'; throw error }
 
     const due = new Date(`${issueDate}T00:00:00`)
     due.setDate(due.getDate() + (customer.credit_days ?? 14))

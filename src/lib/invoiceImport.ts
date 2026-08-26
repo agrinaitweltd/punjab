@@ -128,8 +128,11 @@ const ledgerLine = /^S\/L Balance/i
 const supplierAddress = /Punjab Exotic|Stand\s*1B|New Spitalfields|Sherring Road|^Leyton$|^London$|E10\s*5SQ|^Tel:|^Fax:/i
 // The "INVOICE" / "CREDIT NOTE" / "CUSTOMER COPY" banner is its own row,
 // with nothing in the customer's column at that height - must never be
-// mistaken for the customer's own name.
-const documentBanner = /^\s*(?:INVOICE|CREDIT\s+NOTE)?\s*CUSTOMER\s*COPY\s*$|^\s*(?:INVOICE|CREDIT\s+NOTE)\s*$/i
+// mistaken for the customer's own name. A reprinted invoice can prefix this
+// with REISSUED/DUPLICATE/ORIGINAL (e.g. "REISSUED INVOICE CUSTOMER COPY",
+// confirmed on a real production document), so those are matched too rather
+// than assuming the banner is always exactly "INVOICE"/"CREDIT NOTE".
+const documentBanner = /^\s*(?:REISSUED\s+|DUPLICATE\s+|ORIGINAL\s+|COPY\s+)*(?:INVOICE|CREDIT\s+NOTE)?\s*CUSTOMER\s*COPY\s*$|^\s*(?:REISSUED\s+|DUPLICATE\s+|ORIGINAL\s+)*(?:INVOICE|CREDIT\s+NOTE)\s*$/i
 
 /** The portion of a (possibly column-merged) line that belongs to the
  *  customer, i.e. everything before any known supplier-letterhead text. */
