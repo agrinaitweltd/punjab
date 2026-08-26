@@ -779,6 +779,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           imports={emailImports}
           customers={customers}
           onRefresh={async () => { setEmailImports((await getEmailImports()).imports) }}
+          onOpenCustomer={(customerId) => { setInvoicesCustomerFilter(customerId); navigate('invoices') }}
         />
       )
     }

@@ -63,7 +63,7 @@ export type EmailImportRow = {
   attachment_filename: string; attachment_size: number | null; status: EmailImportStatus
   document_type: 'invoice' | 'credit_note' | null
   detected_customer_id: string | null; detected_customer_name: string | null; detected_invoice_number: string | null
-  invoice_id: string | null; credit_note_id: string | null; file_id: string | null
+  invoice_id: string | null; credit_note_id: string | null; file_id: string | null; customer_created: boolean
   error_message: string | null; processed_at: string | null; created_at: string
 }
 export async function getEmailImports() { return api<{ imports: EmailImportRow[] }>('/api/admin-security?action=email-imports', { method: 'GET' }) }

@@ -21,10 +21,15 @@ const STATUS_LABELS: Record<EmailImportStatus, string> = {
 
 const fmt = (value: string | null) => value ? new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
 
-export function EmailImportsPage({ imports, customers, onRefresh }: {
+export function EmailImportsPage({ imports, customers, onRefresh, onOpenCustomer }: {
   imports: EmailImportRow[]
   customers: Customer[]
   onRefresh: () => Promise<void>
+  /** Jumps to that customer's Open Invoices page (same destination as
+      CustomersPage's own "Open Invoices" button) - covers both "Link to
+      customer" and "Link to invoice" (the invoice is right there in that
+      customer's Open/Paid list). */
+  onOpenCustomer?: (customerId: string) => void
 }) {
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"All" | EmailImportStatus>("All")
@@ -32,6 +37,8 @@ export function EmailImportsPage({ imports, customers, onRefresh }: {
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [pickerFor, setPickerFor] = useState<EmailImportRow | null>(null)
   const [pickedCustomerId, setPickedCustomerId] = useState("")
+
+  const customerById = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -102,25 +109,38 @@ export function EmailImportsPage({ imports, customers, onRefresh }: {
         </div>
         <div className="ps-table-wrap">
           <table className="ps-table">
-            <thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Attachment</th><th>Customer</th><th>Invoice No.</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Attachment</th><th>Customer</th><th>Account No.</th><th>Invoice No.</th><th>Status</th><th></th></tr></thead>
             <tbody>
-              {filtered.map(row => (
+              {filtered.map(row => {
+                const customer = row.detected_customer_id ? customerById.get(row.detected_customer_id) : undefined
+                return (
                 <tr key={row.id} className="ps-row">
                   <td style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{fmt(row.received_at)}</td>
                   <td>{row.sender || "—"}</td>
                   <td style={{ maxWidth: 220, color: "#6b7280" }}>{row.subject || "—"}</td>
                   <td>{row.attachment_filename}</td>
-                  <td>{row.detected_customer_name || "—"}</td>
+                  <td>
+                    {customer && onOpenCustomer ? (
+                      <button type="button" onClick={() => onOpenCustomer(customer.id)} style={{ background: "none", border: "none", padding: 0, color: "#1d4ed8", textDecoration: "underline", cursor: "pointer", font: "inherit" }}>
+                        {row.detected_customer_name}
+                      </button>
+                    ) : (row.detected_customer_name || "—")}
+                  </td>
+                  <td>{customer?.customerNumber || "—"}</td>
                   <td>{row.detected_invoice_number || "—"}</td>
                   <td>
                     <span className="ps-badge" style={STATUS_COLORS[row.status]}>{STATUS_LABELS[row.status]}</span>
+                    {row.status === 'imported' && (
+                      <div style={{ marginTop: 4, fontSize: 11.5, color: "#6b7280" }}>{row.customer_created ? "New Customer Created" : "Added to Existing Customer"}</div>
+                    )}
                     {row.error_message && row.status !== 'imported' && (
                       <div style={{ marginTop: 4, fontSize: 11.5, color: "#9ca3af", maxWidth: 220 }}>{row.error_message}</div>
                     )}
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {row.file_id && <Button className="btn-sm" variant="secondary" onClick={() => viewFile(row.file_id)}>View</Button>}
+                      {row.file_id && <Button className="btn-sm" variant="secondary" onClick={() => viewFile(row.file_id)}>View PDF</Button>}
+                      {customer && onOpenCustomer && <Button className="btn-sm" variant="secondary" onClick={() => onOpenCustomer(customer.id)}>Open Invoice</Button>}
                       {(row.status === "needs_review" || row.status === "failed") && (
                         <Button className="btn-sm" disabled={retryingId === row.id} onClick={() => row.detected_customer_id ? retry(row) : (setPickerFor(row), setPickedCustomerId(row.detected_customer_id ?? ''))}>
                           {retryingId === row.id ? "Retrying…" : "Retry"}
@@ -129,7 +149,8 @@ export function EmailImportsPage({ imports, customers, onRefresh }: {
                     </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           {filtered.length === 0 && (

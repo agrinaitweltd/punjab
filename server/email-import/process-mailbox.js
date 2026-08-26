@@ -6,7 +6,7 @@ import { extractPdfTextLines } from './extract-pdf-text.js'
 // (part of `npm run build`) - see create-records.js's comment on the same
 // import for why the raw .ts source can't be imported directly here.
 import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../server-dist/lib/invoiceImport.js'
-import { assessConfidence, createRecordFromImport, matchImportedCustomer, safeFileName, uploadFileServer, MAX_FILE_BYTES } from './create-records.js'
+import { assessConfidence, createRecordFromImport, resolveOrCreateCustomer, safeFileName, uploadFileServer, MAX_FILE_BYTES } from './create-records.js'
 
 const SCAN_WINDOW_DAYS = 14 // bounds the IMAP search; the (message_id, attachment_filename) unique row is what actually prevents reprocessing
 const MAX_MESSAGE_DOWNLOAD_BYTES = 20 * 1024 * 1024
@@ -84,15 +84,13 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
     const dataUri = `data:application/pdf;base64,${attachment.content.toString('base64')}`
     document.source = { name: filename, type: 'application/pdf', size, dataUri }
 
-    const { data: customerRows, error: customerErr } = await admin.from(table('customers')).select('*')
-    if (customerErr) throw customerErr
-    const matched = matchImportedCustomer(
-      (customerRows || []).map(row => ({ id: row.id, companyName: row.company_name, customerNumber: row.customer_number })),
-      { accountNumber: document.customer.accountNumber, companyName: document.customer.companyName },
-    )
-    const customerRow = matched ? (customerRows || []).find(row => row.id === matched.id) : null
+    // Resolve to an existing customer, or create one from the invoice's own
+    // details when none matches (never for a credit note on its own - same
+    // rule the manual "Add Customer via PDF" flow uses).
+    const resolution = await resolveOrCreateCustomer(admin, table, document.customer, { allowCreate: documentType === 'invoice' })
+    const customerRow = resolution.customer ?? null
     const detectedNumber = documentType === 'credit_note' ? document.creditNote.creditNumber : document.invoice.invoiceNumber
-    const { confident, reasons } = assessConfidence(document, customerRow)
+    const { confident, reasons } = assessConfidence(document, resolution)
 
     if (!confident) {
       // Store the PDF now (tagged "pending review", not linked to any
@@ -111,7 +109,7 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
     await admin.from(table('email_imports')).update({
       status: 'imported', document_type: documentType, detected_customer_id: customerRow.id, detected_customer_name: customerRow.company_name,
       detected_invoice_number: detectedNumber, invoice_id: created.invoiceId || null, credit_note_id: created.creditNoteId || null,
-      file_id: created.fileId || null, processed_at: new Date().toISOString(),
+      file_id: created.fileId || null, customer_created: Boolean(resolution.created), processed_at: new Date().toISOString(),
     }).eq('id', baseRow.id)
     return 'imported'
   } catch (error) {
@@ -219,20 +217,27 @@ export async function retryEmailImport(admin, table, emailImportId, customerIdOv
   document.source = { name: row.attachment_filename, type: 'application/pdf', size: row.attachment_size, dataUri: fileRow.action }
 
   let customerRow = null
+  let customerCreated = false
   if (customerIdOverride) {
+    // Admin explicitly picked a customer from the review-queue UI - always
+    // respected as-is, no auto-create, no re-matching.
     const { data } = await admin.from(table('customers')).select('*').eq('id', customerIdOverride).maybeSingle()
     customerRow = data || null
   } else {
-    const { data: customerRows } = await admin.from(table('customers')).select('*')
-    const matched = matchImportedCustomer(
-      (customerRows || []).map(c => ({ id: c.id, companyName: c.company_name, customerNumber: c.customer_number })),
-      { accountNumber: document.customer.accountNumber, companyName: document.customer.companyName },
-    )
-    customerRow = matched ? (customerRows || []).find(c => c.id === matched.id) : null
+    const resolution = await resolveOrCreateCustomer(admin, table, document.customer, { allowCreate: documentType === 'invoice' })
+    if (resolution.status === 'ambiguous' || resolution.status === 'insufficient') {
+      await admin.from(table('email_imports')).update({
+        status: 'needs_review', document_type: documentType, detected_customer_name: document.customer.companyName || null,
+        error_message: resolution.reason, processed_at: new Date().toISOString(),
+      }).eq('id', row.id)
+      throw new Error(resolution.reason)
+    }
+    customerRow = resolution.customer
+    customerCreated = Boolean(resolution.created)
   }
 
   const detectedNumber = documentType === 'credit_note' ? document.creditNote.creditNumber : document.invoice.invoiceNumber
-  const { confident, reasons } = assessConfidence(document, customerRow)
+  const { confident, reasons } = assessConfidence(document, customerRow ? { status: 'matched', customer: customerRow } : {})
   if (!confident) {
     await admin.from(table('email_imports')).update({
       status: 'needs_review', document_type: documentType, detected_customer_id: customerRow?.id || null,
@@ -246,7 +251,7 @@ export async function retryEmailImport(admin, table, emailImportId, customerIdOv
   await admin.from(table('email_imports')).update({
     status: 'imported', document_type: documentType, detected_customer_id: customerRow.id, detected_customer_name: customerRow.company_name,
     detected_invoice_number: detectedNumber, invoice_id: created.invoiceId || null, credit_note_id: created.creditNoteId || null,
-    file_id: created.fileId || row.file_id, error_message: null, processed_at: new Date().toISOString(),
+    file_id: created.fileId || row.file_id, customer_created: customerCreated, error_message: null, processed_at: new Date().toISOString(),
   }).eq('id', row.id)
   return { status: 'imported' }
 }

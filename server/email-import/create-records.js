@@ -8,7 +8,7 @@
 // (part of `npm run build`) - Vercel's Node runtime executes API functions
 // as plain ESM without transpiling arbitrary .ts imports, so this can't
 // import the .ts source directly the way the Vite/browser bundle does.
-import { matchImportedCustomer, findDuplicateInvoice, findDuplicateCreditNote } from '../../server-dist/lib/importMatching.js'
+import { normalizeAccountNumber, normalizeCompanyName, findDuplicateInvoice, findDuplicateCreditNote } from '../../server-dist/lib/importMatching.js'
 import { buildInvoiceDocx } from '../canonicalInvoiceDocx.js'
 import { buildOfficialInvoicePdf } from '../canonicalInvoicePdf.js'
 
@@ -46,15 +46,74 @@ export async function uploadFileServer(admin, table, { name, type, size, dataUri
   return { id: row.id, name: sanitizedName }
 }
 
+/** Same matching priority as the manual "Add Customer via PDF" flow
+ *  (matchImportedCustomer in importMatching.ts: account number, then company
+ *  name), except this also detects an AMBIGUOUS match - two+ existing
+ *  customers sharing the same normalized account number or company name -
+ *  which the manual flow can't hit (an admin picks one from a dropdown) but
+ *  an unattended email import must not guess through. Returns exactly one
+ *  of: { customer: <row> } a single confident match, { ambiguous: true,
+ *  reason } two or more equally-good matches, or {} no match at all (caller
+ *  decides whether to auto-create from there). */
+function findCustomerMatch(customerRows, importedCustomer) {
+  const account = normalizeAccountNumber(importedCustomer.accountNumber)
+  if (account) {
+    const matches = customerRows.filter(row => normalizeAccountNumber(row.customer_number) === account)
+    if (matches.length === 1) return { customer: matches[0] }
+    if (matches.length > 1) return { ambiguous: true, reason: 'Multiple existing customers share this account number.' }
+  }
+  const company = normalizeCompanyName(importedCustomer.companyName)
+  if (company) {
+    const matches = customerRows.filter(row => normalizeCompanyName(row.company_name) === company)
+    if (matches.length === 1) return { customer: matches[0] }
+    if (matches.length > 1) return { ambiguous: true, reason: 'Multiple existing customers share a similar company name.' }
+  }
+  return {}
+}
+
+/** Resolves the customer for a parsed document, creating a new customer
+ *  record when none exists yet - the email-import equivalent of the manual
+ *  "Add Customer via PDF" flow's own auto-create-if-new-else-match step
+ *  (importCustomerDocuments in AdminPortal.tsx), just running server-side
+ *  against the live customers table instead of in-memory React state. Only
+ *  ever creates a customer when the invoice itself supplied enough to
+ *  identify one (company name AND account number) - never guesses, and
+ *  never touches an existing row beyond linking the new invoice to it. */
+export async function resolveOrCreateCustomer(admin, table, importedCustomer, { allowCreate = true } = {}) {
+  const { data: customerRows, error } = await admin.from(table('customers')).select('*')
+  if (error) throw error
+  const match = findCustomerMatch(customerRows || [], importedCustomer)
+  if (match.ambiguous) return { status: 'ambiguous', reason: match.reason }
+  if (match.customer) return { status: 'matched', customer: match.customer, created: false }
+
+  if (!allowCreate) {
+    return { status: 'insufficient', reason: 'No matching customer account was found for this document. Create the customer from an invoice first, then this credit note can be matched to their account.' }
+  }
+  const companyName = (importedCustomer.companyName || '').trim()
+  const accountNumber = (importedCustomer.accountNumber || '').trim()
+  if (!companyName || !accountNumber) {
+    return { status: 'insufficient', reason: 'No matching customer was found, and the invoice does not have enough detail (company name and account number) to create a new one automatically.' }
+  }
+  const customerNumber = accountNumber.replace(/[^a-z0-9]/gi, '').toUpperCase()
+  const row = {
+    id: genId('c'), company_name: companyName, contact_person: '',
+    email: importedCustomer.email || `${customerNumber}@pending.punjab.local`, phone: importedCustomer.phone || '',
+    customer_number: customerNumber, password: `pending-${Math.random().toString(36).slice(2, 12)}`,
+    address: [importedCustomer.address, importedCustomer.postcode].filter(Boolean).join(', '),
+    delivery_area: '', payment_terms: '14 Days', credit_days: 14, balance: 0, status: 'active',
+  }
+  const { data: created, error: createErr } = await admin.from(table('customers')).insert(row).select().single()
+  if (createErr) throw createErr
+  return { status: 'matched', customer: created, created: true }
+}
+
 /** Decides whether a parsed document is confident enough to auto-create an
- *  invoice/credit note unattended, or should wait for an admin. Deliberately
- *  conservative: an email is unauthenticated input, so unlike the manual
- *  upload flow (which creates a *new* customer from a reviewed form), the
- *  email path never creates a new customer - only ever posts to one that
- *  already exists. Everything else routes to "needs_review". */
-export function assessConfidence(document, customer) {
+ *  invoice/credit note unattended, or should wait for an admin. `resolution`
+ *  is resolveOrCreateCustomer()'s result - "ambiguous" and "insufficient"
+ *  both route to needs_review, same as a missing invoice number or total. */
+export function assessConfidence(document, resolution) {
   const reasons = []
-  if (!customer) reasons.push('No matching customer account was found for this document.')
+  if (resolution.status === 'ambiguous' || resolution.status === 'insufficient') reasons.push(resolution.reason)
   if (document.warnings?.length) reasons.push(...document.warnings)
   if (document.documentType === 'invoice') {
     if (!document.invoice.invoiceNumber) reasons.push('No invoice number was detected.')
@@ -163,5 +222,3 @@ export async function createRecordFromImport(admin, table, document, customer, s
   }
   return { creditNoteId: createdNote.id, fileId: sourceFile?.id }
 }
-
-export { matchImportedCustomer }
