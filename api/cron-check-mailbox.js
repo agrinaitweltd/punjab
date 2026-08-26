@@ -1,5 +1,11 @@
+import { timingSafeEqual } from 'node:crypto'
 import { serviceClient, globalTestMode } from '../server/runtime-mode.js'
 import { processMailbox } from '../server/email-import/process-mailbox.js'
+
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b))
+}
 
 // Vercel Hobby's max for a single function invocation - processMailbox's own
 // internal time budget (see TIME_BUDGET_MS in process-mailbox.js) stops
@@ -10,14 +16,21 @@ export const config = { maxDuration: 60 }
 
 /** Polls receivables@punjabexoticfoods.com (IONOS IMAP) for new PDF invoices/
  *  credit notes and imports them through the same pipeline the manual
- *  uploader uses. Machine-triggered only - same CRON_SECRET bearer-token
- *  pattern as cron-whatsapp-reminders.js, so a random caller can't trigger a
- *  mailbox scan. Safe to call as often as you like (every attachment is
- *  deduped by message-id + filename, and by content hash), so this works
- *  whether it's invoked by Vercel Cron or an external scheduler. */
+ *  uploader uses. Machine-triggered only - accepts the CRON_SECRET either as
+ *  an `Authorization: Bearer <secret>` header (same pattern as
+ *  cron-whatsapp-reminders.js) or as a `?key=<secret>` query parameter.
+ *  The query-param form exists because several external cron schedulers'
+ *  custom-header UIs have proven unreliable to configure correctly (wrong
+ *  field, silently not saved, etc.) - putting the secret straight in the
+ *  URL field is a single, unambiguous text box. Safe to call as often as
+ *  you like (every attachment is deduped by message-id + filename, and by
+ *  content hash). */
 export default async function handler(req, res) {
   const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret || req.headers?.authorization !== `Bearer ${cronSecret}`) return res.status(401).json({ error: 'Unauthorized' })
+  const headerToken = String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '')
+  const queryToken = typeof req.query?.key === 'string' ? req.query.key : ''
+  const authorized = Boolean(cronSecret) && (safeEqual(headerToken, cronSecret) || safeEqual(queryToken, cronSecret))
+  if (!authorized) return res.status(401).json({ error: 'Unauthorized' })
 
   let admin
   try {
