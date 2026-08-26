@@ -6,7 +6,7 @@ import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js
 const BACKUP_TABLES = [
   'activity_log', 'admin_roles', 'admin_staff', 'application_settings', 'assigned_tasks', 'buying_prices', 'buying_sessions',
   'communication_logs', 'credit_note_allocations', 'credit_notes', 'customer_applications',
-  'customer_sub_accounts', 'customers', 'day_trades', 'delivery_areas', 'expenses', 'finance_settings',
+  'customer_sub_accounts', 'customers', 'day_trades', 'delivery_areas', 'email_imports', 'expenses', 'finance_settings',
   'generated_documents', 'invoice_items', 'invoices', 'notification_logs', 'orders', 'payments',
   'portal_invitations', 'products', 'salesmen', 'stock_items', 'suppliers', 'support_tickets',
   'system_audit_log', 'system_settings', 'user_login_audit', 'whatsapp_logs', 'whatsapp_templates',

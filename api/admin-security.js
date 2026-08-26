@@ -2,6 +2,7 @@ const handlers = {
   'complete-account-setup': () => import('../server/admin-actions/complete-account-setup.js'),
   'application-backup': () => import('../server/admin-actions/application-backup.js'),
   'download-backup': () => import('../server/admin-actions/download-backup.js'),
+  'email-imports': () => import('../server/admin-actions/email-imports.js'),
   'invite-admin': () => import('../server/admin-actions/invite-admin.js'),
   'invite-customer': () => import('../server/admin-actions/invite-customer.js'),
   'manage-admin': () => import('../server/admin-actions/manage-admin.js'),

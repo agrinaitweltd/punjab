@@ -57,6 +57,20 @@ export async function resetAdminCredentials(id: string, sensitiveToken: string) 
   return api<{ ok: true; simulated?: boolean; message?: string }>('/api/admin-security?action=reset-admin-credentials', { method: 'POST', body: JSON.stringify({ id }) }, sensitiveToken)
 }
 
+export type EmailImportStatus = 'processing' | 'imported' | 'needs_review' | 'failed' | 'duplicate'
+export type EmailImportRow = {
+  id: string; message_id: string; received_at: string | null; sender: string | null; subject: string | null
+  attachment_filename: string; attachment_size: number | null; status: EmailImportStatus
+  document_type: 'invoice' | 'credit_note' | null
+  detected_customer_id: string | null; detected_customer_name: string | null; detected_invoice_number: string | null
+  invoice_id: string | null; credit_note_id: string | null; file_id: string | null
+  error_message: string | null; processed_at: string | null; created_at: string
+}
+export async function getEmailImports() { return api<{ imports: EmailImportRow[] }>('/api/admin-security?action=email-imports', { method: 'GET' }) }
+export async function retryEmailImport(id: string, customerId?: string) {
+  return api<{ ok: true; status: string }>('/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ id, customerId }) })
+}
+
 export async function getSystemOverview() { return api<SystemOverview>('/api/admin-security?action=system-overview') }
 export async function getSystemMode() { return api<{ testMode: boolean; changedAt: string | null; generation?: string | null; startedAt?: string | null }>('/api/admin-security?action=system-mode') }
 export async function setSystemMode(enabled: boolean, sensitiveToken: string) {

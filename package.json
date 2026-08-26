@@ -29,7 +29,9 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
     "bcryptjs": "^3.0.3",
+    "imapflow": "^1.7.6",
     "lucide-react": "^0.468.0",
+    "mailparser": "^3.9.16",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
     "pizzip": "^3.2.0",

@@ -55,7 +55,8 @@ const adminNavigation: NavigationGroup[] = [
     { key: "whatsapp-logs", label: "WhatsApp Logs", icon: "communications" }, { key: "whatsapp-send", label: "Send WhatsApp", icon: "communications", access: "superAdmin" },
   ] },
   { key: "documents-group", label: "Documents", icon: "documents", children: [
-    { key: "files", label: "Files", icon: "documents" }, { key: "data-extract", label: "Integration", icon: "documents" },
+    { key: "files", label: "Files", icon: "documents" }, { key: "email-imports", label: "Email Imports", icon: "documents" },
+    { key: "data-extract", label: "Integration", icon: "documents" },
   ] },
   { key: "admin-group", label: "Users & Administration", icon: "admin", children: [
     { key: "admins", label: "Admin Users", icon: "admin", access: "users" }, { key: "sales-users", label: "Sales Users", icon: "team", access: "users" },

@@ -1,5 +1,3 @@
-import { extractDocumentLines } from './statementImport'
-
 export type FieldConfidence = 'high' | 'review' | 'missing'
 
 export type ImportedInvoiceItem = {
@@ -296,15 +294,25 @@ function fileToDataUri(file: File): Promise<string> {
   })
 }
 
+// Dynamic import (not a static top-level one) so the pure line-parsing
+// functions above stay importable from a Node/serverless context (the
+// email-import worker) without pulling in statementImport.ts's browser-only
+// pdfjs-dist/tesseract.js/canvas dependency graph - it's only resolved when
+// one of these two browser-facing functions actually runs.
+async function extractLines(file: File, onProgress?: (message: string) => void): Promise<string[]> {
+  const { extractDocumentLines } = await import('./statementImport')
+  return extractDocumentLines(file, onProgress)
+}
+
 export async function parseLegacyInvoice(file: File, onProgress?: (message: string) => void): Promise<ImportedLegacyInvoice> {
-  const rawLines = await extractDocumentLines(file, onProgress)
+  const rawLines = await extractLines(file, onProgress)
   const parsed = parseLegacyInvoiceLines(rawLines)
   parsed.source = { name: file.name, type: file.type || 'application/pdf', size: file.size, dataUri: await fileToDataUri(file) }
   return parsed
 }
 
 export async function parseFinancialDocument(file: File, onProgress?: (message: string) => void): Promise<ImportedFinancialDocument> {
-  const rawLines = await extractDocumentLines(file, onProgress)
+  const rawLines = await extractLines(file, onProgress)
   const parsed = detectImportDocumentType(rawLines) === 'credit_note' ? parseCreditNoteLines(rawLines) : parseLegacyInvoiceLines(rawLines)
   parsed.source = { name: file.name, type: file.type || 'application/pdf', size: file.size, dataUri: await fileToDataUri(file) }
   return parsed

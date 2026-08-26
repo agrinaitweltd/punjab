@@ -79,6 +79,25 @@ export async function listFiles(): Promise<StoredFile[]> {
   })
 }
 
+/** One file by its activity_log row id - used by the Email Imports page to
+ *  preview/download a stored PDF (including ones still "Needs Review",
+ *  which aren't linked to a customer/invoice yet so listFilesForCustomer
+ *  wouldn't find them). */
+export async function getFileById(id: string): Promise<StoredFile | null> {
+  const { data, error } = await db().from("activity_log").select("*").eq("id", id).maybeSingle()
+  if (error || !data || !String(data.customer_name ?? '').startsWith('FILE:')) return null
+  let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; creditNoteId?: string; creditNoteNumber?: string; creditNoteAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
+  try { meta = JSON.parse(data.timestamp ?? "{}") } catch { /* legacy row */ }
+  return {
+    id: data.id, name: String(data.customer_name).slice(5), type: meta.type ?? "application/octet-stream",
+    size: meta.size ?? 0, note: meta.note ?? "", uploadedAt: meta.uploadedAt ?? data.created_at ?? "", dataUri: data.action ?? "",
+    customerId: meta.customerId ?? null, customerName: meta.customerName ?? "Internal only",
+    invoiceId: meta.invoiceId, invoiceNumber: meta.invoiceNumber, invoiceAmount: meta.invoiceAmount,
+    creditNoteId: meta.creditNoteId, creditNoteNumber: meta.creditNoteNumber, creditNoteAmount: meta.creditNoteAmount,
+    documentRole: meta.documentRole ?? 'general', templateId: meta.templateId,
+  }
+}
+
 export async function listFilesForCustomer(customerId: string): Promise<StoredFile[]> {
   const all = await listFiles()
   return all.filter(f => f.customerId === customerId && f.documentRole !== 'legacy_source')

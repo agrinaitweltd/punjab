@@ -141,7 +141,8 @@ import { GlobalSearchPage } from './GlobalSearchPage'
 import { CommunicationHistoryPage } from './CommunicationHistoryPage'
 import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
-import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials } from '../../lib/secureAdminApi'
+import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, type EmailImportRow } from '../../lib/secureAdminApi'
+import { EmailImportsPage } from './EmailImportsPage'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -176,6 +177,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsAppTemplate[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationDeliveryLog[]>([])
+  const [emailImports, setEmailImports] = useState<EmailImportRow[]>([])
 
   const load = useCallback(async () => {
     const [
@@ -205,6 +207,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       whatsappTemplatesData,
       expensesData,
       communicationLogsData,
+      emailImportsData,
     ] = await Promise.all([
       getCustomers(),
       getProducts(),
@@ -232,6 +235,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getWhatsAppTemplates(),
       getExpenses(),
       getCommunicationDeliveryLogs(),
+      getEmailImports().then(r => r.imports).catch(() => []),
     ])
 
     setCustomers(customersData)
@@ -260,6 +264,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setWhatsappTemplates(whatsappTemplatesData)
     setExpenses(expensesData)
     setCommunicationLogs(communicationLogsData)
+    setEmailImports(emailImportsData)
   }, [])
 
   // Load once on mount. Individual actions patch their own slice of state
@@ -320,6 +325,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         setInvoices(current => attachCreditAllocations(current, next))
         return next
       }),
+    },
+    // email_imports rows are already snake_case end to end (there's no
+    // separate camelCase client type for this one), so the "map" is just an
+    // identity pass-through - the mailbox worker and this realtime channel
+    // agree on the row shape directly.
+    email_imports: {
+      map: row => row as EmailImportRow,
+      onInsert: row => upsertById(setEmailImports, row),
+      onUpdate: row => upsertById(setEmailImports, row),
     },
   })
 
@@ -755,6 +769,16 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             void logActivity(user.displayName, `${status === 'Approved' ? 'approved' : 'rejected'} sub-account ${account.name} (${account.customerName})`)
             await load()
           }}
+        />
+      )
+    }
+
+    if (current === 'email-imports') {
+      return (
+        <EmailImportsPage
+          imports={emailImports}
+          customers={customers}
+          onRefresh={async () => { setEmailImports((await getEmailImports()).imports) }}
         />
       )
     }
