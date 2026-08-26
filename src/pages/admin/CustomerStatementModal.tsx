@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import type { Customer, CreditNote, CreditNoteAllocation, Invoice, Payment } from "../../types"
 import { Modal } from "../../components/ui/Modal"
 import { Button } from "../../components/ui/Button"
-import { invoiceOutstanding } from "../../lib/creditNotes"
+import { classifyInvoice, invoiceOutstanding } from "../../lib/creditNotes"
 
 type LedgerEntry = {
   date: string
@@ -63,6 +63,13 @@ export function CustomerStatementModal({
   const totalCreditApplied = myAllocations.reduce((s, a) => s + a.amount, 0)
   const remainingCredit = myCreditNotes.filter(c => c.status === "Active").reduce((s, c) => s + c.remainingBalance, 0)
   const outstandingBalance = myInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + invoiceOutstanding(i), 0)
+  const totalInvoiced = myInvoices.reduce((s, i) => s + i.amount, 0)
+  const totalPayments = myPayments.reduce((s, p) => s + p.amount, 0)
+  const totalCreditNotes = myCreditNotes.reduce((s, c) => s + c.amount, 0)
+  const creditLimit = customer?.creditLimit ?? 0
+  const availableCredit = Math.max(0, creditLimit - outstandingBalance)
+  const openInvoiceCount = myInvoices.filter(i => classifyInvoice(i) === "open").length
+  const overdueInvoiceCount = myInvoices.filter(i => classifyInvoice(i) === "overdue").length
 
   const printStatement = () => {
     if (!customer) return
@@ -75,7 +82,7 @@ export function CustomerStatementModal({
         <td style="text-align:right">£${e.balance.toFixed(2)}</td>
       </tr>`).join("")
     w.document.write(`
-      <html><head><title>Statement — ${customer.companyName}</title>
+      <html><head><title>Customer Balance — ${customer.companyName}</title>
       <style>body{font-family:Segoe UI,Arial,sans-serif;padding:40px;color:#111827}
       h1{font-size:20px;margin-bottom:4px}.muted{color:#6b7280;font-size:13px}
       table{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px}
@@ -89,7 +96,14 @@ export function CustomerStatementModal({
         <table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style="text-align:right">Amount</th><th style="text-align:right">Balance</th></tr></thead>
         <tbody>${rows}</tbody></table>
         <div class="summary">
+          <p><strong>Total Invoiced</strong> £${totalInvoiced.toFixed(2)}</p>
+          <p><strong>Total Payments</strong> £${totalPayments.toFixed(2)}</p>
+          <p><strong>Total Credit Notes</strong> £${totalCreditNotes.toFixed(2)}</p>
           <p><strong>Outstanding Balance</strong> £${outstandingBalance.toFixed(2)}</p>
+          <p><strong>Credit Limit</strong> £${creditLimit.toFixed(2)}</p>
+          <p><strong>Available Credit</strong> £${availableCredit.toFixed(2)}</p>
+          <p><strong>Open Invoices</strong> ${openInvoiceCount}</p>
+          <p><strong>Overdue Invoices</strong> ${overdueInvoiceCount}</p>
           <p><strong>Credit Applied</strong> £${totalCreditApplied.toFixed(2)}</p>
           <p><strong>Remaining Customer Credit</strong> £${remainingCredit.toFixed(2)}</p>
         </div>
@@ -100,11 +114,18 @@ export function CustomerStatementModal({
   }
 
   return (
-    <Modal open={open} title={customer ? `Statement — ${customer.companyName}` : "Statement"} onClose={onClose} wide>
+    <Modal open={open} title={customer ? `Customer Balance — ${customer.companyName}` : "Customer Balance"} onClose={onClose} wide>
       {customer && (
         <div>
           <div className="ps-stats-row">
+            <div className="ps-stat"><p className="ps-stat-label">Total Invoiced</p><p className="ps-stat-value">£{totalInvoiced.toFixed(2)}</p></div>
+            <div className="ps-stat"><p className="ps-stat-label">Total Payments</p><p className="ps-stat-value">£{totalPayments.toFixed(2)}</p></div>
+            <div className="ps-stat"><p className="ps-stat-label">Total Credit Notes</p><p className="ps-stat-value">£{totalCreditNotes.toFixed(2)}</p></div>
             <div className="ps-stat"><p className="ps-stat-label">Outstanding Balance</p><p className="ps-stat-value">£{outstandingBalance.toFixed(2)}</p></div>
+            <div className="ps-stat"><p className="ps-stat-label">Credit Limit</p><p className="ps-stat-value">£{creditLimit.toFixed(2)}</p></div>
+            <div className="ps-stat"><p className="ps-stat-label">Available Credit</p><p className="ps-stat-value" style={{ color: availableCredit > 0 ? "#15803d" : undefined }}>£{availableCredit.toFixed(2)}</p></div>
+            <div className="ps-stat"><p className="ps-stat-label">Open Invoices</p><p className="ps-stat-value">{openInvoiceCount}</p></div>
+            <div className="ps-stat"><p className="ps-stat-label">Overdue Invoices</p><p className="ps-stat-value" style={{ color: overdueInvoiceCount > 0 ? "#b91c1c" : undefined }}>{overdueInvoiceCount}</p></div>
             <div className="ps-stat"><p className="ps-stat-label">Credit Applied</p><p className="ps-stat-value">£{totalCreditApplied.toFixed(2)}</p></div>
             <div className="ps-stat"><p className="ps-stat-label">Remaining Customer Credit</p><p className="ps-stat-value" style={{ color: remainingCredit > 0 ? "#15803d" : undefined }}>£{remainingCredit.toFixed(2)}</p></div>
           </div>

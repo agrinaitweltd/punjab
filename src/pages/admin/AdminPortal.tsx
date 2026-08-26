@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
 import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
@@ -16,6 +16,8 @@ import { createCustomer, deleteCustomer, getCustomers, updateCustomer } from '..
 import { createProduct, deleteProduct, getProducts, updateProduct } from '../../api/productsApi'
 import { getStock, updateStock } from '../../api/stockApi'
 import { getOrders, updateOrder } from '../../api/ordersApi'
+import { useRealtimeSync } from '../../lib/useRealtimeSync'
+import { mapCustomer, mapInvoice, mapPayment, mapCreditNote, mapCreditNoteAllocation } from '../../services/databaseService'
 import {
   createDeliveryArea,
   createTicket,
@@ -162,6 +164,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [buyingPrices, setBuyingPrices] = useState<BuyingPrice[]>([])
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([])
   const [openAddCustomerRequest, setOpenAddCustomerRequest] = useState(0)
+  const [invoicesCustomerFilter, setInvoicesCustomerFilter] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [openCreditNoteId, setOpenCreditNoteId] = useState<string | null>(null)
   const [salesLogin, setSalesLogin] = useState<Salesman | null>(() => loadSalesLogin())
@@ -267,6 +270,59 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Cross-admin realtime sync: one Supabase channel per table for the whole
+  // session (not per-page), patching only the affected row - never a
+  // refetch. creditNoteAllocations is mirrored into a ref so the invoice/
+  // allocation handlers below can recompute the derived `creditApplied`
+  // field without needing to resubscribe whenever allocations change.
+  const creditNoteAllocationsRef = useRef<CreditNoteAllocation[]>([])
+  useEffect(() => { creditNoteAllocationsRef.current = creditNoteAllocations }, [creditNoteAllocations])
+
+  const upsertById = <T extends { id: string }>(setter: React.Dispatch<React.SetStateAction<T[]>>, row: T) =>
+    setter(list => list.some(item => item.id === row.id) ? list.map(item => item.id === row.id ? row : item) : [...list, row])
+  const removeById = <T extends { id: string }>(setter: React.Dispatch<React.SetStateAction<T[]>>, id: string) =>
+    setter(list => list.filter(item => item.id !== id))
+
+  useRealtimeSync({
+    customers: {
+      map: mapCustomer,
+      onInsert: row => upsertById(setCustomers, row),
+      onUpdate: row => upsertById(setCustomers, row),
+      onDelete: id => removeById(setCustomers, id),
+    },
+    invoices: {
+      map: mapInvoice,
+      onInsert: row => setInvoices(list => attachCreditAllocations(list.some(i => i.id === row.id) ? list.map(i => i.id === row.id ? row : i) : [...list, row], creditNoteAllocationsRef.current)),
+      onUpdate: row => setInvoices(list => attachCreditAllocations(list.map(i => i.id === row.id ? row : i), creditNoteAllocationsRef.current)),
+      onDelete: id => removeById(setInvoices, id),
+    },
+    payments: {
+      map: mapPayment,
+      onInsert: row => upsertById(setPayments, row),
+      onUpdate: row => upsertById(setPayments, row),
+      onDelete: id => removeById(setPayments, id),
+    },
+    credit_notes: {
+      map: mapCreditNote,
+      onInsert: row => upsertById(setCreditNotes, row),
+      onUpdate: row => upsertById(setCreditNotes, row),
+      onDelete: id => removeById(setCreditNotes, id),
+    },
+    credit_note_allocations: {
+      map: mapCreditNoteAllocation,
+      onInsert: row => setCreditNoteAllocations(list => {
+        const next = list.some(a => a.id === row.id) ? list.map(a => a.id === row.id ? row : a) : [...list, row]
+        setInvoices(current => attachCreditAllocations(current, next))
+        return next
+      }),
+      onDelete: id => setCreditNoteAllocations(list => {
+        const next = list.filter(a => a.id !== id)
+        setInvoices(current => attachCreditAllocations(current, next))
+        return next
+      }),
+    },
+  })
+
   // The background poll only needs to catch orders/tickets created by other
   // users while this admin stays on one page — it doesn't need the other 24
   // tables `load()` fetches, so it gets its own much cheaper query.
@@ -294,6 +350,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return
     }
     setCurrent(key)
+    if (key !== 'invoices') setInvoicesCustomerFilter(null)
     if (key === 'orders') markOrdersSeen()
     if (key === 'tickets') markTicketsSeen()
   }
@@ -516,6 +573,37 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (newCreditNotes.length) setCreditNotes(list => [...list, ...newCreditNotes])
 
     return { customerName: savedCustomer.companyName, accountNumber: savedCustomer.customerNumber }
+  }
+
+  // Shared by InvoicesPage's "Paid" checkbox, OutstandingInvoicesPage's
+  // payment modal, and the customer-scoped invoice view - one path for
+  // recording a payment so behaviour (balance sync, receipt email, realtime
+  // propagation via the setInvoices/setCustomers/setPayments merges below)
+  // stays identical everywhere an admin can mark/record a payment.
+  const recordInvoicePayment = async (invoice: Invoice, amount: number) => {
+    const outstanding = invoiceOutstanding(invoice)
+    if (amount <= 0) throw new Error('Payment amount must be greater than zero.')
+    if (amount > outstanding + 0.005) throw new Error(`Payment exceeds the £${outstanding.toFixed(2)} outstanding balance.`)
+    const newPaid = (invoice.amountPaid ?? 0) + amount
+    const newStatus = invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0)
+    const newPayment = await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
+    await updateInvoice(invoice.id, { amountPaid: newPaid, status: newStatus })
+    setInvoices(list => list.map(item => item.id === invoice.id ? { ...item, amountPaid: newPaid, status: newStatus } : item))
+    setPayments(list => [...list, newPayment])
+    const customer = customers.find(c => c.id === invoice.customerId)
+    if (customer) {
+      const synchronizedBalance = invoices
+        .filter(item => item.customerId === customer.id)
+        .reduce((sum, item) => sum + invoiceOutstanding(item.id === invoice.id ? { ...item, amountPaid: newPaid } : item), 0)
+      await updateCustomer(customer.id, { balance: synchronizedBalance })
+      setCustomers(list => list.map(c => c.id === customer.id ? { ...c, balance: synchronizedBalance } : c))
+      if (newStatus === 'Paid') {
+        void sendPaymentReceived(invoice, customer, amount, user.displayName)
+        if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)), undefined, { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, communicationType: 'payment_received' })
+      }
+    }
+    void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
+    showSuccess('Payment recorded successfully')
   }
 
   const page = () => {
@@ -788,6 +876,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
             await load()
           }}
           onNavigate={navigate}
+          onOpenInvoices={(customer) => { setInvoicesCustomerFilter(customer.id); navigate('invoices') }}
           onInviteCustomer={async (accountNumber, email, phone) => {
             const customer=customers.find(c=>c.customerNumber===accountNumber)
             if(!customer) throw new Error('Customer account not found')
@@ -973,9 +1062,14 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <InvoicesPage
           invoices={invoices}
+          customers={customers}
           creditNotes={creditNotes}
           allocations={creditNoteAllocations}
           onOpenCreditNote={(id) => { setOpenCreditNoteId(id); navigate('credit-notes') }}
+          onNavigate={navigate}
+          onRecordPayment={recordInvoicePayment}
+          customerId={invoicesCustomerFilter}
+          onClearCustomerFilter={() => setInvoicesCustomerFilter(null)}
         />
       )
     }
@@ -984,31 +1078,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return <OutstandingInvoicesPage invoices={invoices} customers={customers} onSendReminder={async (invoice, customer) => {
         await sendInvoiceReminderPdf(invoice, customer)
         await load()
-      }} onRecordPayment={async (invoice, amount) => {
-        const outstanding = invoiceOutstanding(invoice)
-        if (amount <= 0) throw new Error('Payment amount must be greater than zero.')
-        if (amount > outstanding + 0.005) throw new Error(`Payment exceeds the £${outstanding.toFixed(2)} outstanding balance.`)
-        const newPaid = (invoice.amountPaid ?? 0) + amount
-        const newStatus = invoiceStatusFor(invoice.amount, newPaid, invoice.creditApplied ?? 0)
-        const newPayment = await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
-        await updateInvoice(invoice.id, { amountPaid: newPaid, status: newStatus })
-        setInvoices(list => list.map(item => item.id === invoice.id ? { ...item, amountPaid: newPaid, status: newStatus } : item))
-        setPayments(list => [...list, newPayment])
-        const customer = customers.find(c => c.id === invoice.customerId)
-        if (customer) {
-          const synchronizedBalance = invoices
-            .filter(item => item.customerId === customer.id)
-            .reduce((sum, item) => sum + invoiceOutstanding(item.id === invoice.id ? { ...item, amountPaid: newPaid } : item), 0)
-          await updateCustomer(customer.id, { balance: synchronizedBalance })
-          setCustomers(list => list.map(c => c.id === customer.id ? { ...c, balance: synchronizedBalance } : c))
-          if (newStatus === 'Paid') {
-            void sendPaymentReceived(invoice, customer, amount, user.displayName)
-            if (customer.email) void sendEmail(customer.email, `Payment Received - Invoice ${invoice.invoiceNumber}`, paymentReceivedEmailHtml(invoice.invoiceNumber, customer.companyName, amount, 'Manual confirmation', currentTradingDate(dayTrades)), undefined, { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, communicationType: 'payment_received' })
-          }
-        }
-        void logActivity(user.displayName, `recorded payment of £${amount.toFixed(2)} for invoice ${invoice.invoiceNumber}`)
-        showSuccess('Payment recorded successfully')
-      }} />
+      }} onRecordPayment={recordInvoicePayment} />
     }
 
     if (current === 'create-invoice') {

@@ -4,6 +4,8 @@ import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { listFiles, uploadFile, deleteFile, renameFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
 import { confirmAction } from "../../lib/appDialogs"
+import { supabase } from "../../lib/supabase"
+import { runtimeTable } from "../../lib/runtimeMode"
 
 const fmtSize = (b: number) => b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`
 
@@ -19,6 +21,9 @@ const INTERNAL = "__internal__"
 const DOCUMENT_CATEGORIES = ['All','Invoices','Statements','Payment Notices','Credit Notes','Delivery Documents','Receipts','Other Documents']
 function categoryFor(file: StoredFile) { const text=`${file.name} ${file.note}`.toLowerCase(); if(text.includes('statement'))return 'Statements'; if(text.includes('payment notice'))return 'Payment Notices'; if(text.includes('credit note'))return 'Credit Notes'; if(text.includes('delivery'))return 'Delivery Documents'; if(text.includes('receipt'))return 'Receipts'; if(text.includes('invoice'))return 'Invoices'; return 'Other Documents' }
 
+const documentTypeLabel = (f: StoredFile) => f.documentRole === 'canonical_invoice' ? 'Invoice PDF' : f.documentRole === 'credit_note_source' ? 'Credit Note' : categoryFor(f)
+const documentReference = (f: StoredFile) => f.invoiceNumber ?? f.creditNoteNumber ?? '—'
+
 export function FilesPage({ customers, invoices = [] }: { customers: Customer[]; invoices?: Invoice[] }) {
   const [files, setFiles] = useState<StoredFile[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,14 +37,39 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
   const [preview, setPreview] = useState<StoredFile | null>(null)
   const [renaming, setRenaming] = useState<StoredFile | null>(null)
   const [renameValue, setRenameValue] = useState("")
+  /** "Generated Documents" (item 18) - a flat, cross-customer view of every
+      system-created document (canonical invoice PDFs, credit notes,
+      statements), as distinct from browsing uploaded source files folder by
+      folder below. */
+  const [view, setView] = useState<'folders' | 'generated'>('folders')
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  const load = async () => {
-    setLoading(true)
+  const load = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true)
     setFiles(await listFiles())
-    setLoading(false)
+    if (showSpinner) setLoading(false)
   }
   useEffect(() => { load() }, [])
+
+  /** Documents live as FILE: rows in activity_log (see fileService.ts) rather
+      than their own table, so realtime here just triggers a quiet reload of
+      the already-scoped listFiles() query on any change to that table -
+      cheaper than duplicating listFiles()'s base64/metadata parsing inline,
+      and still never touches unrelated tables. Debounced so a burst of
+      changes (e.g. several files uploaded at once) reloads once, not per row. */
+  useEffect(() => {
+    if (!supabase) return
+    const client = supabase
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const channel = client
+      .channel(`sync:${runtimeTable('activity_log')}:files`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: runtimeTable('activity_log') }, () => {
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => load(false), 400)
+      })
+      .subscribe()
+    return () => { if (timer) clearTimeout(timer); client.removeChannel(channel) }
+  }, [])
 
   const fileCounts = useMemo(() => {
     const m: Record<string, number> = {}
@@ -55,6 +85,13 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
       return `${c.companyName} ${c.customerNumber} ${c.email} ${c.phone} ${customerInvoices}`.toLowerCase().includes(q)
     })
   }, [customers, invoices, folderQuery])
+
+  const generatedDocs = useMemo(
+    () => files.filter(f => f.documentRole && f.documentRole !== 'legacy_source' && f.documentRole !== 'general')
+      .filter(f => !folderQuery.trim() || `${f.name} ${f.customerName} ${documentReference(f)}`.toLowerCase().includes(folderQuery.trim().toLowerCase()))
+      .sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || '')),
+    [files, folderQuery],
+  )
 
   const selectedCustomer = selected === INTERNAL ? null : customers.find(c => c.id === selected)
   const folderFiles = files.filter(f => {
@@ -110,6 +147,41 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
         </p>
       </div>
 
+      <div className="invoice-tabs">
+        <button className={`invoice-tab${view === 'folders' ? ' active' : ''}`} onClick={() => setView('folders')}>By Customer</button>
+        <button className={`invoice-tab${view === 'generated' ? ' active' : ''}`} onClick={() => setView('generated')}>Generated Documents</button>
+      </div>
+
+      {view === 'generated' ? (
+        <div className="doc-content" style={{ width: '100%' }}>
+          <div className="ps-search-wrap" style={{ margin: "0 0 12px", maxWidth: 340 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input className="ps-search" placeholder="Search customer, document or reference…" value={folderQuery} onChange={e => setFolderQuery(e.target.value)} />
+          </div>
+          <div className="ps-table-wrap">
+            <table className="ps-table">
+              <thead><tr><th>Document Type</th><th>Customer</th><th>Reference</th><th>Date</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+              <tbody>
+                {generatedDocs.map(f => (
+                  <tr key={f.id}>
+                    <td><span className="doc-role-badge generated">{documentTypeLabel(f)}</span></td>
+                    <td>{f.customerName || 'Internal'}</td>
+                    <td>{documentReference(f)}</td>
+                    <td>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {(f.type.startsWith("image/") || f.type === "application/pdf") && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>View</Button>}
+                        <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {generatedDocs.length === 0 && <div className="db-empty">No system-generated documents yet.</div>}
+          </div>
+        </div>
+      ) : (
       <div className="doc-layout">
         {/* Folder list */}
         <div className="doc-sidebar">
@@ -191,7 +263,12 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
                   <div key={f.id} className="fl-row">
                     <span className="fl-kind" style={{ background: kind.bg, color: kind.color }}>{kind.label}</span>
                     <div className="fl-info">
-                      <div className="fl-name">{f.name}</div>
+                      <div className="fl-name">
+                        {f.name}{" "}
+                        <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>
+                          {f.documentRole === 'legacy_source' ? 'Uploaded Source' : 'System Generated'}
+                        </span>
+                      </div>
                       <div className="fl-meta">
                         {f.note && <>{f.note} · </>}
                         {fmtSize(f.size)} · {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
@@ -210,6 +287,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
           )}
         </div>
       </div>
+      )}
 
       {/* preview modal */}
       <Modal open={Boolean(preview)} title={preview?.name ?? "Preview"} onClose={() => setPreview(null)}>

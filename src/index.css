@@ -3479,3 +3479,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .success-toast-stack { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 1200; }
 .success-toast { display: flex; align-items: center; gap: 8px; background: var(--green-700); color: #fff; font-size: 13.5px; font-weight: 600; padding: 12px 16px; border-radius: var(--radius); box-shadow: var(--shadow-lg); animation: success-toast-in 0.2s ease; }
 @keyframes success-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Invoice PDF preview modal ────────────────────────────────────────── */
+.invoice-pdf-modal { display: flex; flex-direction: column; min-height: 60vh; }
+.invoice-pdf-loading { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-muted); font-size: 13.5px; }
+.invoice-pdf-embed { width: 100%; height: 72vh; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+/* ── Invoice tabs (Open / Paid) ───────────────────────────────────────── */
+.invoice-tabs { display: flex; gap: 8px; margin-bottom: 4px; }
+.invoice-tab { padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text-muted); font-weight: 700; font-size: 13px; cursor: pointer; }
+.invoice-tab.active { border-color: var(--green-500); color: var(--green-700); background: var(--green-50); }
+
+/* ── Source / System Generated document badges ───────────────────────── */
+.doc-role-badge { display: inline-flex; padding: 3px 8px; border-radius: 5px; font-size: 10.5px; font-weight: 700; }
+.doc-role-badge.source { color: #6b7280; background: #f3f4f6; }
+.doc-role-badge.generated { color: var(--green-700); background: var(--green-100); }

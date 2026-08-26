@@ -13,8 +13,10 @@ function db() {
 }
 
 // ── Field mappers: snake_case DB rows → camelCase TS types ──────────
+// Exported so realtime postgres_changes payloads (also raw snake_case rows)
+// can be mapped through the exact same logic as a normal fetch.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapCustomer(r: any): Customer {
+export function mapCustomer(r: any): Customer {
   return {
     id: r.id, companyName: r.company_name, contactPerson: r.contact_person,
     email: r.email, phone: r.phone, customerNumber: r.customer_number,
@@ -62,7 +64,7 @@ function mapOrder(r: any): Order {
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapInvoice(r: any): Invoice {
+export function mapInvoice(r: any): Invoice {
   return {
     id: r.id, customerId: r.customer_id ?? "", invoiceNumber: r.invoice_number,
     amount: r.amount ?? 0, dueDate: r.due_date ?? "", status: r.status ?? "Unpaid",
@@ -78,7 +80,7 @@ function mapInvoice(r: any): Invoice {
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapPayment(r: any): Payment {
+export function mapPayment(r: any): Payment {
   return {
     id: r.id, customerId: r.customer_id ?? "", paymentReference: r.payment_reference,
     amount: r.amount ?? 0, date: r.date ?? "", method: r.method ?? "",
@@ -86,7 +88,7 @@ function mapPayment(r: any): Payment {
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapCreditNote(r: any): CreditNote {
+export function mapCreditNote(r: any): CreditNote {
   return {
     id: r.id, creditNumber: r.credit_number, customerId: r.customer_id ?? "",
     amount: r.amount ?? 0, reason: r.reason ?? "", date: r.date ?? "",
@@ -103,7 +105,7 @@ function mapCreditNote(r: any): CreditNote {
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapCreditNoteAllocation(r: any): CreditNoteAllocation {
+export function mapCreditNoteAllocation(r: any): CreditNoteAllocation {
   return { id: r.id, creditNoteId: r.credit_note_id, invoiceId: r.invoice_id, amount: r.amount ?? 0, date: r.date ?? "" }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

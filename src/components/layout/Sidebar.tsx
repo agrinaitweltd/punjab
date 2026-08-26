@@ -29,11 +29,11 @@ type NavigationGroup = { key: string; label: string; icon: IconName; children: N
 const adminNavigation: NavigationGroup[] = [
   { key: "customers-group", label: "Customers", icon: "customers", children: [
     { key: "customers", label: "All Customers", icon: "customers" }, { key: "add-customer", label: "Add Customer", icon: "customers" },
-    { key: "customer-applications", label: "Customer Applications", icon: "customers" }, { key: "outstanding", label: "Outstandings", icon: "clock" },
+    { key: "customer-applications", label: "Customer Applications", icon: "customers" }, { key: "outstanding", label: "Unpaid Invoices", icon: "clock" },
     { key: "credit-control", label: "Credit Control", icon: "finance" },
   ] },
   { key: "invoices-group", label: "Invoices", icon: "invoices", children: [
-    { key: "invoices", label: "Invoice History", icon: "invoices" }, { key: "create-invoice", label: "Create Invoice", icon: "invoices" },
+    { key: "invoices", label: "Invoices", icon: "invoices" }, { key: "create-invoice", label: "Create Invoice", icon: "invoices" },
     { key: "invoice-numbers", label: "Invoice Numbers", icon: "invoices" }, { key: "credit-notes", label: "Credit Notes", icon: "documents" },
     { key: "payment-reminders", label: "Payment Reminders", icon: "clock" },
   ] },

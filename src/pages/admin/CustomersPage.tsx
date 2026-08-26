@@ -74,6 +74,7 @@ export function CustomersPage({
   onAddCreditNote,
   onNavigate,
   onInviteCustomer,
+  onOpenInvoices,
   canCreate = true,
   canCreditNotes = true,
   openAddRequest = 0,
@@ -97,6 +98,9 @@ export function CustomersPage({
   onAddCreditNote?: (customer: Customer, document: ImportedCreditNote, invoiceId?: string) => Promise<void>
   onNavigate?: (page: string) => void
   onInviteCustomer?: (accountNumber: string, email: string, phone: string) => Promise<void>
+  /** "Open Invoices" (item 10-11) - jumps to a dedicated, customer-scoped
+      invoice page instead of the general profile modal. */
+  onOpenInvoices?: (customer: Customer) => void
   canCreate?: boolean
   canCreditNotes?: boolean
   openAddRequest?: number
@@ -588,8 +592,8 @@ export function CustomersPage({
                   ) : (
                     <>
                       <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
-                      <Button variant="secondary" className="btn-sm" onClick={() => { setAccountProfile(customer); setProfileTab('Overview') }}>Open Account</Button>
-                      <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Statement</Button>
+                      <Button variant="secondary" className="btn-sm" onClick={() => onOpenInvoices ? onOpenInvoices(customer) : (setAccountProfile(customer), setProfileTab('Overview'))}>Open Invoices</Button>
+                      <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Customer Balance</Button>
                       <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
                       {onSendWhatsApp && (
                         <Button variant="ghost" className="btn-sm" onClick={() => setWhatsappTarget(customer)}>Send WhatsApp</Button>

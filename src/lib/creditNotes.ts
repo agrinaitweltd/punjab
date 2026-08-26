@@ -29,6 +29,27 @@ export function invoiceDisplayStatus(invoice: Invoice): string {
   return invoiceStatusFor(invoice.amount, invoice.amountPaid ?? 0, invoice.creditApplied ?? 0)
 }
 
+const OVERDUE_DAYS = 21
+
+/** Days past the invoice's due date (0 if not yet due, or if `dueDate` is
+    missing/unparseable). Computed at read time from `dueDate`, not a stored
+    column - correct the instant anyone loads the page, no cron needed. */
+export function daysOverdue(invoice: Invoice): number {
+  if (!invoice.dueDate) return 0
+  const due = new Date(`${invoice.dueDate}T00:00:00`)
+  if (Number.isNaN(due.getTime())) return 0
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return Math.max(0, Math.round((today.getTime() - due.getTime()) / 86_400_000))
+}
+
+/** Single source of truth for which of the three invoice views (item 7-9)
+    an invoice belongs to. Paid invoices never move back to open/overdue
+    even if `dueDate` is old - outstanding <= 0 always wins. */
+export function classifyInvoice(invoice: Invoice): "paid" | "overdue" | "open" {
+  if (invoiceOutstanding(invoice) <= 0) return "paid"
+  return daysOverdue(invoice) > OVERDUE_DAYS ? "overdue" : "open"
+}
+
 /** Applies as much of a credit note's remaining balance as possible to one
     invoice — capped by both the credit remaining and the invoice's own
     outstanding balance. Returns the resulting numbers for the caller to
