@@ -12,7 +12,7 @@ const BACKUP_TABLES = [
   'system_audit_log', 'system_settings', 'user_login_audit', 'whatsapp_logs', 'whatsapp_templates',
 ]
 
-const sensitiveField = key => /(^|_)(password|token|secret|api_key|service_role|private_key)($|_)/i.test(key)
+const sensitiveField = key => /(^|_)(password|token|secret|api_key|service_role|private_key|pin_hash)($|_)/i.test(key)
 const safeSegment = value => [...String(value || 'file')].map(character => character.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(character) ? '_' : character).join('').replace(/\.\.+/g, '.').trim().slice(0, 160) || 'file'
 const checksum = bytes => createHash('sha256').update(bytes).digest('hex')
 

@@ -70,6 +70,7 @@ const adminNavigation: NavigationGroup[] = [
     { key: "error-log", label: "Error Log", icon: "documents", access: "systemDeveloper" },
     { key: "test-mode", label: "Test Mode", icon: "settings", access: "systemDeveloper" },
     { key: "backup-recovery", label: "Backup & Recovery", icon: "documents", access: "systemDeveloper" },
+    { key: "database-reset", label: "Database Reset", icon: "settings", access: "systemDeveloper" },
     { key: "system-health", label: "Integrations & Health", icon: "communications", access: "systemDeveloper" },
     { key: "security", label: "Security", icon: "help", access: "systemDeveloper" },
   ] },

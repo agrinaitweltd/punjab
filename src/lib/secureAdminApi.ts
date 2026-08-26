@@ -71,6 +71,18 @@ export async function retryEmailImport(id: string, customerId?: string) {
   return api<{ ok: true; status: string }>('/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ id, customerId }) })
 }
 
+export type DatabaseResetStatus = { pinConfigured: boolean; pinSetAt: string | null; tables: string[] }
+export async function getDatabaseResetStatus() { return api<DatabaseResetStatus>('/api/admin-security?action=database-reset', { method: 'GET' }) }
+export async function setDatabaseResetPin(pin: string, sensitiveToken: string) {
+  return api<{ ok: true }>('/api/admin-security?action=database-reset', { method: 'POST', body: JSON.stringify({ step: 'set-pin', pin }) }, sensitiveToken)
+}
+export async function requestDatabaseResetCode() {
+  return api<{ ok: true; sentTo: string }>('/api/admin-security?action=database-reset', { method: 'POST', body: JSON.stringify({ step: 'request-code' }) })
+}
+export async function executeDatabaseReset(emailCode: string, pin: string) {
+  return api<{ ok: true; testMode: boolean; counts: Record<string, number> }>('/api/admin-security?action=database-reset', { method: 'POST', body: JSON.stringify({ step: 'execute', emailCode, pin }) })
+}
+
 export async function getSystemOverview() { return api<SystemOverview>('/api/admin-security?action=system-overview') }
 export async function getSystemMode() { return api<{ testMode: boolean; changedAt: string | null; generation?: string | null; startedAt?: string | null }>('/api/admin-security?action=system-mode') }
 export async function setSystemMode(enabled: boolean, sensitiveToken: string) {

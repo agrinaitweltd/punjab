@@ -1,5 +1,6 @@
 const handlers = {
   'complete-account-setup': () => import('../server/admin-actions/complete-account-setup.js'),
+  'database-reset': () => import('../server/admin-actions/database-reset.js'),
   'application-backup': () => import('../server/admin-actions/application-backup.js'),
   'download-backup': () => import('../server/admin-actions/download-backup.js'),
   'email-imports': () => import('../server/admin-actions/email-imports.js'),

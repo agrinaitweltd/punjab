@@ -140,6 +140,7 @@ import { ExpensesPage } from './ExpensesPage'
 import { GlobalSearchPage } from './GlobalSearchPage'
 import { CommunicationHistoryPage } from './CommunicationHistoryPage'
 import { SystemDeveloperPage } from './SystemDeveloperPage'
+import { DatabaseResetPage } from './DatabaseResetPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
 import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, type EmailImportRow } from '../../lib/secureAdminApi'
 import { EmailImportsPage } from './EmailImportsPage'
@@ -641,6 +642,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (current === 'global-search') return <GlobalSearchPage customers={customers} invoices={invoices} onNavigate={navigate} />
     if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'error-log', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
       return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
+    }
+    if (current === 'database-reset') {
+      return user.isSystemDeveloper ? <DatabaseResetPage /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
     }
     if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} deliveryLogs={communicationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
