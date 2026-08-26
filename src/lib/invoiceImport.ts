@@ -72,6 +72,15 @@ export type ImportedCreditNote = {
 
 export type ImportedFinancialDocument = ImportedLegacyInvoice | ImportedCreditNote
 
+// Rounding/decimal-formatting tolerance for reconciling Total Goods + Total
+// VAT against the printed Grand Total. Below this, the numbers are treated
+// as matching (no warning at all). Above it, the document may still have a
+// genuine extra charge (e.g. porterage) not folded into "Total Goods" - the
+// printed Grand Total is still trusted and used, and a warning is recorded
+// for admin review rather than the import being blocked (see assessConfidence
+// in server/email-import/create-records.js, which treats a totals mismatch
+// as informational, never a reason to refuse the whole invoice).
+const TOTALS_TOLERANCE = 0.05
 const money = (value = '') => Number(value.replace(/[^\d.-]/g, '')) || 0
 const compact = (value = '') => value.replace(/\s+/g, ' ').trim()
 const columns = (line = '') => line.trim().split(/\s{2,}/).map(compact).filter(Boolean)
@@ -103,19 +112,57 @@ function normalizeUkPhone(value: string): string {
   return value.trim()
 }
 
+const ledgerLine = /^S\/L Balance/i
+// Punjab's own letterhead, printed in a right-hand column that lands on the
+// SAME extracted line as the customer's own left-hand-column text whenever
+// their vertical positions coincide (e.g. "SAEED GATE8 GU06 ... Stand 1B New
+// Spitalfields Mkt" comes out as one merged line) - each pattern here must
+// be specific enough to mark exactly where the supplier's text starts within
+// such a merged line, not just "does this line contain supplier text".
+const supplierAddress = /Punjab Exotic|Stand\s*1B|New Spitalfields|Sherring Road|^Leyton$|^London$|E10\s*5SQ|^Tel:|^Fax:/i
+// The "INVOICE" / "CREDIT NOTE" / "CUSTOMER COPY" banner is its own row,
+// with nothing in the customer's column at that height - must never be
+// mistaken for the customer's own name.
+const documentBanner = /^\s*(?:INVOICE|CREDIT\s+NOTE)?\s*CUSTOMER\s*COPY\s*$|^\s*(?:INVOICE|CREDIT\s+NOTE)\s*$/i
+
+/** The portion of a (possibly column-merged) line that belongs to the
+ *  customer, i.e. everything before any known supplier-letterhead text. */
+function customerSegment(line: string): string {
+  const match = line.match(supplierAddress)
+  return compact(match ? line.slice(0, match.index) : line)
+}
+
 function customerSection(lines: string[]) {
-  const companyIndex = lines.findIndex(line => /\b(?:LTD|LIMITED|PLC|LLP)\b/i.test(line) && !/Punjab Exotic Foods/i.test(line))
-  const companyLine = compact(lines[companyIndex] ?? '')
-  const companyName = compact(companyLine.match(/^.*?\b(?:LTD|LIMITED|PLC|LLP)\b/i)?.[0] ?? '')
+  let companyIndex = lines.findIndex(line => /\b(?:LTD|LIMITED|PLC|LLP)\b/i.test(line) && !/Punjab Exotic Foods/i.test(line))
+  let companyName = compact(compact(lines[companyIndex] ?? '').match(/^.*?\b(?:LTD|LIMITED|PLC|LLP)\b/i)?.[0] ?? '')
+
+  // Not every genuine Punjab customer trades as a formal LTD/LIMITED/PLC/LLP
+  // company - some are printed as just a trading name plus a market
+  // gate/stand/unit number (e.g. "SAEED GATE8 GU06"), with no company suffix
+  // at all. Fall back to the first line that has real, non-supplier,
+  // non-banner content in it, wherever in the document it falls - a short
+  // trading name is still a valid, safe identifier, same as a gate number is
+  // still valid (if limited) address information.
+  if (companyIndex < 0) {
+    for (let index = 0; index < lines.length; index += 1) {
+      if (documentBanner.test(compact(lines[index])) || ledgerLine.test(compact(lines[index]))) continue
+      const segment = customerSegment(lines[index])
+      if (segment) { companyIndex = index; companyName = segment; break }
+    }
+  }
+
   const phoneIndex = lines.findIndex((line, index) => index > companyIndex && /\b07\d(?:[\s-]?\d){8,9}\b/.test(line))
   const phone = compact(lines[phoneIndex] ?? '').match(/\b07\d(?:[\s-]?\d){8,9}\b/)?.[0] ?? ''
   const postcodes = lines.flatMap(line => [...line.matchAll(new RegExp(postcodePattern.source, 'gi'))].map(match => compact(match[1].toUpperCase())))
   const postcode = postcodes.find(value => !/^E10\s*5SQ$/i.test(value)) ?? ''
-  const supplierAddress = /Punjab Exotic|New Spitalfields|Sherring Road|^Leyton$|^London$|E10\s*5SQ|^Tel:|^Fax:/i
+  // A one-line (or zero-line) address is completely acceptable - genuine
+  // invoices for market/cash-account customers often have nothing more than
+  // a gate or stand number here, and that must not be treated as a parsing
+  // failure.
   const addressLines = lines
     .slice(Math.max(0, companyIndex + 1), phoneIndex > companyIndex ? phoneIndex : companyIndex + 8)
     .map(compact)
-    .filter(line => line && !supplierAddress.test(line) && !postcodePattern.test(line) && !/^\d{10,11}$/.test(line))
+    .filter(line => line && !supplierAddress.test(line) && !postcodePattern.test(line) && !/^\d{10,11}$/.test(line) && !ledgerLine.test(line))
   return { companyName, address: addressLines.join(', '), postcode, phone, normalizedPhone: normalizeUkPhone(phone) }
 }
 
@@ -224,8 +271,8 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   if (!metadata.accountNumber) warnings.push('Please check the six-digit account number from the Num column.')
   if (!metadata.date) warnings.push('Please check the invoice date.')
   if (!items.length) warnings.push('No product rows were found. Add or correct the products before saving.')
-  if (Math.abs(totalGoods + vat - grandTotal) > 0.02) warnings.push('The goods total plus VAT does not match the grand total.')
-  if (items.length && Math.abs(items.reduce((sum, item) => sum + item.goodsValue, 0) - totalGoods) > 0.02) warnings.push('The product values do not match the goods total.')
+  if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The goods total plus VAT does not match the grand total - the printed Grand Total has been used as-is.')
+  if (items.length && Math.abs(items.reduce((sum, item) => sum + item.goodsValue, 0) - totalGoods) > TOTALS_TOLERANCE) warnings.push('The product values do not match the goods total - the printed Total Goods has been used as-is.')
 
   return {
     documentType: 'invoice',
@@ -237,7 +284,7 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
       companyName: confidence(customer.companyName), address: confidence(customer.address), postcode: confidence(customer.postcode),
       phone: confidence(customer.phone), accountNumber: /^\d{6}$/.test(metadata.accountNumber) ? 'high' : 'review',
       invoiceNumber: metadata.invoiceNumber ? 'high' : 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
-      totals: Math.abs(totalGoods + vat - grandTotal) <= 0.02 ? 'high' : 'review',
+      totals: Math.abs(totalGoods + vat - grandTotal) <= TOTALS_TOLERANCE ? 'high' : 'review',
     },
     warnings,
     debug: { rawLines: lines, normalizedLines },
@@ -273,13 +320,13 @@ export function parseCreditNoteLines(rawLines: string[]): ImportedCreditNote {
   if (!metadata.accountNumber) warnings.push('Please check the customer account number.')
   if (!metadata.date) warnings.push('Please check the credit note date.')
   if (!items.length) warnings.push('No credited product rows were found.')
-  if (Math.abs(totalGoods + vat - grandTotal) > 0.02) warnings.push('The credited goods plus VAT does not match the total credit.')
+  if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The credited goods plus VAT does not match the total credit - the printed total has been used as-is.')
   return {
     documentType: 'credit_note',
     customer: { ...customer, email: '', accountNumber: metadata.accountNumber, ledgerBalance },
     creditNote: { creditNumber: explicitNumber, date: metadata.date, originalInvoiceReference, deliveryAccount: metadata.deliveryAccount, salesman: metadata.salesman, currency: 'GBP', totalGoods, vat, grandTotal, packages },
     items, vatSummary,
-    confidence: { companyName: confidence(customer.companyName), accountNumber: confidence(metadata.accountNumber), creditNumber: confidence(explicitNumber), date: confidence(metadata.date), products: items.length ? 'high' : 'missing', totals: Math.abs(totalGoods + vat - grandTotal) <= 0.02 ? 'high' : 'review' },
+    confidence: { companyName: confidence(customer.companyName), accountNumber: confidence(metadata.accountNumber), creditNumber: confidence(explicitNumber), date: confidence(metadata.date), products: items.length ? 'high' : 'missing', totals: Math.abs(totalGoods + vat - grandTotal) <= TOTALS_TOLERANCE ? 'high' : 'review' },
     warnings,
     debug: { rawLines: lines, normalizedLines },
   }

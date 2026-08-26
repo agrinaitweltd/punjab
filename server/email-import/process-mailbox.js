@@ -266,7 +266,23 @@ export async function retryEmailImport(admin, table, emailImportId, customerIdOv
     throw new Error(reasons.join(' '))
   }
 
-  const created = await createRecordFromImport(admin, table, document, customerRow, document.source)
+  let created
+  try {
+    created = await createRecordFromImport(admin, table, document, customerRow, document.source)
+  } catch (error) {
+    // A duplicate hit here means the invoice/credit note this email
+    // describes already exists (created by an earlier email, or manually) -
+    // leaving the row stuck in "needs_review" with a stale error would make
+    // it look unresolved forever, so record it as a duplicate instead.
+    // createRecordFromImport never creates a record on this path, so there
+    // is nothing to roll back.
+    const status = error?.code === 'duplicate' ? 'duplicate' : 'failed'
+    await admin.from(table('email_imports')).update({
+      status, document_type: documentType, detected_customer_id: customerRow?.id || null, detected_customer_name: customerRow?.company_name || null,
+      detected_invoice_number: detectedNumber || null, error_message: String(error?.message || error).slice(0, 500), processed_at: new Date().toISOString(),
+    }).eq('id', row.id)
+    throw error
+  }
   await admin.from(table('email_imports')).update({
     status: 'imported', document_type: documentType, detected_customer_id: customerRow.id, detected_customer_name: customerRow.company_name,
     detected_invoice_number: detectedNumber, invoice_id: created.invoiceId || null, credit_note_id: created.creditNoteId || null,

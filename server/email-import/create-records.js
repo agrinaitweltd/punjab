@@ -97,12 +97,19 @@ export async function resolveOrCreateCustomer(admin, table, importedCustomer) {
 
   const companyName = (importedCustomer.companyName || '').trim()
   const accountNumber = (importedCustomer.accountNumber || '').trim()
-  if (!companyName || !accountNumber) {
-    return { status: 'insufficient', reason: 'No matching customer was found, and the invoice does not have enough detail (company name and account number) to create a new one automatically.' }
+  // A company/trading name OR an account number is enough to safely create a
+  // new customer - requiring both was rejecting genuine invoices for
+  // customers printed as just a trading name with no formal company suffix,
+  // or where the account number wasn't parsed. Only genuinely blank customer
+  // details (neither present) still needs a human to look at it.
+  if (!companyName && !accountNumber) {
+    return { status: 'insufficient', reason: 'No matching customer was found, and the document does not have enough detail (no company/trading name and no account number) to identify or create a customer automatically.' }
   }
-  const customerNumber = accountNumber.replace(/[^a-z0-9]/gi, '').toUpperCase()
+  const customerNumber = accountNumber
+    ? accountNumber.replace(/[^a-z0-9]/gi, '').toUpperCase()
+    : `AUTO${genId('').replace(/[^0-9]/g, '').slice(-8)}`
   const row = {
-    id: genId('c'), company_name: companyName, contact_person: '',
+    id: genId('c'), company_name: companyName || `Account ${customerNumber}`, contact_person: '',
     email: importedCustomer.email || `${customerNumber}@pending.punjab.local`, phone: importedCustomer.phone || '',
     customer_number: customerNumber, password: `pending-${Math.random().toString(36).slice(2, 12)}`,
     address: [importedCustomer.address, importedCustomer.postcode].filter(Boolean).join(', '),
@@ -118,10 +125,20 @@ export async function resolveOrCreateCustomer(admin, table, importedCustomer) {
  *  invoice/credit note unattended, or should wait for an admin. `resolution`
  *  is resolveOrCreateCustomer()'s result - "ambiguous" and "insufficient"
  *  both route to needs_review, same as a missing invoice number or total. */
+// Only a warning that means the document genuinely cannot be safely turned
+// into an invoice/credit note unattended blocks auto-import - no product
+// rows at all (nothing to bill/credit). A totals-reconciliation gap (goods +
+// VAT vs the printed grand total - e.g. a porterage charge not folded into
+// "Total Goods"), or a missing optional field like the account number or
+// invoice date, is recorded on the created record as an informational note
+// instead of refusing an otherwise genuine invoice - see
+// generateAndAttachCanonicalPdf's caller and imported_metadata.totalsWarning.
+const BLOCKING_WARNING_PATTERN = /no product rows were found|no credited product rows were found/i
+
 export function assessConfidence(document, resolution) {
   const reasons = []
   if (resolution.status === 'ambiguous' || resolution.status === 'insufficient') reasons.push(resolution.reason)
-  if (document.warnings?.length) reasons.push(...document.warnings)
+  if (document.warnings?.length) reasons.push(...document.warnings.filter(warning => BLOCKING_WARNING_PATTERN.test(warning)))
   if (document.documentType === 'invoice') {
     if (!document.invoice.invoiceNumber) reasons.push('No invoice number was detected.')
     if (!(document.invoice.grandTotal > 0)) reasons.push('No positive invoice total was detected.')
@@ -129,6 +146,14 @@ export function assessConfidence(document, resolution) {
     if (!(Math.abs(document.creditNote.grandTotal) > 0)) reasons.push('No credit note total was detected.')
   }
   return { confident: reasons.length === 0, reasons }
+}
+
+/** The non-blocking warnings kept for admin visibility once a document is
+ *  confidently imported despite them (e.g. a totals mismatch) - stored on
+ *  the created invoice/credit note's imported_metadata so an admin can still
+ *  see exactly what was flagged, without it having refused the import. */
+export function softWarnings(document) {
+  return (document.warnings || []).filter(warning => !BLOCKING_WARNING_PATTERN.test(warning))
 }
 
 /** Generates the official Punjab Exotic Foods PDF for an already-saved
@@ -180,7 +205,7 @@ export async function createRecordFromImport(admin, table, document, customer, s
       id: genId('inv'), customer_id: customer.id, invoice_number: document.invoice.invoiceNumber,
       amount: document.invoice.grandTotal, due_date: due.toISOString().slice(0, 10), status: document.invoice.grandTotal > 0 ? 'Unpaid' : 'Paid',
       date: issueDate, amount_paid: 0, total_goods: document.invoice.totalGoods, total_vat: document.invoice.vat, packages: document.invoice.packages,
-      imported_metadata: { accountNumber: document.customer.accountNumber, deliveryAccount: document.invoice.deliveryAccount, salesman: document.invoice.salesman, vatSummary: document.vatSummary, source: 'email' },
+      imported_metadata: { accountNumber: document.customer.accountNumber, deliveryAccount: document.invoice.deliveryAccount, salesman: document.invoice.salesman, vatSummary: document.vatSummary, source: 'email', importWarnings: softWarnings(document) },
     }
     const { data: createdInvoice, error: createErr } = await admin.from(table('invoices')).insert(invoiceRow).select().single()
     if (createErr) throw createErr
@@ -208,7 +233,13 @@ export async function createRecordFromImport(admin, table, document, customer, s
     const workingBalance = (customerInvoices || []).filter(row => row.status !== 'Paid').reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0) - Number(row.amount_paid || 0)), 0)
     await admin.from(table('customers')).update({ balance: workingBalance }).eq('id', customer.id)
 
-    await notify(admin, table, { type: 'invoice_imported', title: 'New invoice imported', message: `Invoice ${createdInvoice.invoice_number} for ${customer.company_name} - £${Number(createdInvoice.amount).toFixed(2)}.`, targetType: 'invoice', targetId: createdInvoice.id })
+    const invoiceWarnings = softWarnings(document)
+    await notify(admin, table, {
+      type: 'invoice_imported',
+      title: invoiceWarnings.length ? 'Invoice imported - validation warning' : 'New invoice imported',
+      message: `Invoice ${createdInvoice.invoice_number} for ${customer.company_name} - £${Number(createdInvoice.amount).toFixed(2)}.${invoiceWarnings.length ? ` ${invoiceWarnings.join(' ')}` : ''}`,
+      targetType: 'invoice', targetId: createdInvoice.id,
+    })
 
     return { invoiceId: createdInvoice.id, fileId: officialFile.id }
   }
@@ -231,7 +262,7 @@ export async function createRecordFromImport(admin, table, document, customer, s
     date: document.creditNote.date, status: 'Active', remaining_balance: accountingAmount,
     original_invoice_reference: document.creditNote.originalInvoiceReference || null,
     total_goods: document.creditNote.totalGoods ?? 0, total_vat: document.creditNote.vat ?? 0,
-    imported_metadata: { accountNumber: document.customer.accountNumber, deliveryAccount: document.creditNote.deliveryAccount, salesman: document.creditNote.salesman, vatSummary: document.vatSummary, source: 'email' },
+    imported_metadata: { accountNumber: document.customer.accountNumber, deliveryAccount: document.creditNote.deliveryAccount, salesman: document.creditNote.salesman, vatSummary: document.vatSummary, source: 'email', importWarnings: softWarnings(document) },
   }
   const { data: createdNote, error: createErr } = await admin.from(table('credit_notes')).insert(creditRow).select().single()
   if (createErr) throw createErr
@@ -248,7 +279,13 @@ export async function createRecordFromImport(admin, table, document, customer, s
     sourceFile = await uploadFileServer(admin, table, { name: source.name, type: source.type, size: source.size, dataUri: source.dataUri, note: `Credit Notes: Original source for ${createdNote.credit_number} (email import)`, customerId: customer.id, customerName: customer.company_name, document: { creditNoteId: createdNote.id, creditNoteNumber: createdNote.credit_number, creditNoteAmount: createdNote.amount, documentRole: 'credit_note_source' } })
     await admin.from(table('credit_notes')).update({ source_document_id: sourceFile.id, source_file_name: sourceFile.name }).eq('id', createdNote.id)
   }
-  await notify(admin, table, { type: 'credit_note_imported', title: 'New credit note received', message: `Credit note ${createdNote.credit_number} for ${customer.company_name} - £${Number(createdNote.amount).toFixed(2)}.`, targetType: 'credit_note', targetId: createdNote.id })
+  const creditWarnings = softWarnings(document)
+  await notify(admin, table, {
+    type: 'credit_note_imported',
+    title: creditWarnings.length ? 'Credit note imported - validation warning' : 'New credit note received',
+    message: `Credit note ${createdNote.credit_number} for ${customer.company_name} - £${Number(createdNote.amount).toFixed(2)}.${creditWarnings.length ? ` ${creditWarnings.join(' ')}` : ''}`,
+    targetType: 'credit_note', targetId: createdNote.id,
+  })
 
   return { creditNoteId: createdNote.id, fileId: sourceFile?.id }
 }
