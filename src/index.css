@@ -3084,53 +3084,52 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lx-page {
   position: relative;
   width: 100%;
-  min-height: 100dvh;
+  height: 100dvh;
   display: flex;
   flex-direction: row;
-  justify-content: center;
-  align-items: center;
-  padding: 40px 20px;
+  align-items: stretch;
+  padding: 0;
   background: var(--green-950);
   color: #28332d;
+  overflow: hidden;
 }
 .lx-page::before { display: none; }
 .lx-card-wrap {
   position: relative;
   order: 2;
   z-index: 1;
-  width: min(36vw, 520px);
-  height: min(76dvh, 680px);
-  min-height: 600px;
+  flex: 1 1 46%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: 44px clamp(34px, 4vw, 64px);
+  padding: 44px clamp(34px, 4vw, 90px);
   border: 0;
-  border-radius: 0 18px 18px 0;
+  border-radius: 0;
   background: #fff;
-  box-shadow: 0 20px 48px rgba(6, 23, 15, 0.28);
+  box-shadow: none;
+  overflow-y: auto;
 }
 .lx-brand {
   position: relative;
   order: 1;
   z-index: 1;
-  width: min(48vw, 680px);
-  height: min(76dvh, 680px);
-  min-height: 600px;
+  flex: 1 1 54%;
+  height: 100%;
   max-width: none;
   min-width: 0;
-  padding: 46px clamp(42px, 5vw, 76px);
+  padding: 46px clamp(42px, 5vw, 90px);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 22px;
+  gap: 26px;
   overflow: hidden;
-  border-radius: 18px 0 0 18px;
+  border-radius: 0;
   color: #fff;
-  background: linear-gradient(160deg, var(--green-500) 0%, var(--green-700) 60%, var(--green-900) 100%);
-  box-shadow: 0 20px 48px rgba(6, 23, 15, 0.28);
+  background: linear-gradient(160deg, var(--green-500) 0%, var(--green-700) 55%, var(--green-950) 100%);
+  box-shadow: none;
 }
 .lx-brand .lx-fruit { position: absolute; z-index: 0; }
 .lx-stat-card { position: absolute; z-index: 2; padding: 10px 13px; border-radius: 10px; background: #fff; box-shadow: 0 14px 30px rgba(6,23,15,.28); color: #1c2b22; }
@@ -3150,8 +3149,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lx-brand-btns { display: none; }
 .lx-card {
   width: 100%;
-  max-width: 340px;
-  max-height: calc(min(76dvh, 680px) - 88px);
+  max-width: 380px;
+  max-height: 100%;
   padding: 0;
   overflow-y: auto;
   border: 0;
@@ -3227,7 +3226,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lx-auth-footer a { color: #a0a7b0; }
 .lx-auth-footer a:hover { color: var(--green-600); }
 .lx-page :where(button, input, select, textarea, a):focus-visible { outline-color: rgba(32,122,66,.3); }
-.lx-card-signup { max-height: calc(min(76dvh, 680px) - 40px); padding-right: 7px; }
+.lx-card-signup { max-height: 100%; padding-right: 7px; }
 .lx-card-signup .lx-form-brand { margin-bottom: 12px; padding-bottom: 8px; }
 .lx-card-signup > .lx-back { margin: -8px 0 12px; }
 .lx-card-wrap:has(.lx-card-signup) .lx-auth-footer { display: none; }
