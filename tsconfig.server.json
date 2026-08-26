@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "server-dist",
+    "rootDir": "src",
+    "declaration": false,
+    "sourceMap": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noEmit": false,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/lib/invoiceImport.ts", "src/lib/importMatching.ts", "src/types/index.ts"]
+}

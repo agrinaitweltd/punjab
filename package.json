@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "test:finance": "node scripts/test-finance-workflows.mjs",
     "test:credit-accounting": "node scripts/test-credit-accounting.mjs",
     "test:invoice-parser": "node scripts/test-invoice-parser.mjs",

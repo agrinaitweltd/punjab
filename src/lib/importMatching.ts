@@ -1,4 +1,4 @@
-import type { Customer, CreditNote, Invoice } from '../types'
+import type { Customer, CreditNote, Invoice } from '../types/index.js'
 
 export function normalizeAccountNumber(value = '') {
   return value.replace(/[^a-z0-9]/gi, '').toLowerCase()

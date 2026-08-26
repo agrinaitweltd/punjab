@@ -4,7 +4,11 @@
 // the browser's anon-key/RLS-bound one (that client can't run outside the
 // browser - see invoiceImport.ts/importMatching.ts for the parsing/matching
 // logic this reuses unchanged).
-import { matchImportedCustomer, findDuplicateInvoice, findDuplicateCreditNote } from '../../src/lib/importMatching.ts'
+// Compiled from src/lib/importMatching.ts by `tsc -p tsconfig.server.json`
+// (part of `npm run build`) - Vercel's Node runtime executes API functions
+// as plain ESM without transpiling arbitrary .ts imports, so this can't
+// import the .ts source directly the way the Vite/browser bundle does.
+import { matchImportedCustomer, findDuplicateInvoice, findDuplicateCreditNote } from '../../server-dist/lib/importMatching.js'
 import { buildInvoiceDocx } from '../canonicalInvoiceDocx.js'
 import { buildOfficialInvoicePdf } from '../canonicalInvoicePdf.js'
 

@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 import { simpleParser } from 'mailparser'
 import { openImapConnection } from './imap-client.js'
 import { extractPdfTextLines } from './extract-pdf-text.js'
-import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../src/lib/invoiceImport.ts'
+// Compiled from src/lib/invoiceImport.ts by `tsc -p tsconfig.server.json`
+// (part of `npm run build`) - see create-records.js's comment on the same
+// import for why the raw .ts source can't be imported directly here.
+import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../server-dist/lib/invoiceImport.js'
 import { assessConfidence, createRecordFromImport, matchImportedCustomer, safeFileName, uploadFileServer, MAX_FILE_BYTES } from './create-records.js'
 
 const SCAN_WINDOW_DAYS = 14 // bounds the IMAP search; the (message_id, attachment_filename) unique row is what actually prevents reprocessing

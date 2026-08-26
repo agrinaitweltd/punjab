@@ -300,7 +300,7 @@ function fileToDataUri(file: File): Promise<string> {
 // pdfjs-dist/tesseract.js/canvas dependency graph - it's only resolved when
 // one of these two browser-facing functions actually runs.
 async function extractLines(file: File, onProgress?: (message: string) => void): Promise<string[]> {
-  const { extractDocumentLines } = await import('./statementImport')
+  const { extractDocumentLines } = await import('./statementImport.js')
   return extractDocumentLines(file, onProgress)
 }
 
