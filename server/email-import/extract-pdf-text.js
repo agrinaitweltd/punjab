@@ -11,6 +11,7 @@
 // browser DOM - there's no server equivalent here). A PDF with no
 // extractable text layer (a pure scan) comes back with zero lines; the
 // caller treats that as "needs review" rather than guessing.
+import './dommatrix-polyfill.js'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 export async function extractPdfTextLines(buffer) {
