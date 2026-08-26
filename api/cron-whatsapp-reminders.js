@@ -1,5 +1,11 @@
+import { timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { brandedEmail, sendTransactionalEmail, summaryTable } from '../server/email-system.js'
+
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b))
+}
 
 const ULTRAMSG_BASE = 'https://api.ultramsg.com/instance186201'
 const OVERDUE_BUCKETS = [1, 3, 7, 14]
@@ -70,7 +76,10 @@ export function storedInvoicePdf(files, invoice) {
 
 export default async function handler(req, res) {
   const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret || req.headers?.authorization !== `Bearer ${cronSecret}`) return res.status(401).json({ error: 'Unauthorized' })
+  const headerToken = String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '')
+  const queryToken = typeof req.query?.key === 'string' ? req.query.key : ''
+  const authorized = Boolean(cronSecret) && (safeEqual(headerToken, cronSecret) || safeEqual(queryToken, cronSecret))
+  if (!authorized) return res.status(401).json({ error: 'Unauthorized' })
   const url = process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return res.status(500).json({ error: 'Server-side Supabase is not configured' })
