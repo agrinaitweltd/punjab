@@ -18,7 +18,10 @@ const SUMMARY_RECIPIENTS = ['info@punjabexoticfoods.co.uk', 'info@kavotech.uk']
  *  correct for GMT or BST automatically via ukLocalParts), and only once
  *  per UK-local calendar day (tracked in health_check_runs) even if the
  *  hourly fire and the 21:00 check line up more than once due to retries.
- *  Pass ?force=1 to run immediately regardless of time/day, for testing. */
+ *  Pass ?force=1 to run immediately regardless of time/day, for testing.
+ *  Pass ?test=1 to additionally send the summary only to info@kavotech.uk
+ *  (never the real business inbox) and skip health_check_runs entirely, so
+ *  a manual test send never blocks or gets blocked by tonight's real run. */
 export default async function handler(req, res) {
   const cronSecret = process.env.CRON_SECRET
   const headerToken = String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '')
@@ -26,7 +29,8 @@ export default async function handler(req, res) {
   const authorized = Boolean(cronSecret) && (safeEqual(headerToken, cronSecret) || safeEqual(queryToken, cronSecret))
   if (!authorized) return res.status(401).json({ error: 'Unauthorized' })
 
-  const force = req.query?.force === '1'
+  const testSend = req.query?.test === '1'
+  const force = req.query?.force === '1' || testSend
   const { hour, dateKey } = ukLocalParts()
   if (!force && hour !== 21) return res.status(200).json({ skipped: true, reason: `not 21:00 Europe/London (currently ${hour}:00 there)` })
 
@@ -45,7 +49,7 @@ export default async function handler(req, res) {
 
   try {
     const { summary, issues } = await runHealthCheck(admin, table)
-    await admin.from('health_check_runs').upsert({ id: dateKey, ran_at: new Date().toISOString(), summary })
+    if (!testSend) await admin.from('health_check_runs').upsert({ id: dateKey, ran_at: new Date().toISOString(), summary })
 
     const fixed = issues.filter(item => item.severity === 'fixed')
     const review = issues.filter(item => item.severity === 'review')
@@ -74,13 +78,15 @@ export default async function handler(req, res) {
       : ''
 
     const html = brandedEmail({
-      heading: 'Daily System Summary', preheader: `${dateKey} - ${summary.errorsFound} issue(s), ${fixed.length} auto-fixed`,
-      intro: `Production summary for ${dateKey}${testMode ? ' (Test Mode - sandbox data)' : ''}.`,
+      heading: testSend ? 'Daily System Summary (MANUAL TEST SEND)' : 'Daily System Summary', preheader: `${dateKey} - ${summary.errorsFound} issue(s), ${fixed.length} auto-fixed`,
+      intro: `${testSend ? 'TEST SEND - this is a manual trigger, not the automated 21:00 UK run. ' : ''}Production summary for ${dateKey}${testMode ? ' (Test Mode - sandbox data)' : ''}.`,
       contentHtml: `${summaryTable(rows)}${fixedHtml}${exceptionsHtml}`,
     })
-    const sent = await sendTransactionalEmail({ category: 'system', to: SUMMARY_RECIPIENTS, subject: `Punjab Exotic Foods - Daily System Summary (${dateKey})`, html, admin, createdBy: 'Nightly health check' })
+    const recipients = testSend ? ['info@kavotech.uk'] : SUMMARY_RECIPIENTS
+    const subject = `${testSend ? '[TEST] ' : ''}Punjab Exotic Foods - Daily System Summary (${dateKey})`
+    const sent = await sendTransactionalEmail({ category: 'system', to: recipients, subject, html, admin, createdBy: testSend ? 'Manual health check test' : 'Nightly health check' })
 
-    return res.status(200).json({ ok: true, dateKey, testMode, summary, issueCount: issues.length, emailSent: sent.ok })
+    return res.status(200).json({ ok: true, dateKey, testMode, testSend, summary, issueCount: issues.length, emailSent: sent.ok })
   } catch (error) {
     console.error('cron-nightly-health-check failed', error instanceof Error ? error.message : 'Unknown error')
     return res.status(502).json({ error: 'The health check could not complete. See server logs for detail.' })
