@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { Customer, Invoice } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
-import { listFiles, uploadFile, deleteFile, renameFile, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
+import { listFiles, uploadFile, deleteFile, renameFile, getFileById, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
+import { getStatements } from "../../lib/statementsService"
+import type { StatementRecord } from "../../lib/secureAdminApi"
 import { confirmAction } from "../../lib/appDialogs"
 import { supabase } from "../../lib/supabase"
 import { runtimeTable } from "../../lib/runtimeMode"
@@ -57,12 +59,15 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
       system-created document (canonical invoice PDFs, credit notes,
       statements), as distinct from browsing uploaded source files folder by
       folder below. */
-  const [view, setView] = useState<'folders' | 'generated'>('folders')
+  const [view, setView] = useState<'folders' | 'generated' | 'statements'>('folders')
+  const [statements, setStatements] = useState<StatementRecord[]>([])
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async (showSpinner = true) => {
     if (showSpinner) setLoading(true)
-    setFiles(await listFiles())
+    const [fileList, statementList] = await Promise.all([listFiles(), getStatements()])
+    setFiles(fileList)
+    setStatements(statementList)
     if (showSpinner) setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -173,9 +178,64 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
       <div className="invoice-tabs">
         <button className={`invoice-tab${view === 'folders' ? ' active' : ''}`} onClick={() => setView('folders')}>By Customer</button>
         <button className={`invoice-tab${view === 'generated' ? ' active' : ''}`} onClick={() => setView('generated')}>All Invoice/Credit Note Documents</button>
+        <button className={`invoice-tab${view === 'statements' ? ' active' : ''}`} onClick={() => setView('statements')}>
+          Statements{statements.length > 0 ? ` (${statements.length})` : ''}
+        </button>
       </div>
 
-      {view === 'generated' ? (
+      {view === 'statements' ? (
+        <div className="doc-content" style={{ width: '100%' }}>
+          <p style={{ fontSize: 12.5, color: "#6b7a70", margin: "0 0 12px" }}>
+            Customer statements are kept as documents and reconciliation records only — they never create invoices,
+            payments or credit notes, so a statement can't double-count a customer's balance.
+          </p>
+          <div className="ps-table-wrap">
+            <table className="ps-table">
+              <thead>
+                <tr><th>Customer</th><th>Account No.</th><th>Statement Date</th><th>Invoices</th><th>Outstanding</th><th>Reconciliation</th><th>Source</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
+              </thead>
+              <tbody>
+                {statements.map(st => {
+                  const tone = st.reconciliation_status === 'reconciled'
+                    ? { background: '#dcfce7', color: '#15803d', label: 'Reconciled' }
+                    : st.reconciliation_status === 'unmatched_customer'
+                      ? { background: '#fee2e2', color: '#b91c1c', label: 'No customer matched' }
+                      : { background: '#fef3c7', color: '#b45309', label: 'Requires review' }
+                  return (
+                    <tr key={st.id} className="ps-row">
+                      <td><div className="fl-name">{st.customer_name ?? 'Unmatched'}</div></td>
+                      <td>{st.account_number ?? '—'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{st.statement_date ?? '—'}</td>
+                      <td>{st.invoice_count}</td>
+                      <td><strong>£{Number(st.total_outstanding ?? 0).toFixed(2)}</strong></td>
+                      <td>
+                        <span className="ps-badge" style={{ background: tone.background, color: tone.color }}>{tone.label}</span>
+                        {st.reconciliation_notes?.length > 0 && (
+                          <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 3, maxWidth: 300 }}>
+                            {st.reconciliation_notes.map(n => n.text).join(' ')}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ textTransform: 'capitalize' }}>{st.import_source}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          {st.source_document_id && (
+                            <Button variant="secondary" className="btn-sm" onClick={async () => {
+                              const file = await getFileById(st.source_document_id!)
+                              if (file) setPreview(file)
+                            }}>View</Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {statements.length === 0 && <div className="db-empty">No customer statements received yet.</div>}
+          </div>
+        </div>
+      ) : view === 'generated' ? (
         <div className="doc-content" style={{ width: '100%' }}>
           <div className="ps-search-wrap" style={{ margin: "0 0 12px", maxWidth: 340 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>

@@ -3,8 +3,8 @@ import type { Customer, Invoice } from '../../types'
 import { invoiceOutstanding } from '../../lib/creditNotes'
 import { listFiles, type StoredFile } from '../../lib/fileService'
 
-export function GlobalSearchPage({ customers, invoices, onNavigate }: { customers:Customer[]; invoices:Invoice[]; onNavigate:(page:string)=>void }) {
-  const [query,setQuery]=useState(''), [files,setFiles]=useState<StoredFile[]>([])
+export function GlobalSearchPage({ customers, invoices, onNavigate, initialQuery = '' }: { customers:Customer[]; invoices:Invoice[]; onNavigate:(page:string)=>void; initialQuery?:string }) {
+  const [query,setQuery]=useState(initialQuery), [files,setFiles]=useState<StoredFile[]>([])
   // listFiles() pulls every stored document's full base64 data out of
   // activity_log - multiple MB. Only fetch it once the user actually types a
   // search, and only once per visit (not on every keystroke).

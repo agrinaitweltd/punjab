@@ -65,7 +65,10 @@ const adminNavigation: NavigationGroup[] = [
   { key: "system-group", label: "System Management", icon: "settings", children: [
     { key: "system-overview", label: "System Overview", icon: "dashboard", access: "systemDeveloper" },
     { key: "system-users", label: "Users", icon: "admin", access: "systemDeveloper" },
-    { key: "login-activity", label: "Login Activity", icon: "clock", access: "systemDeveloper" },
+    // Visible to every active admin (no `access` gate) so an admin can audit
+    // security activity on their own account - the endpoint and RLS behind
+    // it allow the same, and the log contains no secrets.
+    { key: "login-activity", label: "Login Activity", icon: "clock" },
     { key: "audit-logs", label: "Audit Logs", icon: "documents", access: "systemDeveloper" },
     { key: "error-log", label: "Error Log", icon: "documents", access: "systemDeveloper" },
     { key: "test-mode", label: "Test Mode", icon: "settings", access: "systemDeveloper" },

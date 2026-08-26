@@ -21,6 +21,7 @@ export function AppLayout({
   onOpenNotification,
   notifCount,
   onBellClick,
+  onSearch,
   onDayEnd,
 }: {
   role: UserRole
@@ -37,6 +38,7 @@ export function AppLayout({
   /** Legacy simple unread-count bell, still used by the customer portal. */
   notifCount?: number
   onBellClick?: () => void
+  onSearch?: (term: string) => void
   onDayEnd?: () => void
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -101,6 +103,7 @@ export function AppLayout({
           onOpenNotification={onOpenNotification}
           notifCount={notifCount}
           onBellClick={onBellClick}
+          onSearch={onSearch}
         />
         <main className="content">{children}</main>
         <div style={{ padding: '8px 24px', fontSize: 11.5, color: '#9ca3af', textAlign: 'right', borderTop: '1px solid #eef1ee' }}>

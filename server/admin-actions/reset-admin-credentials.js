@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { guardApi, safeError } from '../security.js'
 import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js'
+import { recordSecurityEvent } from '../security-audit.js'
 import { brandedEmail, sendTransactionalEmail } from '../email-system.js'
 
 // Resets an existing administrator's Supabase Auth password and sends a
@@ -50,6 +51,11 @@ export default async function handler(req, res) {
     })
     if (!message.ok) throw new Error(message.error || 'Setup link delivery failed')
     await writeSystemAudit(admin, user.id, 'admin_credentials_reset', 'admin_staff', id, { email: target.data.email })
+    // Security-log the reset against the AFFECTED admin, noting who did it.
+    await recordSecurityEvent(admin, req, {
+      eventType: 'credentials_reset', email: target.data.email, accountId: id,
+      details: { resetBy: user.email || user.id },
+    })
     return res.status(200).json({ ok: true })
   } catch (error) {
     console.error('reset-admin-credentials failed', error instanceof Error ? error.message : 'Unknown error')

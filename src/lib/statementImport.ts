@@ -111,7 +111,7 @@ function parseLine(line: string): StatementRow | null {
   return invoiceNumber ? { date: iso, invoiceNumber, amount, raw: normaliseLine(line) } : null
 }
 
-function recognisePunjabStatement(lines: string[]) {
+export function recognisePunjabStatement(lines: string[]) {
   const text = lines.map(normaliseLine).join("\n")
   const markers = [
     /Punjab Exotic Foods Ltd/i, /Stmt\s*Date/i, /Acc(?:ount)?\s*No/i, /S\s*T\s*A\s*T\s*E\s*M\s*E\s*N\s*T|STATEMENT/i,
@@ -133,7 +133,7 @@ function deriveCustomer(lines: string[]) {
   return { name: block[0] ?? "", address: block.slice(1).filter(l => l !== postcode), postcode }
 }
 
-function parsePunjabCustomerStatement(lines: string[]): PunjabStatement | null {
+export function parsePunjabCustomerStatement(lines: string[]): PunjabStatement | null {
   const headingLineIndex = lines.findIndex(l => /Inv Date/i.test(l) && /Inv No/i.test(l) && /GoodsAmt/i.test(l))
   if (headingLineIndex < 0) return null
   const heading = lines[headingLineIndex]

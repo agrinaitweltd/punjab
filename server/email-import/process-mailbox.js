@@ -7,6 +7,7 @@ import { extractPdfTextLines } from './extract-pdf-text.js'
 // import for why the raw .ts source can't be imported directly here.
 import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../server-dist/lib/invoiceImport.js'
 import { assessConfidence, createRecordFromImport, resolveOrCreateCustomer, safeFileName, uploadFileServer, notify, MAX_FILE_BYTES } from './create-records.js'
+import { recognisePunjabStatement, createStatementFromImport } from './statements.js'
 
 const SCAN_WINDOW_DAYS = 14 // bounds the IMAP search; the (message_id, attachment_filename) unique row is what actually prevents reprocessing
 const MAX_MESSAGE_DOWNLOAD_BYTES = 20 * 1024 * 1024
@@ -88,9 +89,26 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
       return 'needs_review'
     }
 
+    const dataUri = `data:application/pdf;base64,${attachment.content.toString('base64')}`
+
+    // Statements are a third document type and must never be processed as
+    // an invoice - they summarise transactions that mostly already exist,
+    // so importing one as an invoice would double-count the customer's
+    // balance. Checked before invoice/credit-note parsing because a
+    // statement's header can otherwise look invoice-ish.
+    if (recognisePunjabStatement(lines)) {
+      const statementSource = { name: filename, type: 'application/pdf', size, dataUri }
+      const result = await createStatementFromImport(admin, table, lines, statementSource)
+      await admin.from(table('email_imports')).update({
+        status: 'imported', document_type: 'statement', statement_id: result.statementId,
+        detected_customer_id: result.customerId, detected_customer_name: result.customerName,
+        file_id: result.fileId || null, error_message: null, processed_at: new Date().toISOString(),
+      }).eq('id', baseRow.id)
+      return 'imported'
+    }
+
     const documentType = detectImportDocumentType(lines)
     const document = documentType === 'credit_note' ? parseCreditNoteLines(lines) : parseLegacyInvoiceLines(lines)
-    const dataUri = `data:application/pdf;base64,${attachment.content.toString('base64')}`
     document.source = { name: filename, type: 'application/pdf', size, dataUri }
 
     // Resolve to an existing customer, or create one from the document's own
@@ -231,6 +249,20 @@ export async function retryEmailImport(admin, table, emailImportId, customerIdOv
 
   const lines = await extractPdfTextLines(buffer)
   if (!lines.length) throw new Error('No extractable text was found in this PDF. Open it from Files and import it manually instead.')
+
+  // A statement that was previously misfiled as an invoice (before
+  // statement recognition existed) is re-routed correctly on retry.
+  if (recognisePunjabStatement(lines)) {
+    const statementSource = { name: row.attachment_filename, type: 'application/pdf', size: row.attachment_size, dataUri: fileRow.action }
+    const result = await createStatementFromImport(admin, table, lines, statementSource)
+    await admin.from(table('email_imports')).update({
+      status: 'imported', document_type: 'statement', statement_id: result.statementId,
+      detected_customer_id: result.customerId, detected_customer_name: result.customerName,
+      file_id: result.fileId || row.file_id, error_message: null, processed_at: new Date().toISOString(),
+    }).eq('id', row.id)
+    return { status: 'imported', statementId: result.statementId }
+  }
+
   const documentType = detectImportDocumentType(lines)
   const document = documentType === 'credit_note' ? parseCreditNoteLines(lines) : parseLegacyInvoiceLines(lines)
   document.source = { name: row.attachment_filename, type: 'application/pdf', size: row.attachment_size, dataUri: fileRow.action }

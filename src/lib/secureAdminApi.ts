@@ -86,6 +86,46 @@ export async function rejectReviewedDocument(id: string, reason?: string) {
   return api<{ ok: true; status: string }>('/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ op: 'reject', id, reason }) })
 }
 
+export type LoginActivityEvent = {
+  id: string
+  event_type: string
+  email: string | null
+  role: string | null
+  login_at: string
+  success: boolean
+  failure_code: string | null
+  user_agent_summary: string | null
+  ip_hash: string | null
+  details: Record<string, unknown>
+  recorded_by: string
+  account_id: string | null
+}
+export async function getLoginActivity(filters: { eventType?: string; email?: string; success?: string; from?: string; to?: string } = {}) {
+  const params = new URLSearchParams({ action: 'login-activity' })
+  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value)
+  return api<{ events: LoginActivityEvent[]; suspicious: Array<{ email: string; failedCount: number }> }>(
+    `/api/admin-security?${params.toString()}`, { method: 'GET' },
+  )
+}
+
+export type StatementRecord = {
+  id: string
+  customer_id: string | null
+  customer_name: string | null
+  account_number: string | null
+  statement_date: string | null
+  total_invoiced: number | null
+  total_paid: number | null
+  total_outstanding: number | null
+  invoice_count: number
+  reconciliation_status: 'reconciled' | 'needs_review' | 'unmatched_customer'
+  reconciliation_notes: Array<{ type: string; text: string }>
+  source_document_id: string | null
+  source_file_name: string | null
+  import_source: string
+  created_at: string
+}
+
 export type DatabaseResetStatus = { pinConfigured: boolean; pinSetAt: string | null; tables: string[] }
 export async function getDatabaseResetStatus() { return api<DatabaseResetStatus>('/api/admin-security?action=database-reset', { method: 'GET' }) }
 export async function setDatabaseResetPin(pin: string, sensitiveToken: string) {

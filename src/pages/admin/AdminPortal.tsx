@@ -141,6 +141,7 @@ import { GlobalSearchPage } from './GlobalSearchPage'
 import { CommunicationHistoryPage } from './CommunicationHistoryPage'
 import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { DatabaseResetPage } from './DatabaseResetPage'
+import { LoginActivityPage } from './LoginActivityPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
 import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, type EmailImportRow } from '../../lib/secureAdminApi'
 import { EmailImportsPage } from './EmailImportsPage'
@@ -183,6 +184,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationDeliveryLog[]>([])
   const [emailImports, setEmailImports] = useState<EmailImportRow[]>([])
   const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [globalSearchTerm, setGlobalSearchTerm] = useState('')
 
   const load = useCallback(async () => {
     const [
@@ -677,8 +679,12 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       )
     }
 
-    if (current === 'global-search') return <GlobalSearchPage customers={customers} invoices={invoices} onNavigate={navigate} />
-    if (['system-overview', 'system-users', 'login-activity', 'audit-logs', 'error-log', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
+    if (current === 'global-search') return <GlobalSearchPage key={globalSearchTerm} customers={customers} invoices={invoices} onNavigate={navigate} initialQuery={globalSearchTerm} />
+    // Login Activity is available to every active admin, not just System
+    // Developers - an admin needs to be able to audit activity on their own
+    // account. The endpoint and RLS policy behind it allow the same.
+    if (current === 'login-activity') return <LoginActivityPage />
+    if (['system-overview', 'system-users', 'audit-logs', 'error-log', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
       return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
     }
     if (current === 'database-reset') {
@@ -1527,6 +1533,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       onMarkNotificationRead={handleMarkNotificationRead}
       onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
       onOpenNotification={handleOpenNotification}
+      onSearch={term => { setGlobalSearchTerm(term); navigate('global-search') }}
       onDayEnd={dayEnd}
     >
       {page()}

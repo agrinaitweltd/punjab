@@ -5,6 +5,7 @@ const handlers = {
   'download-backup': () => import('../server/admin-actions/download-backup.js'),
   'email-imports': () => import('../server/admin-actions/email-imports.js'),
   'invite-admin': () => import('../server/admin-actions/invite-admin.js'),
+  'login-activity': () => import('../server/admin-actions/login-activity.js'),
   'invite-customer': () => import('../server/admin-actions/invite-customer.js'),
   'manage-admin': () => import('../server/admin-actions/manage-admin.js'),
   'record-login': () => import('../server/admin-actions/record-login.js'),

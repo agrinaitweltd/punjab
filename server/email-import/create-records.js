@@ -148,7 +148,16 @@ export function assessConfidence(document, resolution) {
   if (document.warnings?.length) reasons.push(...document.warnings.filter(warning => BLOCKING_WARNING_PATTERN.test(warning)))
   if (document.documentType === 'invoice') {
     if (!document.invoice.invoiceNumber) reasons.push('No invoice number was detected.')
-    if (!(document.invoice.grandTotal > 0)) reasons.push('No positive invoice total was detected.')
+    // A net-negative invoice total means the document reverses more than it
+    // charges - i.e. it is really a credit adjustment. That is a genuine
+    // accounting decision (record as a credit note? offset an earlier
+    // invoice?), so it always goes to a human rather than being imported as
+    // an "invoice" for a negative amount or silently flipped positive.
+    if (document.invoice.grandTotal < 0) {
+      reasons.push(`This document is a net credit of £${Math.abs(document.invoice.grandTotal).toFixed(2)} (its reversal lines exceed its charges). Confirm in Review Invoice whether it should be recorded as a credit note.`)
+    } else if (!(document.invoice.grandTotal > 0)) {
+      reasons.push('No positive invoice total was detected.')
+    }
     // A negative quantity/price/goods value on an invoice is never silently
     // auto-corrected or auto-imported as-is - it always needs an admin's eyes
     // in Review Invoice, since it could be a genuine sign error (would

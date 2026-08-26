@@ -283,21 +283,28 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The goods total plus VAT does not match the grand total - the printed Grand Total has been used as-is.')
   if (items.length && Math.abs(items.reduce((sum, item) => sum + item.goodsValue, 0) - totalGoods) > TOTALS_TOLERANCE) warnings.push('The product values do not match the goods total - the printed Total Goods has been used as-is.')
 
-  // Negative quantity/price/goods value on an INVOICE is almost always a PDF
-  // extraction sign artefact (never a legitimate negative charge) - but it is
-  // never silently flipped to positive here. Flagged for the admin to
-  // confirm during Review Invoice instead (see suspiciousNegative on each
-  // item and the summary warning below). Credit notes are handled entirely
-  // separately in parseCreditNoteLines and never get this treatment, since
-  // negative values there are a normal part of the source document.
-  const negativeLines: string[] = []
-  for (const item of items) {
-    if (item.quantity < 0 || item.price < 0 || item.goodsValue < 0) {
-      item.suspiciousNegative = true
-      negativeLines.push(item.line)
-    }
+  // A negative quantity/price/goods value on an INVOICE is usually
+  // INTENTIONAL, not an extraction artefact: Punjab's system re-prices a
+  // line by posting a reversal line (negative, at the old price) followed
+  // immediately by the corrected line (positive, at the new price), and the
+  // printed totals already account for both. Verified against real
+  // production invoices - e.g. "-120 VINE TOMATO @ 7.00 = -840" followed by
+  // "120 VINE TOMATO @ 6.00 = 720", printed Total Goods -120.
+  //
+  // So negatives are only treated as suspicious when the line values do NOT
+  // reconcile with the printed Total Goods - i.e. when the sign really does
+  // look like a parsing artefact rather than a deliberate reversal.
+  // Flipping every negative to positive unconditionally would turn genuine
+  // credits into charges (that VINE TOMATO example would become a £1,560
+  // charge instead of a £120 credit), so it is never done automatically.
+  // Credit notes are parsed separately and never get this treatment at all.
+  const itemsGoodsSum = items.reduce((sum, item) => sum + item.goodsValue, 0)
+  const linesReconcile = items.length > 0 && Math.abs(itemsGoodsSum - totalGoods) <= TOTALS_TOLERANCE
+  const negativeItems = items.filter(item => item.quantity < 0 || item.price < 0 || item.goodsValue < 0)
+  if (negativeItems.length && !linesReconcile) {
+    for (const item of negativeItems) item.suspiciousNegative = true
+    warnings.push(`Negative quantity/price/goods value on line(s) ${negativeItems.map(i => i.line).join(', ')} does not reconcile with the printed Total Goods - confirm during review before approving.`)
   }
-  if (negativeLines.length) warnings.push(`Negative quantity/price/goods value detected on line(s) ${negativeLines.join(', ')} - confirm during review before approving.`)
 
   return {
     documentType: 'invoice',

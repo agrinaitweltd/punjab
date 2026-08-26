@@ -2325,6 +2325,21 @@ tbody tr:hover td { background: #fafbfc; }
 .ho-chip.neutral { background: #f3f4f6; color: #6b7280; }
 .ho-foot-note { font-size: 11px; color: var(--text-muted); }
 
+/* Top-nav global search — pill-shaped with a leading icon, as in the
+   reference. Hidden below 900px so the title/actions keep their room. */
+.tb-search {
+  display: flex; align-items: center; gap: 8px; flex: 0 1 320px; margin-left: auto; margin-right: 12px;
+  padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: #fff;
+  color: var(--text-muted); transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tb-search:focus-within { border-color: var(--green-400); box-shadow: 0 0 0 3px rgba(52,176,85,0.10); }
+.tb-search input {
+  border: none; outline: none; background: transparent; font-family: inherit;
+  font-size: 13px; color: var(--text); width: 100%; min-width: 0;
+}
+.tb-search input::placeholder { color: #9aa4ae; }
+@media (max-width: 900px) { .tb-search { display: none; } }
+
 /* ══════════════════════════════════════════════════════════════════════
    Finance dashboard ("fp") — matched to the supplied Finpay reference:
    Inter, #2563EB primary, 20px card radius, soft shadows, no hard borders.

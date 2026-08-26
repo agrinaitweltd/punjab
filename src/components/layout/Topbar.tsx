@@ -1,5 +1,6 @@
+import { useState } from "react"
 import type { AppNotification, User } from "../../types"
-import { Bell, LogOut, Menu } from "lucide-react"
+import { Bell, LogOut, Menu, Search } from "lucide-react"
 import { NotificationsPanel } from "./NotificationsPanel"
 
 const PAGE_LABELS: Record<string, string> = {
@@ -22,7 +23,7 @@ const PAGE_LABELS: Record<string, string> = {
   "system-health": "Integrations & Health", security: "Security",
 }
 
-export function Topbar({ user, onLogout, current, onMenuOpen, notifications, onMarkNotificationRead, onMarkAllNotificationsRead, onOpenNotification, notifCount, onBellClick }: {
+export function Topbar({ user, onLogout, current, onMenuOpen, notifications, onMarkNotificationRead, onMarkAllNotificationsRead, onOpenNotification, notifCount, onBellClick, onSearch }: {
   user: User; onLogout: () => void; current?: string
   onMenuOpen?: () => void
   notifications?: AppNotification[]
@@ -33,15 +34,33 @@ export function Topbar({ user, onLogout, current, onMenuOpen, notifications, onM
       (which has no real notification feed, just order/ticket unseen counts). */
   notifCount?: number
   onBellClick?: () => void
+  onSearch?: (term: string) => void
 }) {
   const title = current ? (PAGE_LABELS[current] ?? current.charAt(0).toUpperCase() + current.slice(1)) : "Dashboard"
   const count = notifCount ?? 0
+  const [searchTerm, setSearchTerm] = useState("")
   return (
     <header className="topbar">
       <button className="tb-hamburger" onClick={onMenuOpen} aria-label="Open menu">
         <Menu size={18} strokeWidth={2} />
       </button>
       <h1 className="topbar-title">{title}</h1>
+      {/* Global search, matching the reference's top-nav search. Admin only -
+          it routes into the existing Global Search page; the customer portal
+          has no equivalent destination. Hidden on narrow screens so it
+          doesn't squeeze the title and actions on mobile. */}
+      {onSearch && (
+        <form
+          className="tb-search"
+          onSubmit={event => { event.preventDefault(); if (searchTerm.trim()) onSearch(searchTerm.trim()) }}
+        >
+          <Search size={14} strokeWidth={2} />
+          <input
+            value={searchTerm} onChange={event => setSearchTerm(event.target.value)}
+            placeholder="Search customers, invoices…" aria-label="Search"
+          />
+        </form>
+      )}
       <div className="topbar-actions">
         {notifications && onMarkNotificationRead && onMarkAllNotificationsRead && onOpenNotification ? (
           <NotificationsPanel notifications={notifications} onMarkRead={onMarkNotificationRead} onMarkAllRead={onMarkAllNotificationsRead} onOpen={onOpenNotification} />
