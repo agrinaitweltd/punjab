@@ -76,6 +76,9 @@ export async function getDatabaseResetStatus() { return api<DatabaseResetStatus>
 export async function setDatabaseResetPin(pin: string, sensitiveToken: string) {
   return api<{ ok: true }>('/api/admin-security?action=database-reset', { method: 'POST', body: JSON.stringify({ step: 'set-pin', pin }) }, sensitiveToken)
 }
+export async function verifyDatabaseResetPin(pin: string) {
+  return api<{ ok: true }>('/api/admin-security?action=database-reset', { method: 'POST', body: JSON.stringify({ step: 'verify-pin', pin }) })
+}
 export async function requestDatabaseResetCode() {
   return api<{ ok: true; sentTo: string }>('/api/admin-security?action=database-reset', { method: 'POST', body: JSON.stringify({ step: 'request-code' }) })
 }

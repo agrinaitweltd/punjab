@@ -474,7 +474,6 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     const accounts = new Set(documents.map(document => document.customer.accountNumber.replace(/[^a-z0-9]/gi, '').toLowerCase()).filter(Boolean))
     if (accounts.size > 1) throw new Error('The selected documents belong to different customer accounts.')
     let customer = matchImportedCustomer(customers, importedCustomer)
-    const isNewCustomer = !customer
     if (!customer && documents.every(document => document.documentType === 'credit_note')) {
       throw new Error('Create the customer from an invoice first, then add the credit note from their customer account.')
     }
@@ -582,11 +581,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
 
     // Patch local state directly instead of a full 26-table reload - this is
     // the whole "Import Customer -> Continue" latency the full `load()` used
-    // to add on top of an already-multi-step operation.
+    // to add on top of an already-multi-step operation. Must dedupe by id
+    // (upsertById, not a blind append) - the realtime `customers`/`invoices`
+    // INSERT event for the row(s) this same write just created can arrive
+    // before this line runs, and a blind append after that would render the
+    // same customer/invoice twice.
     const updatedCustomer = { ...savedCustomer, balance: workingBalance }
-    setCustomers(cs => isNewCustomer ? [...cs, updatedCustomer] : cs.map(c => c.id === updatedCustomer.id ? updatedCustomer : c))
-    if (newInvoices.length) setInvoices(list => [...list, ...newInvoices])
-    if (newCreditNotes.length) setCreditNotes(list => [...list, ...newCreditNotes])
+    upsertById(setCustomers, updatedCustomer)
+    for (const invoice of newInvoices) upsertById(setInvoices, invoice)
+    for (const note of newCreditNotes) upsertById(setCreditNotes, note)
 
     return { customerName: savedCustomer.companyName, accountNumber: savedCustomer.customerNumber }
   }
@@ -605,7 +608,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     const newPayment = await createPayment({ customerId: invoice.customerId, invoiceId: invoice.id, amount, date: currentTradingDate(dayTrades), method: 'Bank Transfer' })
     await updateInvoice(invoice.id, { amountPaid: newPaid, status: newStatus })
     setInvoices(list => list.map(item => item.id === invoice.id ? { ...item, amountPaid: newPaid, status: newStatus } : item))
-    setPayments(list => [...list, newPayment])
+    upsertById(setPayments, newPayment)
     const customer = customers.find(c => c.id === invoice.customerId)
     if (customer) {
       const synchronizedBalance = invoices

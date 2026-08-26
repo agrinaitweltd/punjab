@@ -65,6 +65,27 @@ export default async function handler(req, res) {
     }
   }
 
+  if (step === 'verify-pin') {
+    // Checks the PIN alone, no side effects - lets the reset wizard confirm
+    // step 1 is correct before moving on to the email-code step, rather than
+    // only finding out at the very end. The actual delete in "execute" still
+    // independently re-checks both factors together regardless.
+    const context = await requireSystemDeveloper(req, res)
+    if (!context) return
+    const pin = String(req.body?.pin || '').trim()
+    if (!PIN_PATTERN.test(pin)) return res.status(400).json({ error: 'Enter your 4-digit PIN.' })
+    try {
+      const staff = await currentStaff(context.admin, context.user.id)
+      if (!staff?.active) return res.status(403).json({ error: 'System Developer access required.' })
+      if (!staff.reset_pin_hash) return res.status(400).json({ error: 'Set up your reset PIN first.' })
+      if (!(await bcrypt.compare(pin, staff.reset_pin_hash))) return res.status(401).json({ error: 'Incorrect PIN.' })
+      return res.status(200).json({ ok: true })
+    } catch (error) {
+      console.error('database-reset verify-pin failed', error instanceof Error ? error.message : 'Unknown error')
+      return res.status(500).json({ error: safeError })
+    }
+  }
+
   if (step === 'request-code') {
     const context = await requireSystemDeveloper(req, res)
     if (!context) return
