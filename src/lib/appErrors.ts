@@ -31,6 +31,11 @@ export const APP_ERRORS: Record<number, AppErrorDefinition> = {
   702: { title: 'Database Operation Failed', message: 'That action could not be completed. Try again, and report this if it keeps happening.', retryable: true },
   703: { title: 'Storage Operation Failed', message: 'A file storage action could not be completed. Try again, and report this if it keeps happening.', retryable: true },
   801: { title: 'Unexpected System Error', message: 'Something went wrong that we did not expect. Try again, and send us the details if it keeps happening.', retryable: true },
+  901: { title: 'Reset PIN Not Set Up', message: 'Set up your 4-digit reset PIN before requesting a verification code.', retryable: false },
+  902: { title: 'Incorrect PIN', message: 'That 4-digit PIN is incorrect. Try again.', retryable: true },
+  903: { title: 'Verification Code Incorrect or Expired', message: 'That code is incorrect or has expired (codes last 10 minutes). Request a new one.', retryable: true },
+  904: { title: 'Verification Code Could Not Be Sent', message: 'The verification code could not be emailed. Check the email provider is configured, and try again.', retryable: true },
+  905: { title: 'Email Import Cannot Be Retried', message: 'This email import cannot be retried automatically — see the detail below for why, and use the manual PDF uploader instead if needed.', retryable: false },
 }
 
 export type ResolvedAppError = AppErrorDefinition & { code: number; technicalDetail: string }
@@ -47,9 +52,14 @@ const RECORD_TEST_MATCHERS: Array<[RegExp, number]> = [
   [/could not create the customer|company name is required/, 301],
   [/customer with that email already exists|customer with these details already exists/, 302],
   [/account number already exists|account number must be exactly/, 303],
-  [/administrator access required|permission denied|42501|do not have permission/, 401],
+  [/administrator access required|system developer access required|permission denied|42501|do not have permission/, 401],
   [/incorrect password|password did not match|verify your password/, 402],
   [/session has expired|please sign in again|authentication required/, 403],
+  [/set up your (reset )?pin/, 901],
+  [/incorrect pin/, 902],
+  [/code is incorrect or has expired/, 903],
+  [/verification code could not be emailed/, 904],
+  [/only "needs review" or "failed" imports can be retried|email import record no longer exists|pdf was not stored|stored pdf could not be found|no extractable text was found/, 905],
   [/could not read that document|could not be read reliably/, 203],
   [/invitation .* could not be delivered|invitation delivery failed/, 504],
   [/password reset .* (failed|could not)/, 503],

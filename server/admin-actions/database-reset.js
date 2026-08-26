@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { guardApi, safeError } from '../security.js'
-import { requireSensitiveStaff, requireSystemDeveloper, writeSystemAudit } from '../sensitive-actions.js'
+import { requireSystemDeveloper, verifySensitiveToken, writeSystemAudit } from '../sensitive-actions.js'
 import { globalTestMode } from '../runtime-mode.js'
 import { brandedEmail, sendTransactionalEmail } from '../email-system.js'
 
@@ -41,10 +41,16 @@ export default async function handler(req, res) {
 
   if (step === 'set-pin') {
     // Changing/creating the PIN is itself a sensitive action - requires the
-    // System Developer's current login password re-verified first, same as
-    // enabling Test Mode or creating a backup.
-    const context = await requireSensitiveStaff(req, res, { systemDeveloperOnly: true })
+    // System Developer's current login password re-verified first (same
+    // password-token flow used for Test Mode/backups), and nothing more -
+    // deliberately NOT requireSensitiveStaff, which also demands the
+    // "manage users" permission; that's a different, unrelated grant a
+    // System Developer account might not happen to have.
+    const context = await requireSystemDeveloper(req, res)
     if (!context) return
+    if (!verifySensitiveToken(req.headers?.['x-sensitive-action-token'], context.user.id)) {
+      return res.status(401).json({ error: 'Please verify your password again to continue.' })
+    }
     const pin = String(req.body?.pin || '')
     if (!PIN_PATTERN.test(pin)) return res.status(400).json({ error: 'PIN must be exactly 4 digits.' })
     try {
