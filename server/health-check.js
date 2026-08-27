@@ -128,7 +128,14 @@ export async function runHealthCheck(admin, table) {
   }
   for (const customer of customers) {
     const theirInvoices = invoicesByCustomer.get(customer.id) || []
-    const expected = theirInvoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + Math.max(0, Number(i.amount || 0) - Number(i.amount_paid || 0)), 0)
+    // Net every unpaid invoice's remaining amount together BEFORE flooring
+    // at zero (not per-invoice) - a customer can legitimately have a
+    // negative-amount "invoice" that is really a reversal against an
+    // earlier charge (confirmed on real statement/invoice data), and it
+    // must be allowed to reduce what they owe overall. Flooring each line
+    // individually before summing would silently overstate the balance by
+    // exactly the value of every such reversal.
+    const expected = Math.max(0, theirInvoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + (Number(i.amount || 0) - Number(i.amount_paid || 0)), 0))
     const actual = Number(customer.balance || 0)
     if (Math.abs(expected - actual) > 0.01) {
       const { error } = await admin.from(table('customers')).update({ balance: expected }).eq('id', customer.id)

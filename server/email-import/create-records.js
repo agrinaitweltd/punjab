@@ -268,7 +268,10 @@ export async function createRecordFromImport(admin, table, document, customer, s
     }
 
     const { data: customerInvoices } = await admin.from(table('invoices')).select('amount,amount_paid,status').eq('customer_id', customer.id)
-    const workingBalance = (customerInvoices || []).filter(row => row.status !== 'Paid').reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0) - Number(row.amount_paid || 0)), 0)
+    // Net first, floor once (see health-check.js's identical comment) - a
+    // negative-amount invoice is a real reversal and must reduce the total,
+    // not just get discarded by a per-line floor.
+    const workingBalance = Math.max(0, (customerInvoices || []).filter(row => row.status !== 'Paid').reduce((sum, row) => sum + (Number(row.amount || 0) - Number(row.amount_paid || 0)), 0))
     await admin.from(table('customers')).update({ balance: workingBalance }).eq('id', customer.id)
 
     const invoiceWarnings = softWarnings(document)

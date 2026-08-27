@@ -62,9 +62,14 @@ export async function reconcileStatement(admin, table, statement, customerId) {
     })
   }
 
-  const systemOutstanding = systemInvoices
+  // Net then floor once - matches health-check.js/create-records.js's
+  // customer-balance formula, so this comparison is apples-to-apples with
+  // what the system actually holds (a per-line floor would make a customer
+  // with genuine negative-amount reversal invoices look permanently
+  // unreconciled against their own statement).
+  const systemOutstanding = Math.max(0, systemInvoices
     .filter(i => i.status !== 'Paid')
-    .reduce((sum, i) => sum + Math.max(0, money(i.amount) - money(i.amount_paid)), 0)
+    .reduce((sum, i) => sum + (money(i.amount) - money(i.amount_paid)), 0))
   const statementOutstanding = money(statement.totals?.outstanding)
   const difference = Number((statementOutstanding - systemOutstanding).toFixed(2))
   if (Math.abs(difference) > 0.01) {
