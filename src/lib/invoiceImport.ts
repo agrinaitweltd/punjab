@@ -323,6 +323,150 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   }
 }
 
+// A second, distinct Punjab invoice layout (seen first from customer "IMRAN
+// GATE 4", account 2525) - printed by a different till/system than the
+// legacy "Line Qty Product Variety Size Price Goods VC" template above, with
+// its own header wording, its own metadata row, and a VAT summary table
+// whose columns are in a different order (VC, Goods, VAT Rate, VAT Amount -
+// legacy is VC, %Rate, Goods, V.A.T). Detected and parsed separately rather
+// than shoehorned into the legacy functions, since column order and layout
+// differ enough that sharing the same regex would risk misreading one
+// template while "fixing" the other.
+const modernRowPattern = /^\s*(\S+)\s+(.+?)\s+(-?\d+(?:\.\d+)?)\s+(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s+(\d+)\s*$/
+
+export function recogniseModernInvoiceTemplate(rawLines: string[]): boolean {
+  const heading = rawLines.slice(0, 10).join(' ')
+  return /DELIVER\s*&\s*INVOICE\s*TO/i.test(heading) && rawLines.some(line => /Prod\s*Code/i.test(line)) && rawLines.some(line => /Nett\s*Val/i.test(line))
+}
+
+function modernCustomerName(lines: string[]): string {
+  const index = lines.findIndex(line => /DELIVER\s*&\s*INVOICE\s*TO/i.test(line))
+  if (index < 0) return ''
+  for (let i = index + 1; i < Math.min(lines.length, index + 4); i += 1) {
+    const value = compact(lines[i])
+    if (value && !/^Copy\s+Invoice$/i.test(value)) return value
+  }
+  return ''
+}
+
+function modernMetadataSection(lines: string[]) {
+  const headerIndex = lines.findIndex(line => /AccountNo/i.test(line) && /Inv\.?\s*Acc/i.test(line) && /InvoiceNo/i.test(line))
+  const values = lines.slice(headerIndex + 1, headerIndex + 3).find(line => /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(line)) ?? ''
+  const dateToken = values.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/)?.[0] ?? ''
+  const accountNumber = values.match(/\d+/)?.[0] ?? ''
+  const afterDate = dateToken ? values.slice(values.indexOf(dateToken) + dateToken.length) : ''
+  const invoiceNumber = afterDate.match(/\d+/)?.[0] ?? ''
+  return { date: isoDate(dateToken), accountNumber, invoiceAccount: accountNumber, invoiceNumber }
+}
+
+// Deliberately kept as one combined field rather than split into
+// product/variety/size like the legacy template: the row's only unambiguous
+// boundary is its four trailing numeric columns (quantity/price/nett/VC).
+// Everything before that - product code, description, and an optional
+// "Origin" token (e.g. "VAR") - has no reliable separator, and guessing one
+// (e.g. treating a trailing short word as an origin code) risks silently
+// truncating a genuine description that happens to end the same way. Origin
+// has no effect on pricing or totals, so the cosmetic imprecision of leaving
+// it inside the product text is a safe trade against a financial misparse.
+function parseModernProductRow(row: string): ImportedInvoiceItem | null {
+  const match = row.match(modernRowPattern)
+  if (!match) return null
+  const [, prodCode, description, quantityToken, priceToken, goodsValueToken, vatCode] = match
+  return {
+    line: '', quantity: money(quantityToken),
+    product: compact(`${prodCode} ${description}`), variety: '', size: '',
+    price: money(priceToken), goodsValue: money(goodsValueToken),
+    vatCode, vatRate: 0,
+  }
+}
+
+function modernProductSection(lines: string[]): ImportedInvoiceItem[] {
+  const headerIndex = lines.findIndex(line => /Prod\s*Code/i.test(line) && /Description/i.test(line) && /Nett\s*Val/i.test(line))
+  if (headerIndex < 0) return []
+  const items: ImportedInvoiceItem[] = []
+  for (const row of lines.slice(headerIndex + 1)) {
+    if (/\bVC\b\s+GOODS\s+VAT\s*RATE\s+VAT\s*AMOUNT/i.test(compact(row)) || /VAT Reg/i.test(row)) break
+    const parsed = parseModernProductRow(row)
+    if (parsed) { items.push(parsed); continue }
+    if (items.length && compact(row) && !/^(?:Page|E\.?&O\.?E|VAT Reg|Tel:|Fax:)/i.test(compact(row))) {
+      items[items.length - 1].product = compact(`${items[items.length - 1].product} ${row}`)
+    }
+  }
+  items.forEach((item, index) => { item.line = String(index + 1) })
+  return items
+}
+
+// The modern template's VAT summary is a fixed 5-row table (VC codes 0-4),
+// columns VC/Goods/VatRate/VatAmount (legacy's vatSection() is VC/%Rate/
+// Goods/V.A.T - a different column order, not reusable here). The overall
+// Goods/VAT/Total for the whole invoice are printed as extra trailing
+// numbers appended to the VC=4 row rather than on their own line, so they're
+// picked up from whatever numeric tokens remain after that row's 4 columns.
+function modernVatSection(lines: string[]) {
+  const headerIndex = lines.findIndex(line => /\bVC\b/i.test(line) && /\bGOODS\b/i.test(line) && /VAT\s*RATE/i.test(line) && /VAT\s*AMOUNT/i.test(line))
+  const vatSummary: Array<{ code: string; rate: number; goods: number; vat: number }> = []
+  let totals = { totalGoods: 0, vat: 0, grandTotal: 0 }
+  if (headerIndex < 0) return { vatSummary, ...totals }
+  for (const row of lines.slice(headerIndex + 1, headerIndex + 6)) {
+    const match = row.match(/^\s*(\d+)\s+(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s*(.*)$/)
+    if (!match) continue
+    const [, code, goods, rate, vat, rest] = match
+    vatSummary.push({ code, rate: money(rate), goods: money(goods), vat: money(vat) })
+    const trailingNumbers = rest.match(/-?[\d,]+\.\d{2}/g)
+    if (trailingNumbers && trailingNumbers.length >= 3) {
+      totals = { totalGoods: money(trailingNumbers[0]), vat: money(trailingNumbers[1]), grandTotal: money(trailingNumbers[2]) }
+    }
+  }
+  return { vatSummary, ...totals }
+}
+
+export function parseModernInvoiceLines(rawLines: string[]): ImportedLegacyInvoice {
+  const lines = rawLines.map(line => line.replace(/ /g, ' ')).filter(line => line.trim())
+  const normalizedLines = lines.map(compact)
+  const companyName = modernCustomerName(lines)
+  const metadata = modernMetadataSection(lines)
+  const items = modernProductSection(lines)
+  const { vatSummary, totalGoods: parsedTotalGoods, vat: parsedVat, grandTotal: parsedGrandTotal } = modernVatSection(lines)
+  applyVatRates(items, vatSummary)
+  const totalGoods = parsedTotalGoods || items.reduce((sum, item) => sum + item.goodsValue, 0)
+  const vat = parsedVat || vatSummary.reduce((sum, row) => sum + row.vat, 0)
+  const grandTotal = parsedGrandTotal || totalGoods + vat
+  const warnings: string[] = []
+  if (!companyName) warnings.push('Please check the customer company name.')
+  if (!metadata.accountNumber) warnings.push('Please check the customer account number.')
+  if (!metadata.date) warnings.push('Please check the invoice date.')
+  if (!metadata.invoiceNumber) warnings.push('Please check the invoice number.')
+  if (!items.length) warnings.push('No product rows were found. Add or correct the products before saving.')
+  if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The goods total plus VAT does not match the grand total - the printed Grand Total has been used as-is.')
+
+  // Same reconciliation-based negative-value check as the legacy template
+  // (see parseLegacyInvoiceLines above) - a negative is only flagged when it
+  // does not reconcile with the printed Total Goods, never flipped automatically.
+  const itemsGoodsSum = items.reduce((sum, item) => sum + item.goodsValue, 0)
+  const linesReconcile = items.length > 0 && Math.abs(itemsGoodsSum - totalGoods) <= TOTALS_TOLERANCE
+  const negativeItems = items.filter(item => item.quantity < 0 || item.price < 0 || item.goodsValue < 0)
+  if (negativeItems.length && !linesReconcile) {
+    for (const item of negativeItems) item.suspiciousNegative = true
+    warnings.push(`Negative quantity/price/goods value on line(s) ${negativeItems.map(i => i.line).join(', ')} does not reconcile with the printed Total Goods - confirm during review before approving.`)
+  }
+
+  return {
+    documentType: 'invoice',
+    customer: { companyName, address: '', postcode: '', phone: '', normalizedPhone: '', email: '', accountNumber: metadata.accountNumber, ledgerBalance: 0 },
+    invoice: { invoiceNumber: metadata.invoiceNumber, invoiceAccount: metadata.invoiceAccount, deliveryAccount: '', salesman: '', date: metadata.date, currency: 'GBP', totalGoods, vat, grandTotal, packages: 0 },
+    items,
+    vatSummary,
+    confidence: {
+      companyName: confidence(companyName), address: confidence(''), postcode: confidence(''), phone: confidence(''),
+      accountNumber: /^\d+$/.test(metadata.accountNumber) ? 'high' : 'review',
+      invoiceNumber: metadata.invoiceNumber ? 'high' : 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
+      totals: Math.abs(totalGoods + vat - grandTotal) <= TOTALS_TOLERANCE ? 'high' : 'review',
+    },
+    warnings,
+    debug: { rawLines: lines, normalizedLines },
+  }
+}
+
 export function detectImportDocumentType(rawLines: string[]): ImportDocumentType {
   const heading = rawLines.slice(0, 20).join(' ')
   return /\bCREDIT\s+(?:NOTE|MEMO|ADVICE)\b/i.test(heading) ? 'credit_note' : 'invoice'

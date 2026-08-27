@@ -5,7 +5,7 @@ import { extractPdfTextLines } from './extract-pdf-text.js'
 // Compiled from src/lib/invoiceImport.ts by `tsc -p tsconfig.server.json`
 // (part of `npm run build`) - see create-records.js's comment on the same
 // import for why the raw .ts source can't be imported directly here.
-import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../server-dist/lib/invoiceImport.js'
+import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines, recogniseModernInvoiceTemplate, parseModernInvoiceLines } from '../../server-dist/lib/invoiceImport.js'
 import { assessConfidence, createRecordFromImport, resolveOrCreateCustomer, safeFileName, uploadFileServer, notify, MAX_FILE_BYTES } from './create-records.js'
 import { recognisePunjabStatement, createStatementFromImport } from './statements.js'
 
@@ -107,8 +107,15 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
       return 'imported'
     }
 
-    const documentType = detectImportDocumentType(lines)
-    const document = documentType === 'credit_note' ? parseCreditNoteLines(lines) : parseLegacyInvoiceLines(lines)
+    // A second Punjab invoice layout (see recogniseModernInvoiceTemplate's
+    // own comment in invoiceImport.ts) - checked before the legacy
+    // detect/parse pair since its "DELIVER & INVOICE TO" heading doesn't
+    // resemble a credit note and would otherwise fall through to the legacy
+    // invoice parser, which doesn't recognise its column layout at all.
+    const isModernTemplate = recogniseModernInvoiceTemplate(lines)
+    const documentType = isModernTemplate ? 'invoice' : detectImportDocumentType(lines)
+    const document = isModernTemplate ? parseModernInvoiceLines(lines)
+      : documentType === 'credit_note' ? parseCreditNoteLines(lines) : parseLegacyInvoiceLines(lines)
     document.source = { name: filename, type: 'application/pdf', size, dataUri }
 
     // Resolve to an existing customer, or create one from the document's own
@@ -263,8 +270,10 @@ export async function retryEmailImport(admin, table, emailImportId, customerIdOv
     return { status: 'imported', statementId: result.statementId }
   }
 
-  const documentType = detectImportDocumentType(lines)
-  const document = documentType === 'credit_note' ? parseCreditNoteLines(lines) : parseLegacyInvoiceLines(lines)
+  const isModernTemplate = recogniseModernInvoiceTemplate(lines)
+  const documentType = isModernTemplate ? 'invoice' : detectImportDocumentType(lines)
+  const document = isModernTemplate ? parseModernInvoiceLines(lines)
+    : documentType === 'credit_note' ? parseCreditNoteLines(lines) : parseLegacyInvoiceLines(lines)
   document.source = { name: row.attachment_filename, type: 'application/pdf', size: row.attachment_size, dataUri: fileRow.action }
 
   let customerRow = null
