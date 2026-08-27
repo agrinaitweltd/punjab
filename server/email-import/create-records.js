@@ -142,28 +142,19 @@ export async function resolveOrCreateCustomer(admin, table, importedCustomer) {
 // generateAndAttachCanonicalPdf's caller and imported_metadata.totalsWarning.
 const BLOCKING_WARNING_PATTERN = /no product rows were found|no credited product rows were found/i
 
+// 2026-08-27: by explicit instruction, an invoice with a genuine invoice
+// number and at least one product line is imported as printed even when its
+// total is negative or its line items don't reconcile with the header
+// totals - only a missing invoice number, zero product lines, or an
+// unresolvable/duplicate customer still blocks it. The figures are stored
+// exactly as extracted (never sign-flipped or rewritten) so anyone auditing
+// the record later sees precisely what the source document said.
 export function assessConfidence(document, resolution) {
   const reasons = []
   if (resolution.status === 'ambiguous' || resolution.status === 'insufficient') reasons.push(resolution.reason)
   if (document.warnings?.length) reasons.push(...document.warnings.filter(warning => BLOCKING_WARNING_PATTERN.test(warning)))
   if (document.documentType === 'invoice') {
     if (!document.invoice.invoiceNumber) reasons.push('No invoice number was detected.')
-    // A net-negative invoice total means the document reverses more than it
-    // charges - i.e. it is really a credit adjustment. That is a genuine
-    // accounting decision (record as a credit note? offset an earlier
-    // invoice?), so it always goes to a human rather than being imported as
-    // an "invoice" for a negative amount or silently flipped positive.
-    if (document.invoice.grandTotal < 0) {
-      reasons.push(`This document is a net credit of £${Math.abs(document.invoice.grandTotal).toFixed(2)} (its reversal lines exceed its charges). Confirm in Review Invoice whether it should be recorded as a credit note.`)
-    } else if (!(document.invoice.grandTotal > 0)) {
-      reasons.push('No positive invoice total was detected.')
-    }
-    // A negative quantity/price/goods value on an invoice is never silently
-    // auto-corrected or auto-imported as-is - it always needs an admin's eyes
-    // in Review Invoice, since it could be a genuine sign error (would
-    // under/overcharge the customer) or a real PDF extraction artefact, and
-    // guessing which is exactly what must not happen unattended.
-    if (document.items?.some(item => item.suspiciousNegative)) reasons.push('One or more product lines have a suspicious negative quantity, price, or goods value - confirm in Review Invoice.')
   } else {
     if (!(Math.abs(document.creditNote.grandTotal) > 0)) reasons.push('No credit note total was detected.')
   }
