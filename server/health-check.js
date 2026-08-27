@@ -84,6 +84,12 @@ export async function runHealthCheck(admin, table) {
   const { data: canonicalFiles } = canonicalIds.length ? await admin.from(table('activity_log')).select('id').in('id', canonicalIds) : { data: [] }
   const existingCanonicalIds = new Set((canonicalFiles || []).map(f => f.id))
   const invoicesNeedingPdf = invoices.filter(i => !i.canonical_document_id || !existingCanonicalIds.has(i.canonical_document_id))
+  // Populated below whenever this loop already reports an invoice as having
+  // no line items, so the separate items-only check further down doesn't
+  // flag the same invoice a second time under a near-identical message -
+  // one root cause (no items ever existed for this invoice) should read as
+  // one review item, not two.
+  const flaggedNoItems = new Set()
   for (const invoice of invoicesNeedingPdf) {
     try {
       const [{ data: customer }, { data: items }] = await Promise.all([
@@ -91,7 +97,7 @@ export async function runHealthCheck(admin, table) {
         admin.from(table('invoice_items')).select('*').eq('invoice_id', invoice.id),
       ])
       if (!customer) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no matching customer to build one from.` }); summary.needsReview += 1; details.problemInvoices.push({ customerName: 'Unknown', accountNumber: '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no matching customer' }); continue }
-      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; details.problemInvoices.push({ customerName: customer.company_name, accountNumber: customer.customer_number, invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no line items' }); continue }
+      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; flaggedNoItems.add(invoice.id); details.problemInvoices.push({ customerName: customer.company_name, accountNumber: customer.customer_number, invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no line items' }); continue }
       await generateAndAttachCanonicalPdf(admin, table, invoice, customer, items)
       summary.pdfsGenerated += 1; summary.autoFixed += 1
       issues.push({ severity: 'fixed', text: `Generated the missing official PDF for invoice ${invoice.invoice_number}.` })
@@ -105,11 +111,27 @@ export async function runHealthCheck(admin, table) {
   // --- Check (flag only): invoice with zero stored line items. Can't be
   // auto-repaired - fabricating product rows would be guessing at what was
   // actually invoiced.
+  //
+  // Paginated rather than one .select().in() call: PostgREST caps a single
+  // response at 1000 rows, and a customer base this size already has over
+  // 1000 invoice_items rows across ~320 invoices - a single unpaginated
+  // fetch silently truncated the result and wrongly flagged every invoice
+  // whose items happened to land past row 1000 as having none at all
+  // (confirmed live: ~300 invoices - including some just imported this
+  // session with visibly non-empty items - were false-flagged this way).
   const invoiceIds = invoices.map(i => i.id)
-  const { data: itemCounts } = invoiceIds.length ? await admin.from(table('invoice_items')).select('invoice_id').in('invoice_id', invoiceIds) : { data: [] }
-  const invoicesWithItems = new Set((itemCounts || []).map(row => row.invoice_id))
+  const invoicesWithItems = new Set()
+  if (invoiceIds.length) {
+    const pageSize = 1000
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: page, error: pageErr } = await admin.from(table('invoice_items')).select('invoice_id').in('invoice_id', invoiceIds).range(offset, offset + pageSize - 1)
+      if (pageErr) throw pageErr
+      for (const row of page || []) invoicesWithItems.add(row.invoice_id)
+      if (!page || page.length < pageSize) break
+    }
+  }
   for (const invoice of invoices) {
-    if (!invoicesWithItems.has(invoice.id)) {
+    if (!invoicesWithItems.has(invoice.id) && !flaggedNoItems.has(invoice.id)) {
       summary.needsReview += 1
       issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} has no stored product line items.` })
       details.problemInvoices.push({ customerName: customersById.get(invoice.customer_id)?.company_name || 'Unknown', accountNumber: customersById.get(invoice.customer_id)?.customer_number || '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'No product line items' })
@@ -179,15 +201,30 @@ export async function runHealthCheck(admin, table) {
 
   // --- Check (flag only): duplicate invoice/credit-note numbers - should be
   // prevented at creation time already, this is a safety-net sweep.
+  //
+  // Scoped per customer (customer_id + number), matching migration 028's DB
+  // constraint and the business rule established this session: Punjab's
+  // independent traders each run their own numbering, so two different
+  // customers legitimately sharing invoice number "1" is normal, not a
+  // duplicate. A raw cross-customer count here was false-flagging dozens of
+  // genuine invoices (confirmed live: "1" appeared 60 times, each for a
+  // different customer, 0 actual same-customer collisions).
   const invoiceNumberCounts = new Map()
-  for (const invoice of invoices) invoiceNumberCounts.set(invoice.invoice_number, (invoiceNumberCounts.get(invoice.invoice_number) || 0) + 1)
-  for (const [number, count] of invoiceNumberCounts) {
-    if (count > 1) { summary.needsReview += 1; issues.push({ severity: 'review', text: `Invoice number "${number}" appears ${count} times.` }) }
+  for (const invoice of invoices) {
+    const key = `${invoice.customer_id}:${invoice.invoice_number}`
+    invoiceNumberCounts.set(key, (invoiceNumberCounts.get(key) || 0) + 1)
+  }
+  for (const [key, count] of invoiceNumberCounts) {
+    if (count > 1) { summary.needsReview += 1; issues.push({ severity: 'review', text: `Invoice number "${key.split(':')[1]}" appears ${count} times for customer ${customersById.get(key.split(':')[0])?.company_name || key.split(':')[0]}.` }) }
   }
   const creditNumberCounts = new Map()
-  for (const note of creditNotes) if (note.credit_number) creditNumberCounts.set(note.credit_number, (creditNumberCounts.get(note.credit_number) || 0) + 1)
-  for (const [number, count] of creditNumberCounts) {
-    if (count > 1) { summary.needsReview += 1; issues.push({ severity: 'review', text: `Credit note number "${number}" appears ${count} times.` }) }
+  for (const note of creditNotes) {
+    if (!note.credit_number) continue
+    const key = `${note.customer_id}:${note.credit_number}`
+    creditNumberCounts.set(key, (creditNumberCounts.get(key) || 0) + 1)
+  }
+  for (const [key, count] of creditNumberCounts) {
+    if (count > 1) { summary.needsReview += 1; issues.push({ severity: 'review', text: `Credit note number "${key.split(':')[1]}" appears ${count} times for customer ${customersById.get(key.split(':')[0])?.company_name || key.split(':')[0]}.` }) }
   }
 
   // --- Check (flag only): email imports still sitting in Needs Review.
