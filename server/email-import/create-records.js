@@ -9,6 +9,7 @@
 // as plain ESM without transpiling arbitrary .ts imports, so this can't
 // import the .ts source directly the way the Vite/browser bundle does.
 import { normalizeAccountNumber, normalizeCompanyName, findDuplicateInvoice, findDuplicateCreditNote } from '../../server-dist/lib/importMatching.js'
+import { isInvalidReferenceValue } from '../../server-dist/lib/invoiceImport.js'
 import { buildInvoiceDocx } from '../canonicalInvoiceDocx.js'
 import { buildOfficialInvoicePdf } from '../canonicalInvoicePdf.js'
 
@@ -96,14 +97,20 @@ function findCustomerMatch(customerRows, importedCustomer) {
  *  number) - never guesses, and never touches an existing row beyond
  *  linking the new invoice/credit note to it. */
 export async function resolveOrCreateCustomer(admin, table, importedCustomer) {
+  // A bare "1" account number is a known extraction artefact (see
+  // isInvalidReferenceValue) - treated exactly like a blank one here so it
+  // can neither match nor auto-create a customer with that bogus number.
+  const rawAccountNumber = (importedCustomer.accountNumber || '').trim()
+  const sanitizedCustomer = isInvalidReferenceValue(rawAccountNumber) ? { ...importedCustomer, accountNumber: '' } : importedCustomer
+
   const { data: customerRows, error } = await admin.from(table('customers')).select('*')
   if (error) throw error
-  const match = findCustomerMatch(customerRows || [], importedCustomer)
+  const match = findCustomerMatch(customerRows || [], sanitizedCustomer)
   if (match.ambiguous) return { status: 'ambiguous', reason: match.reason }
   if (match.customer) return { status: 'matched', customer: match.customer, created: false }
 
-  const companyName = (importedCustomer.companyName || '').trim()
-  const accountNumber = (importedCustomer.accountNumber || '').trim()
+  const companyName = (sanitizedCustomer.companyName || '').trim()
+  const accountNumber = (sanitizedCustomer.accountNumber || '').trim()
   // A company/trading name OR an account number is enough to safely create a
   // new customer - requiring both was rejecting genuine invoices for
   // customers printed as just a trading name with no formal company suffix,
@@ -155,6 +162,7 @@ export function assessConfidence(document, resolution) {
   if (document.warnings?.length) reasons.push(...document.warnings.filter(warning => BLOCKING_WARNING_PATTERN.test(warning)))
   if (document.documentType === 'invoice') {
     if (!document.invoice.invoiceNumber) reasons.push('No invoice number was detected.')
+    else if (isInvalidReferenceValue(document.invoice.invoiceNumber)) reasons.push('Invoice number was extracted as "1", which is not a valid reference.')
   } else {
     if (!(Math.abs(document.creditNote.grandTotal) > 0)) reasons.push('No credit note total was detected.')
   }

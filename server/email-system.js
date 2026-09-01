@@ -66,7 +66,7 @@ export async function sendTransactionalEmail({ apiKey = process.env.RESEND_API_K
   const payload = { from: `${sender.name} <${sender.email}>`, reply_to: EMAIL_REPLY_TO, to: recipients, subject: String(subject).slice(0, 200), html, ...(attachments.length ? { attachments: attachments.slice(0, 5) } : {}) }
   let logId = null
   if (admin) {
-    const log = { customer_id: customerId, invoice_id: invoiceId, communication_type: communicationType || senderCategory, channel: 'email', recipient: recipients.join(', '), status: 'Pending', idempotency_key: idempotencyKey, created_by: createdBy, sender_category: senderCategory, sender_email: sender.email, reply_to: EMAIL_REPLY_TO, subject: payload.subject, last_attempt_at: new Date().toISOString(), payload: { attachmentNames: attachments.map(item => item.filename) } }
+    const log = { customer_id: customerId, invoice_id: invoiceId, communication_type: communicationType || senderCategory, channel: 'email', recipient: recipients.join(', '), status: 'Pending', idempotency_key: idempotencyKey, created_by: createdBy, sender_category: senderCategory, sender_email: sender.email, reply_to: EMAIL_REPLY_TO, subject: payload.subject, html, last_attempt_at: new Date().toISOString(), payload: { attachmentNames: attachments.map(item => item.filename) } }
     const saved = idempotencyKey ? await admin.from('communication_logs').upsert(log, { onConflict: 'idempotency_key' }).select('id').single() : await admin.from('communication_logs').insert(log).select('id').single()
     if (!saved.error) logId = saved.data.id
   }

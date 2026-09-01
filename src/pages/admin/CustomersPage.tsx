@@ -10,6 +10,7 @@ import { confirmAction } from '../../lib/appDialogs'
 import { DataTable } from '../../components/ui/Table'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
+import { RowActionsMenu } from '../../components/ui/RowActionsMenu'
 import { CustomerStatementModal } from './CustomerStatementModal'
 import { CustomerCreditNoteModal } from './CustomerCreditNoteModal'
 import { SendWhatsAppModal } from '../../components/SendWhatsAppModal'
@@ -21,6 +22,18 @@ import { invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 import { importFailureMessage } from '../../lib/importErrors'
 import { showAppError, showSuccess } from '../../lib/appDialogs'
 import { StagedProgress } from '../../components/ui/StagedProgress'
+import { normalizePhone, formatUkPhoneForDisplay } from '../../lib/whatsapp'
+
+/** Normalizes a UK-looking phone number to the backend's +44 form before
+    saving; anything that doesn't validate as a UK number (blank, already
+    international in a non-UK format, obviously incomplete) is stored exactly
+    as typed rather than guessed at. */
+const toStoredPhone = (raw: string) => {
+  const trimmed = raw.trim()
+  if (!trimmed) return trimmed
+  const normalized = normalizePhone(trimmed)
+  return normalized ? `+${normalized}` : trimmed
+}
 
 const IMPORT_STAGES = ['Checking existing customers', 'Validating', 'Saving to Supabase', 'Saving PDF', 'Complete']
 
@@ -208,7 +221,7 @@ export function CustomersPage({
         contactPerson: fullForm.contactPerson.trim(),
         email,
         password: fullForm.password,
-        phone: fullForm.phone.trim(),
+        phone: toStoredPhone(fullForm.phone),
         address: fullForm.address.trim(),
         customerNumber: nextNum,
         deliveryArea: initialForm.deliveryArea,
@@ -239,7 +252,7 @@ export function CustomersPage({
     if ((editing.creditDays ?? 0) < 1) { setEditError('Credit days must be at least 1.'); return }
     setSavingEdit(true)
     try {
-      await onUpdate(editing.id, editing)
+      await onUpdate(editing.id, { ...editing, phone: toStoredPhone(editing.phone) })
       setEditing(null)
     } catch {
       setEditError('Could not save changes — please try again.')
@@ -524,7 +537,7 @@ export function CustomersPage({
             <Input label="Company Name" value={fullForm.companyName} onChange={(e) => setFullForm({ ...fullForm, companyName: e.target.value })} required />
             <Input label="Email" type="email" value={fullForm.email} onChange={(e) => setFullForm({ ...fullForm, email: e.target.value })} required />
             <Input label="Password" type="password" value={fullForm.password} onChange={(e) => setFullForm({ ...fullForm, password: e.target.value })} required />
-            <Input label="Phone Number" value={fullForm.phone} onChange={(e) => setFullForm({ ...fullForm, phone: e.target.value })} />
+            <Input label="Phone Number" placeholder="07XXX XXXXXX" value={fullForm.phone} onChange={(e) => setFullForm({ ...fullForm, phone: e.target.value })} />
             <Input label="VAT Number (optional)" value={fullForm.vatNumber} onChange={(e) => setFullForm({ ...fullForm, vatNumber: e.target.value })} />
             <div className="wide"><Input label="Registered Company Address" value={fullForm.registeredAddress} onChange={(e) => setFullForm({ ...fullForm, registeredAddress: e.target.value })} /></div>
             <div className="wide"><Input label="Delivery Address" value={fullForm.address} onChange={(e) => setFullForm({ ...fullForm, address: e.target.value })} /></div>
@@ -591,18 +604,18 @@ export function CustomersPage({
                     )
                   ) : (
                     <>
-                      <Button variant="secondary" className="btn-sm" onClick={() => { setEditError(''); setEditing(customer) }}>Edit</Button>
-                      <Button variant="secondary" className="btn-sm" onClick={() => onOpenInvoices ? onOpenInvoices(customer) : (setAccountProfile(customer), setProfileTab('Overview'))}>Open Invoices</Button>
-                      <Button variant="ghost" className="btn-sm" onClick={() => setStatementTarget(customer)}>Customer Balance</Button>
-                      <Button variant="ghost" className="btn-sm" onClick={() => openImport(customer)}>Import Statement</Button>
-                      {onSendWhatsApp && (
-                        <Button variant="ghost" className="btn-sm" onClick={() => setWhatsappTarget(customer)}>Send WhatsApp</Button>
-                      )}
-                      {canDelete && (
-                        <Button variant="danger" className="btn-sm" disabled={deletingId === customer.id} onClick={() => archiveCustomer(customer)}>
-                          {deletingId === customer.id ? 'Archiving…' : 'Archive'}
-                        </Button>
-                      )}
+                      <Button variant="secondary" className="btn-sm" onClick={() => { setAccountProfile(customer); setProfileTab('Overview') }}>View Customer</Button>
+                      <RowActionsMenu actions={[
+                        { label: 'Open Invoices', onClick: () => onOpenInvoices ? onOpenInvoices(customer) : (setAccountProfile(customer), setProfileTab('Invoices')) },
+                        { label: 'Customer Balance', onClick: () => setStatementTarget(customer) },
+                        { label: 'Payments', onClick: () => { setAccountProfile(customer); setProfileTab('Payments') } },
+                        { label: 'Credit Notes', onClick: () => { setAccountProfile(customer); setProfileTab('Credit Notes') } },
+                        { label: 'Documents', onClick: () => { setAccountProfile(customer); setProfileTab('Documents') } },
+                        { label: 'Import Statement', onClick: () => openImport(customer) },
+                        ...(onSendWhatsApp ? [{ label: 'Send Message', onClick: () => setWhatsappTarget(customer) }] : []),
+                        { label: 'Edit Customer', onClick: () => { setEditError(''); setEditing({ ...customer, phone: formatUkPhoneForDisplay(customer.phone) }) } },
+                        ...(canDelete ? [{ label: deletingId === customer.id ? 'Archiving…' : 'Archive', danger: true, disabled: deletingId === customer.id, onClick: () => archiveCustomer(customer) }] : []),
+                      ]} />
                     </>
                   )}
                 </div>
@@ -649,7 +662,7 @@ export function CustomersPage({
             <Input label="Company Name" value={editing.companyName} onChange={(e) => setEditing({ ...editing, companyName: e.target.value })} required />
             <Input label="Contact Person" value={editing.contactPerson} onChange={(e) => setEditing({ ...editing, contactPerson: e.target.value })} />
             <Input label="Email" type="email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} required />
-            <Input label="Phone" value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
+            <Input label="Phone" placeholder="07XXX XXXXXX" value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
             <Input label="VAT Number (optional)" value={editing.vatNumber ?? ''} onChange={(e) => setEditing({ ...editing, vatNumber: e.target.value })} />
             <div className="wide"><Input label="Registered Company Address" value={editing.registeredAddress ?? ''} onChange={(e) => setEditing({ ...editing, registeredAddress: e.target.value })} placeholder="Street, city, postcode" /></div>
             <div className="wide"><Input label="Delivery Address" value={editing.address} onChange={(e) => setEditing({ ...editing, address: e.target.value })} placeholder="Street, city, postcode" /></div>

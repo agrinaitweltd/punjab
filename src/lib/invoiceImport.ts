@@ -87,6 +87,12 @@ export type ImportedFinancialDocument = ImportedLegacyInvoice | ImportedCreditNo
 // in server/email-import/create-records.js, which treats a totals mismatch
 // as informational, never a reason to refuse the whole invoice).
 const TOTALS_TOLERANCE = 0.05
+// A bare "1" as an account/invoice number is never a real Punjab reference
+// (real ones are multi-digit, e.g. 2815, 1001) - it's what a misaligned
+// column or a stray page/line number produces when extraction goes wrong.
+// Exact match only, so real references that merely contain a "1" (2815,
+// 1001, 21, 11...) are never affected.
+export const isInvalidReferenceValue = (value: string) => value.trim() === '1'
 const money = (value = '') => Number(value.replace(/[^\d.-]/g, '')) || 0
 const compact = (value = '') => value.replace(/\s+/g, ' ').trim()
 const columns = (line = '') => line.trim().split(/\s{2,}/).map(compact).filter(Boolean)
@@ -280,6 +286,7 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   if (!metadata.accountNumber) warnings.push('Please check the six-digit account number from the Num column.')
   if (!metadata.date) warnings.push('Please check the invoice date.')
   if (!items.length) warnings.push('No product rows were found. Add or correct the products before saving.')
+  if (isInvalidReferenceValue(metadata.invoiceNumber)) warnings.push('Invoice number was extracted as "1", which is not a valid reference - please check and correct it.')
   if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The goods total plus VAT does not match the grand total - the printed Grand Total has been used as-is.')
   if (items.length && Math.abs(items.reduce((sum, item) => sum + item.goodsValue, 0) - totalGoods) > TOTALS_TOLERANCE) warnings.push('The product values do not match the goods total - the printed Total Goods has been used as-is.')
 
@@ -315,7 +322,7 @@ export function parseLegacyInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
     confidence: {
       companyName: confidence(customer.companyName), address: confidence(customer.address), postcode: confidence(customer.postcode),
       phone: confidence(customer.phone), accountNumber: /^\d{6}$/.test(metadata.accountNumber) ? 'high' : 'review',
-      invoiceNumber: metadata.invoiceNumber ? 'high' : 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
+      invoiceNumber: !metadata.invoiceNumber ? 'missing' : isInvalidReferenceValue(metadata.invoiceNumber) ? 'review' : 'high', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
       totals: Math.abs(totalGoods + vat - grandTotal) <= TOTALS_TOLERANCE ? 'high' : 'review',
     },
     warnings,
@@ -436,6 +443,8 @@ export function parseModernInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
   if (!metadata.accountNumber) warnings.push('Please check the customer account number.')
   if (!metadata.date) warnings.push('Please check the invoice date.')
   if (!metadata.invoiceNumber) warnings.push('Please check the invoice number.')
+  if (isInvalidReferenceValue(metadata.accountNumber)) warnings.push('Account number was extracted as "1", which is not a valid reference - please check and correct it.')
+  if (isInvalidReferenceValue(metadata.invoiceNumber)) warnings.push('Invoice number was extracted as "1", which is not a valid reference - please check and correct it.')
   if (!items.length) warnings.push('No product rows were found. Add or correct the products before saving.')
   if (Math.abs(totalGoods + vat - grandTotal) > TOTALS_TOLERANCE) warnings.push('The goods total plus VAT does not match the grand total - the printed Grand Total has been used as-is.')
 
@@ -458,8 +467,8 @@ export function parseModernInvoiceLines(rawLines: string[]): ImportedLegacyInvoi
     vatSummary,
     confidence: {
       companyName: confidence(companyName), address: confidence(''), postcode: confidence(''), phone: confidence(''),
-      accountNumber: /^\d+$/.test(metadata.accountNumber) ? 'high' : 'review',
-      invoiceNumber: metadata.invoiceNumber ? 'high' : 'missing', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
+      accountNumber: !/^\d+$/.test(metadata.accountNumber) ? 'review' : isInvalidReferenceValue(metadata.accountNumber) ? 'review' : 'high',
+      invoiceNumber: !metadata.invoiceNumber ? 'missing' : isInvalidReferenceValue(metadata.invoiceNumber) ? 'review' : 'high', date: confidence(metadata.date), products: items.length ? 'high' : 'missing',
       totals: Math.abs(totalGoods + vat - grandTotal) <= TOTALS_TOLERANCE ? 'high' : 'review',
     },
     warnings,

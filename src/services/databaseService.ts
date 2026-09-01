@@ -129,7 +129,8 @@ function mapNotificationLog(r: any): NotificationLog {
   return {
     id: r.id, invoiceId: r.invoice_id, customerId: r.customer_id, channel: r.channel ?? "email",
     status: r.status ?? "Sent", scheduledFor: r.scheduled_for ?? undefined, sentAt: r.sent_at ?? undefined,
-    error: r.error ?? undefined,
+    error: r.error ?? undefined, reminderStage: r.reminder_stage ?? undefined, idempotencyKey: r.idempotency_key ?? undefined,
+    sentBy: r.sent_by ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -976,7 +977,8 @@ class SupabaseDatabaseService {
     const row = {
       id: genId("nl"), invoice_id: input.invoiceId, customer_id: input.customerId, channel: input.channel,
       status: input.status, scheduled_for: input.scheduledFor || null, sent_at: input.sentAt || null,
-      error: input.error || null,
+      error: input.error || null, reminder_stage: input.reminderStage || null, idempotency_key: input.idempotencyKey || null,
+      sent_by: input.sentBy || null,
     }
     const { data, error } = await db().from("notification_logs").insert(row).select().single()
     if (error) throw error

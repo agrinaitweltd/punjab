@@ -10,7 +10,8 @@ const CUSTOMER_NAV_PERMISSION_KEY: Partial<Record<string, keyof SubAccountPermis
 const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
   products: "products", orders: "orders", customers: "customers", "add-customer": "customersCreate", tickets: "tickets",
   payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
-  "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage", "payment-reminders": "payments",
+  "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage",
+  "reminders-due-today": "payments", "reminders-14-day": "payments", "reminders-21-day": "payments",
   stats: "stats", "day-check": "stats", stock: "stock", "data-extract": "extracts",
   enquiries: "enquiries", complaints: "complaints",
 }
@@ -29,40 +30,44 @@ type NavigationGroup = { key: string; label: string; icon: IconName; children: N
 const adminNavigation: NavigationGroup[] = [
   { key: "customers-group", label: "Customers", icon: "customers", children: [
     { key: "customers", label: "All Customers", icon: "customers" }, { key: "add-customer", label: "Add Customer", icon: "customers" },
-    { key: "customer-applications", label: "Customer Applications", icon: "customers" }, { key: "outstanding", label: "Unpaid Invoices", icon: "clock" },
+    { key: "customer-applications", label: "Customer Applications", icon: "customers" }, { key: "outstanding", label: "21+ Days Overdue", icon: "clock" },
     { key: "credit-control", label: "Credit Control", icon: "finance" },
   ] },
   { key: "invoices-group", label: "Invoices", icon: "invoices", children: [
     { key: "invoices", label: "Invoices", icon: "invoices" }, { key: "create-invoice", label: "Create Invoice", icon: "invoices" },
-    { key: "invoice-numbers", label: "Invoice Numbers", icon: "invoices" }, { key: "credit-notes", label: "Credit Notes", icon: "documents" },
-    { key: "payment-reminders", label: "Payment Reminders", icon: "clock" },
+    { key: "invoice-numbers", label: "Invoice Numbers", icon: "invoices" },
   ] },
-  { key: "finance-group", label: "Finance", icon: "finance", children: [
-    { key: "payments", label: "Payments", icon: "finance" }, { key: "expenses", label: "Expenses", icon: "finance" },
-    { key: "payment-proofs", label: "Payment Proofs", icon: "documents" }, { key: "day-trade", label: "Day Trades", icon: "clock" },
+  { key: "payments-group", label: "Payments", icon: "finance", children: [
+    { key: "payments", label: "Payments", icon: "finance" }, { key: "payment-proofs", label: "Payment Proofs", icon: "documents" },
+    { key: "expenses", label: "Expenses", icon: "finance" }, { key: "day-trade", label: "Day Trades", icon: "clock" },
     { key: "day-check", label: "Day Check", icon: "clock" }, { key: "stats", label: "Analytics", icon: "sales" },
   ] },
-  { key: "stock-group", label: "Stock & Products", icon: "stock", children: [
-    { key: "stock", label: "Stock", icon: "stock" }, { key: "session", label: "Buying Desk", icon: "finance" },
-    { key: "products", label: "Products", icon: "stock" }, { key: "suppliers", label: "Suppliers", icon: "customers" },
+  { key: "credit-notes-group", label: "Credit Notes", icon: "documents", children: [
+    { key: "credit-notes", label: "Credit Notes", icon: "documents" },
   ] },
-  { key: "sales-group", label: "Sales & Orders", icon: "sales", children: [
-    { key: "orders", label: "Sales & Orders", icon: "order", badgeKey: "orders" }, { key: "delivery-areas", label: "Deliveries", icon: "stock" },
-    { key: "enquiries", label: "Enquiries", icon: "communications" },
-  ] },
-  { key: "communications-group", label: "Communications", icon: "communications", children: [
-    { key: "tickets", label: "Messages", icon: "communications", badgeKey: "tickets" }, { key: "communication-history", label: "Communication History", icon: "clock" },
-    { key: "whatsapp-logs", label: "WhatsApp Logs", icon: "communications" }, { key: "whatsapp-send", label: "Send WhatsApp", icon: "communications", access: "superAdmin" },
-  ] },
-  { key: "documents-group", label: "Documents", icon: "documents", children: [
+  { key: "documents-group", label: "Documents / Email Imports", icon: "documents", children: [
     { key: "files", label: "Files", icon: "documents" }, { key: "email-imports", label: "Email Imports", icon: "documents" },
     { key: "data-extract", label: "Integration", icon: "documents" },
   ] },
-  { key: "admin-group", label: "Users & Administration", icon: "admin", children: [
+  { key: "communications-group", label: "Communications", icon: "communications", children: [
+    { key: "tickets", label: "Messages", icon: "communications", badgeKey: "tickets" }, { key: "communication-history", label: "Communication History", icon: "clock" },
+  ] },
+  { key: "reminders-group", label: "Reminders", icon: "clock", children: [
+    { key: "reminders-due-today", label: "Due Today", icon: "clock" },
+    { key: "reminders-14-day", label: "14-Day Reminders", icon: "clock" },
+    { key: "reminders-21-day", label: "21-Day Reminders", icon: "clock" },
+  ] },
+  { key: "notifications-group", label: "Notifications", icon: "communications", children: [
+    { key: "notifications", label: "Notifications", icon: "communications" },
+  ] },
+  { key: "stock-orders-group", label: "Stock & Orders", icon: "stock", children: [
+    { key: "stock", label: "Stock", icon: "stock" }, { key: "session", label: "Buying Desk", icon: "finance" },
+    { key: "products", label: "Products", icon: "stock" }, { key: "suppliers", label: "Suppliers", icon: "customers" },
+    { key: "orders", label: "Sales & Orders", icon: "order", badgeKey: "orders" }, { key: "enquiries", label: "Enquiries", icon: "communications" },
+  ] },
+  { key: "admin-group", label: "Administration", icon: "admin", children: [
     { key: "admins", label: "Admin Users", icon: "admin", access: "users" }, { key: "sales-users", label: "Sales Users", icon: "team", access: "users" },
     { key: "assign-task", label: "Assign Task", icon: "order", access: "users" }, { key: "sub-accounts", label: "Sub-Account Approvals", icon: "team", access: "superAdmin" },
-  ] },
-  { key: "system-group", label: "System Management", icon: "settings", children: [
     { key: "system-overview", label: "System Overview", icon: "dashboard", access: "systemDeveloper" },
     { key: "system-users", label: "Users", icon: "admin", access: "systemDeveloper" },
     // Visible to every active admin (no `access` gate) so an admin can audit

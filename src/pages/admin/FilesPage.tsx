@@ -8,6 +8,7 @@ import type { StatementRecord } from "../../lib/secureAdminApi"
 import { confirmAction } from "../../lib/appDialogs"
 import { supabase } from "../../lib/supabase"
 import { runtimeTable } from "../../lib/runtimeMode"
+import { groupByDate } from "../../lib/dateGrouping"
 
 const fmtSize = (b: number) => b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`
 
@@ -36,13 +37,22 @@ const documentSubtitle = (f: StoredFile) => {
   return null
 }
 const documentReference = (f: StoredFile) => f.invoiceNumber ?? f.creditNoteNumber ?? '—'
+/** Email-imported documents still awaiting (or that failed) automatic
+    processing - process-mailbox.js always tags these with this exact note
+    prefix and documentRole 'general' (see uploadFileServer calls there).
+    Distinguishing them this way (rather than just dropping the 'general'
+    filter entirely) means this view surfaces every relevant email-imported
+    document (item 10) without also pulling in unrelated plain internal
+    uploads, which also default to documentRole 'general'. */
+const pendingReviewMatch = (f: StoredFile) => /^Email import \((needs review|failed)\):/i.exec(f.note ?? '')
+const isPendingReviewDoc = (f: StoredFile) => Boolean(pendingReviewMatch(f))
 /** Email-import writes always tag the source PDF's note with "(email
     import)" (see server/email-import/create-records.js's uploadFileServer
     calls) - the manual "Add Customer via PDF" path never does, so this is a
     reliable enough signal without needing a dedicated column. */
 const importSource = (f: StoredFile) => /\(email import\)/i.test(f.note ?? '') ? 'Email' : 'Manual'
 
-export function FilesPage({ customers, invoices = [] }: { customers: Customer[]; invoices?: Invoice[] }) {
+export function FilesPage({ customers, invoices = [], onNavigate }: { customers: Customer[]; invoices?: Invoice[]; onNavigate?: (page: string) => void }) {
   const [files, setFiles] = useState<StoredFile[]>([])
   const [loading, setLoading] = useState(true)
   const [folderQuery, setFolderQuery] = useState("")
@@ -61,6 +71,7 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
       folder below. */
   const [view, setView] = useState<'folders' | 'generated' | 'statements'>('folders')
   const [statements, setStatements] = useState<StatementRecord[]>([])
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc')
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async (showSpinner = true) => {
@@ -112,14 +123,16 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
 
   // Every source or generated invoice/credit-note document, customer- and
   // account-labelled, so an incorrect association is easy to spot at a
-  // glance - excludes only uncategorised internal uploads ('general'),
-  // which have no invoice/credit-note to relate to.
+  // glance - PLUS every email-imported document still awaiting (or that
+  // failed) review, so admins can see those here too instead of only in
+  // Email Imports (item 10). Only excludes genuinely uncategorised plain
+  // internal uploads that have nothing to do with an invoice/credit note.
   const generatedDocs = useMemo(
-    () => files.filter(f => f.documentRole && f.documentRole !== 'general')
-      .filter(f => !folderQuery.trim() || `${f.name} ${f.customerName} ${documentReference(f)}`.toLowerCase().includes(folderQuery.trim().toLowerCase()))
-      .sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || '')),
+    () => files.filter(f => (f.documentRole && f.documentRole !== 'general') || isPendingReviewDoc(f))
+      .filter(f => !folderQuery.trim() || `${f.name} ${f.customerName} ${documentReference(f)}`.toLowerCase().includes(folderQuery.trim().toLowerCase())),
     [files, folderQuery],
   )
+  const generatedGroups = useMemo(() => groupByDate(generatedDocs, f => f.uploadedAt || '', sortDirection), [generatedDocs, sortDirection])
 
   const selectedCustomer = selected === INTERNAL ? null : customers.find(c => c.id === selected)
   const folderFiles = files.filter(f => {
@@ -237,43 +250,56 @@ export function FilesPage({ customers, invoices = [] }: { customers: Customer[];
         </div>
       ) : view === 'generated' ? (
         <div className="doc-content" style={{ width: '100%' }}>
-          <div className="ps-search-wrap" style={{ margin: "0 0 12px", maxWidth: 340 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input className="ps-search" placeholder="Search customer, document or reference…" value={folderQuery} onChange={e => setFolderQuery(e.target.value)} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', margin: "0 0 12px", flexWrap: 'wrap' }}>
+            <div className="ps-search-wrap" style={{ maxWidth: 340 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input className="ps-search" placeholder="Search customer, document or reference…" value={folderQuery} onChange={e => setFolderQuery(e.target.value)} />
+            </div>
+            <Button variant="secondary" className="btn-sm" onClick={() => setSortDirection(d => d === 'desc' ? 'asc' : 'desc')}>
+              {sortDirection === 'desc' ? 'Newest First' : 'Oldest First'}
+            </Button>
           </div>
-          <div className="ps-table-wrap">
-            <table className="ps-table">
-              <thead><tr><th>Document</th><th>Customer</th><th>Account No.</th><th>Reference</th><th>Date</th><th>Source</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
-              <tbody>
-                {generatedDocs.map(f => {
-                  const invoice = f.invoiceId ? invoiceById.get(f.invoiceId) : undefined
-                  const customer = f.customerId ? customerByIdMap.get(f.customerId) : undefined
-                  const subtitle = documentSubtitle(f)
-                  return (
-                  <tr key={f.id}>
-                    <td>
-                      <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>{documentTypeLabel(f)}</span>
-                      {subtitle && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{subtitle}</div>}
-                    </td>
-                    <td>{f.customerName || 'Internal'}</td>
-                    <td>{customer?.customerNumber || '—'}</td>
-                    <td>{documentReference(f)}</td>
-                    <td>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
-                    <td>{importSource(f)}</td>
-                    <td>{invoice ? invoice.status : (f.creditNoteId ? 'Active' : '—')}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        {(f.type.startsWith("image/") || f.type === "application/pdf") && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>View</Button>}
-                        <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
-                      </div>
-                    </td>
-                  </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {generatedDocs.length === 0 && <div className="db-empty">No invoice or credit-note documents yet.</div>}
-          </div>
+          {generatedGroups.map(group => (
+            <div key={group.label} style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6b7a70', margin: '0 0 8px' }}>{group.label}</h3>
+              <div className="ps-table-wrap">
+                <table className="ps-table">
+                  <thead><tr><th>Document</th><th>Customer</th><th>Account No.</th><th>Reference</th><th>Received</th><th>Source</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+                  <tbody>
+                    {group.items.map(f => {
+                      const invoice = f.invoiceId ? invoiceById.get(f.invoiceId) : undefined
+                      const customer = f.customerId ? customerByIdMap.get(f.customerId) : undefined
+                      const subtitle = documentSubtitle(f)
+                      const pending = pendingReviewMatch(f)
+                      const status = pending ? (pending[1].toLowerCase() === 'failed' ? 'Import Failed' : 'Awaiting Review') : invoice ? invoice.status : (f.creditNoteId ? 'Active' : '—')
+                      return (
+                      <tr key={f.id}>
+                        <td>
+                          <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>{pending ? 'Email Import' : documentTypeLabel(f)}</span>
+                          {subtitle && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{subtitle}</div>}
+                        </td>
+                        <td>{f.customerName || 'Internal'}</td>
+                        <td>{customer?.customerNumber || '—'}</td>
+                        <td>{documentReference(f)}</td>
+                        <td>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                        <td>{importSource(f)}</td>
+                        <td><span className={`ps-badge ${status === 'Import Failed' ? 'ps-badge-red' : status === 'Awaiting Review' ? '' : 'ps-badge-green'}`} style={status === 'Awaiting Review' ? { background: '#fef3c7', color: '#b45309' } : undefined}>{status}</span></td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            {(f.type.startsWith("image/") || f.type === "application/pdf") && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>View</Button>}
+                            <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
+                            {pending && onNavigate && <Button className="btn-sm" onClick={() => onNavigate('email-imports')}>Review</Button>}
+                          </div>
+                        </td>
+                      </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+          {generatedDocs.length === 0 && <div className="db-empty">No invoice or credit-note documents yet.</div>}
         </div>
       ) : (
       <div className="doc-layout">

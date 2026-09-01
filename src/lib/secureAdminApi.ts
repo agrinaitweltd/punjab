@@ -42,7 +42,7 @@ export async function setErrorResolved(id: string, resolved: boolean) {
 }
 
 export type AdminInvitationInput = { name: string; email: string; role: string; jobTitle: string; permissions: PermissionSet; isSalesman: boolean; salesmanIds: string[] }
-export async function inviteAdmin(input: AdminInvitationInput, sensitiveToken: string) {
+export async function inviteAdmin(input: AdminInvitationInput, sensitiveToken?: string) {
   return api<{ ok: true }>('/api/admin-security?action=invite-admin', { method: 'POST', body: JSON.stringify(input) }, sensitiveToken)
 }
 

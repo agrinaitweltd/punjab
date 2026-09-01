@@ -3,19 +3,25 @@ import bcrypt from 'bcryptjs'
 import { guardApi, safeError } from '../security.js'
 import { requireSensitiveStaff, writeSystemAudit } from '../sensitive-actions.js'
 import { brandedEmail, escapeHtml, sendTransactionalEmail } from '../email-system.js'
+import { isSensitiveAdminGrant } from '../../server-dist/lib/adminAccess.js'
 
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 
 export default async function handler(req, res) {
   if (!guardApi(req, res, { maxBytes: 32_000, limit: 8, windowMs: 15 * 60_000 })) return
-  const context = await requireSensitiveStaff(req, res)
+  const role = String(req.body?.role || 'Staff').trim()
+  const permissions = req.body?.permissions && typeof req.body.permissions === 'object' ? req.body.permissions : {}
+  // Routine, low-privilege staff invites (the common case - e.g. adding a
+  // warehouse/sales user) don't need a fresh password re-check; only
+  // granting an elevated role or a permission that lets the new account
+  // manage other users/the wider app does. See src/lib/adminAccess.ts.
+  const sensitive = isSensitiveAdminGrant(role, permissions)
+  const context = await requireSensitiveStaff(req, res, { requireToken: sensitive })
   if (!context) return
   const { user, staff, admin } = context
   const name = String(req.body?.name || '').trim()
   const email = String(req.body?.email || '').trim().toLowerCase()
-  const role = String(req.body?.role || 'Staff').trim()
   const jobTitle = String(req.body?.jobTitle || '').trim()
-  const permissions = req.body?.permissions && typeof req.body.permissions === 'object' ? req.body.permissions : {}
   const isSalesman = Boolean(req.body?.isSalesman)
   const salesmanIds = Array.isArray(req.body?.salesmanIds) ? req.body.salesmanIds.map(String).slice(0, 50) : []
   if (!name || name.length > 120 || !validEmail(email) || email.length > 254 || !['Staff', 'Manager', 'Supervisor', 'Owner', 'System Developer'].includes(role)) {

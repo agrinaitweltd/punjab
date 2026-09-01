@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppLayout } from '../../components/layout/AppLayout'
 import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
-import { ADMIN_NOTIFY_EMAIL, sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml, paymentReminderEmailHtml } from '../../lib/emailService'
+import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml } from '../../lib/emailService'
 import { getCreditStatus } from '../../lib/creditControl'
 import { APPROVED_INVOICE_TEMPLATE_ID, dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
 import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
 import { confirmAction, showNotice, showAppError, showSuccess } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
+import { SendReminderModal } from '../../components/SendReminderModal'
+import type { ReminderStage } from '../../lib/reminderTemplates'
 import { saveCreditNoteItems } from '../../services/creditNoteItemService'
 import { findDuplicateCreditNote, findDuplicateInvoice, matchImportedCustomer } from '../../lib/importMatching'
 import type { ImportedCreditNote, ImportedFinancialDocument } from '../../lib/invoiceImport'
@@ -131,7 +133,8 @@ import { SuppliersPage } from './SuppliersPage'
 import { SalesUsersPage } from './SalesUsersPage'
 import { AssignTaskPage } from './AssignTaskPage'
 import { SubAccountApprovalsPage } from './SubAccountApprovalsPage'
-import { PaymentRemindersPage } from './PaymentRemindersPage'
+import { RemindersPage } from './RemindersPage'
+import { NotificationsPage } from './NotificationsPage'
 import { SettingsPage } from './SettingsPage'
 import { SimpleModulePage } from './SimpleModulePage'
 import { StockPage } from './StockPage'
@@ -169,6 +172,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [buyingSessions, setBuyingSessions] = useState<BuyingSession[]>([])
   const [buyingPrices, setBuyingPrices] = useState<BuyingPrice[]>([])
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([])
+  const [reminderTarget, setReminderTarget] = useState<{ invoice: Invoice; customer: Customer; stage: ReminderStage } | null>(null)
+  const [reminderBusy, setReminderBusy] = useState(false)
   const [openAddCustomerRequest, setOpenAddCustomerRequest] = useState(0)
   const [invoicesCustomerFilter, setInvoicesCustomerFilter] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -384,35 +389,46 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (key === 'tickets') markTicketsSeen()
   }
 
-  const sendInvoiceReminderPdf = async (invoice: Invoice, customer: Customer) => {
-    const storedPdf = await findInvoicePdf(customer.id, invoice.invoiceNumber, invoice.id, invoice.amount)
-    if (!storedPdf) {
-      const error = `Invoice PDF ${invoice.invoiceNumber} is missing. Generate or upload the official invoice PDF, then retry.`
-      const channels: Array<'email' | 'whatsapp'> = []
-      if (customer.email) channels.push('email')
-      if (customer.phone) channels.push('whatsapp')
-      await Promise.all(channels.map(channel => createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel, status: 'Failed', error })))
-      await sendEmail(ADMIN_NOTIFY_EMAIL, `Invoice PDF Missing - ${customer.companyName} - ${invoice.invoiceNumber}`, `<p>${error}</p><p>Customer: ${customer.companyName}<br>Account: ${customer.customerNumber}<br>Due date: ${invoice.dueDate}</p>`, undefined, { category: 'system', customerId: customer.id, invoiceId: invoice.id, communicationType: 'invoice_pdf_missing' })
-      void logActivity(user.displayName, `invoice reminder failed for ${invoice.invoiceNumber}: official PDF missing`)
-      throw new Error(error)
-    }
-    const outstanding = invoiceOutstanding(invoice)
-    const base64 = dataUriBase64(storedPdf.dataUri)
-    const results: boolean[] = []
-    if (customer.email) {
-      const sent = await sendEmail(customer.email, `Payment Reminder - Invoice ${invoice.invoiceNumber}`, paymentReminderEmailHtml(customer.contactPerson || customer.companyName, invoice.invoiceNumber, outstanding, invoice.dueDate, `${window.location.origin}/customer`), [{ filename: storedPdf.name, content: base64 }], { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, idempotencyKey: `invoice:${invoice.id}:manual-reminder:${new Date().toISOString().slice(0, 10)}`, communicationType: 'payment_reminder' })
-      results.push(sent.ok)
-      await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'email', status: sent.ok ? 'Sent' : 'Failed', sentAt: sent.ok ? new Date().toISOString() : undefined, error: sent.error })
-    }
-    if (customer.phone) {
-      const message = `Hello ${customer.contactPerson || customer.companyName}, invoice ${invoice.invoiceNumber} has an outstanding balance of £${outstanding.toFixed(2)} and is due ${invoice.dueDate}. The original invoice PDF is attached.`
-      const sent = await sendWhatsAppDocument(customer.phone, message, storedPdf.name, base64, { customerId: customer.id, customerName: customer.companyName, createdBy: user.displayName })
-      results.push(sent.status === 'Sent')
-      await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'whatsapp', status: sent.status === 'Sent' ? 'Sent' : 'Failed', sentAt: sent.status === 'Sent' ? new Date().toISOString() : undefined, error: sent.status === 'Sent' ? undefined : sent.response })
-    }
-    if (!results.length) throw new Error('This customer has no email address or telephone number.')
-    if (!results.every(Boolean)) throw new Error('The invoice was not sent on every available channel. Check Communication History and retry.')
-    void logActivity(user.displayName, `sent original invoice PDF reminder for ${invoice.invoiceNumber}`)
+  // Manual reminder composer (items 17/20) - admin reviews/edits the message
+  // before sending. Reuses the existing email pipeline (sendEmail ->
+  // /api/send-email -> Resend) unchanged, and always attaches the
+  // SYSTEM-GENERATED invoice PDF (never the original source PDF). Email is
+  // attempted first and unconditionally; WhatsApp is a strictly best-effort
+  // add-on that can never fail or block the email send (item 19) - a
+  // WhatsApp failure/unavailability never blocks the email, is logged
+  // internally, and is never reported to the admin as a successful send.
+  const requestReminder = (invoice: Invoice, customer: Customer, stage: ReminderStage) => setReminderTarget({ invoice, customer, stage })
+  const sendManualReminder = async ({ subject, message, alsoWhatsApp }: { subject: string; message: string; alsoWhatsApp: boolean }) => {
+    if (!reminderTarget) return
+    const { invoice, customer, stage } = reminderTarget
+    setReminderBusy(true)
+    try {
+      const storedPdf = await findInvoicePdf(customer.id, invoice.invoiceNumber, invoice.id, invoice.amount)
+      if (!storedPdf) throw new Error(`The system-generated PDF for invoice ${invoice.invoiceNumber} is missing. Generate it first, then retry.`)
+      const base64 = dataUriBase64(storedPdf.dataUri)
+      const html = `<div style="white-space:pre-line">${message.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char]!))}</div>`
+      const idempotencyKey = `invoice:${invoice.id}:${stage}:email:${new Date().toISOString().slice(0, 10)}`
+      const sent = await sendEmail(customer.email, subject, html, [{ filename: storedPdf.name, content: base64 }], { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, idempotencyKey, communicationType: `reminder_${stage}` })
+      await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'email', status: sent.ok ? 'Sent' : 'Failed', sentAt: sent.ok ? new Date().toISOString() : undefined, error: sent.error, reminderStage: stage, idempotencyKey, sentBy: user.displayName })
+      if (!sent.ok) throw new Error(sent.error || 'The reminder email could not be sent.')
+
+      // WhatsApp is genuinely best-effort here: any failure (invalid number,
+      // channel unavailable, request error) is caught and logged, never
+      // thrown - the email above has already gone out and that's what
+      // matters. sendWhatsAppDocument itself never throws (it always
+      // resolves to a WhatsAppLog), but the try/catch keeps this contract
+      // explicit even if that changes.
+      if (alsoWhatsApp && customer.phone) {
+        try {
+          const whatsapp = await sendWhatsAppDocument(customer.phone, message, storedPdf.name, base64, { customerId: customer.id, customerName: customer.companyName, createdBy: user.displayName })
+          await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'whatsapp', status: whatsapp.status === 'Sent' ? 'Sent' : 'Failed', sentAt: whatsapp.status === 'Sent' ? new Date().toISOString() : undefined, error: whatsapp.status === 'Sent' ? undefined : whatsapp.response, reminderStage: stage, sentBy: user.displayName })
+        } catch { /* WhatsApp is best-effort only - the email already sent successfully */ }
+      }
+      void logActivity(user.displayName, `sent ${stage} reminder for invoice ${invoice.invoiceNumber}`)
+      showSuccess('Reminder sent successfully')
+      setReminderTarget(null)
+      await load()
+    } finally { setReminderBusy(false) }
   }
 
   const regenerateInvoicePdf = async (invoice: Invoice, customer: Customer) => {
@@ -692,6 +708,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
     if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} deliveryLogs={communicationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
+    if (current === 'notifications') return <NotificationsPage notifications={notifications} onMarkRead={handleMarkNotificationRead} onMarkAllRead={handleMarkAllNotificationsRead} onOpen={handleOpenNotification} />
+
     if (current === 'session') {
       const canEditBuying = user.isSuperAdmin || Boolean(user.permissions?.buyingPricesEdit)
       return (
@@ -894,7 +912,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'files') {
-          return <FilesPage customers={customers} invoices={invoices} />
+          return <FilesPage customers={customers} invoices={invoices} onNavigate={navigate} />
     }
 
     if (current === 'customers') {
@@ -1142,6 +1160,8 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onOpenCreditNote={(id) => { setOpenCreditNoteId(id); navigate('credit-notes') }}
           onNavigate={navigate}
           onRecordPayment={recordInvoicePayment}
+          onSendReminder={requestReminder}
+          onRegeneratePdf={regenerateInvoicePdf}
           customerId={invoicesCustomerFilter}
           onClearCustomerFilter={() => setInvoicesCustomerFilter(null)}
         />
@@ -1149,10 +1169,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'outstanding') {
-      return <OutstandingInvoicesPage invoices={invoices} customers={customers} onSendReminder={async (invoice, customer) => {
-        await sendInvoiceReminderPdf(invoice, customer)
-        await load()
-      }} onRecordPayment={recordInvoicePayment} />
+      return <OutstandingInvoicesPage invoices={invoices} customers={customers} notificationLogs={notificationLogs} onSendReminder={(invoice, customer) => requestReminder(invoice, customer, '21-plus')} onRecordPayment={recordInvoicePayment} />
     }
 
     if (current === 'create-invoice') {
@@ -1388,33 +1405,16 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       )
     }
 
-    if (current === 'payment-reminders') {
+    if (current === 'reminders-due-today' || current === 'reminders-14-day' || current === 'reminders-21-day') {
+      const view = current === 'reminders-due-today' ? 'due-today' : current === 'reminders-14-day' ? 'day-14' : 'day-21'
       return (
-        <PaymentRemindersPage
+        <RemindersPage
+          view={view}
           invoices={invoices}
           customers={customers}
           notificationLogs={notificationLogs}
-          canManage={user.isSuperAdmin || Boolean(user.permissions?.paymentsRecord)}
-          onSendNow={async (invoice, customer) => {
-            await sendInvoiceReminderPdf(invoice, customer)
-            await load()
-          }}
-          onSchedule={async (invoice, customer, scheduledFor) => {
-            await createNotificationLog({
-              invoiceId: invoice.id, customerId: customer.id, channel: 'email',
-              status: 'Scheduled', scheduledFor: new Date(scheduledFor).toISOString(),
-            })
-            void logActivity(user.displayName, `scheduled payment reminder for invoice ${invoice.invoiceNumber} to ${customer.companyName}`)
-            await load()
-          }}
-          onResend={async (log) => {
-            const invoice = invoices.find(i => i.id === log.invoiceId)
-            const customer = customers.find(c => c.id === log.customerId)
-            if (!invoice || !customer) return
-            await sendInvoiceReminderPdf(invoice, customer)
-            await load()
-          }}
-          onRetryPdf={regenerateInvoicePdf}
+          deliveryLogs={communicationLogs}
+          onSendReminder={requestReminder}
         />
       )
     }
@@ -1538,6 +1538,15 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     >
       {page()}
       <ToastStack toasts={toasts} onDismiss={dismiss} />
+      <SendReminderModal
+        open={Boolean(reminderTarget)}
+        invoice={reminderTarget?.invoice ?? null}
+        customer={reminderTarget?.customer ?? null}
+        stage={reminderTarget?.stage ?? 'day-14'}
+        busy={reminderBusy}
+        onClose={() => setReminderTarget(null)}
+        onSend={sendManualReminder}
+      />
     </AppLayout>
   )
 }

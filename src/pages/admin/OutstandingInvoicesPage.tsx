@@ -1,19 +1,23 @@
 import { useMemo, useState } from 'react'
-import type { Customer, Invoice } from '../../types'
+import type { Customer, Invoice, NotificationLog } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
 import { classifyInvoice, daysOverdue, invoiceOutstanding } from '../../lib/creditNotes'
 import { findInvoicePdf } from '../../lib/fileService'
+import { formatUkPhoneForDisplay } from '../../lib/whatsapp'
 import { showAppError } from '../../lib/appDialogs'
 
 const dayStart = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
 const money = (value: number) => `£${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment, onSendReminder }: {
+export function OutstandingInvoicesPage({ invoices, customers, notificationLogs, onRecordPayment, onSendReminder }: {
   invoices: Invoice[]
   customers: Customer[]
+  notificationLogs: NotificationLog[]
   onRecordPayment: (invoice: Invoice, amount: number) => Promise<void>
-  onSendReminder: (invoice: Invoice, customer: Customer) => Promise<void>
+  /** Opens the manual reminder composer for this invoice/customer - does not
+      send anything itself (see item 17: admin always reviews/edits first). */
+  onSendReminder: (invoice: Invoice, customer: Customer) => void
 }) {
   const [query, setQuery] = useState('')
   const [customerId, setCustomerId] = useState('')
@@ -23,7 +27,7 @@ export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment, 
   const [notice, setNotice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const today = dayStart(new Date())
-  // "Unpaid Invoices" - item 9: only invoices past the 21-day grace period,
+  // "21+ Days Overdue" - item 9: only invoices past the 21-day grace period,
   // not every invoice that merely has a balance (that's the Open tab on
   // InvoicesPage.tsx). classifyInvoice is the single shared source of truth
   // for this boundary.
@@ -44,10 +48,14 @@ export function OutstandingInvoicesPage({ invoices, customers, onRecordPayment, 
   const dueToday = outstandingInvoices.filter(invoice => due(invoice) === today)
   const nextSeven = outstandingInvoices.filter(invoice => due(invoice) > today && due(invoice) <= today + 7 * 86400000)
 
-  return <div className="stack outstanding-page"><div className="page-heading"><div><h1>Unpaid Invoices</h1><p>Invoices more than 21 days past due and still not fully paid or credited.</p></div></div>
+  const lastReminderFor = (invoiceId: string) => notificationLogs
+    .filter(log => log.invoiceId === invoiceId && log.status === 'Sent')
+    .sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''))[0]
+
+  return <div className="stack outstanding-page"><div className="page-heading"><div><h1>21+ Days Overdue</h1><p>Invoices that remain outstanding after the 21-day payment period.</p></div></div>
     <div className="overview-grid outstanding-summary">{[['Total Overdue', total(outstandingInvoices)], ['Due Today', total(dueToday)], ['Due Next 7 Days', total(nextSeven)]].map(([label, value]) => <Card key={String(label)} title={String(label)}><p className="metric">{money(Number(value))}</p></Card>)}</div>
     {!selectedGroup ? <Card title="Customers with overdue balances"><div className="table-toolbar"><input className="search-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search customer name or account number..." /></div><div className="outstanding-customer-list">{groups.map(group => <article className="outstanding-customer-row" key={group.customer.id}><div><h3>{group.customer.companyName}</h3><p>Account {group.customer.customerNumber}</p></div><div><span>Overdue</span><strong>{money(group.outstanding)}</strong></div><div><span>Invoices</span><strong>{group.rows.length}</strong></div><div><span>Next Due</span><strong>{group.nextDue || '—'}</strong></div><button className="btn btn-secondary" onClick={() => setCustomerId(group.customer.id)}>View Unpaid Invoices</button></article>)}</div>{groups.length === 0 && <div className="empty-state">No customer accounts are overdue.</div>}</Card>
-    : <Card title={`${selectedGroup.customer.companyName} - Account ${selectedGroup.customer.customerNumber}`} actions={<button className="btn btn-secondary btn-sm" onClick={() => setCustomerId('')}>Back to Customers</button>}><div className="customer-outstanding-heading"><span>Total Overdue</span><strong>{money(selectedGroup.outstanding)}</strong></div><DataTable columns={['Invoice No','Invoice Date','Due Date','Days Overdue','Invoice Total','Paid','Outstanding','Credit Status','Actions']}>{selectedGroup.rows.map(invoice => { return <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong></td><td>{invoice.date || '—'}</td><td>{invoice.dueDate}</td><td><span className="status-badge danger">{daysOverdue(invoice)} days</span></td><td>{money(invoice.amount)}</td><td>{money(invoice.amountPaid ?? 0)}</td><td><strong>{money(invoiceOutstanding(invoice))}</strong></td><td>{(invoice.creditApplied ?? 0) > 0 ? money(invoice.creditApplied ?? 0) + ' credited' : '—'}</td><td><div className="table-actions"><button className="btn btn-secondary btn-sm" onClick={() => downloadDuePdf(invoice, selectedGroup.customer)}>View Invoice</button><button className="btn btn-secondary btn-sm" onClick={() => openPayment(invoice)}>Record Payment</button><button className="btn btn-primary btn-sm" onClick={() => openPayment(invoice, true)}>Customer Has Paid</button><button className="btn btn-secondary btn-sm" onClick={async () => { await onSendReminder(invoice, selectedGroup.customer); setNotice(`Reminder sent for ${invoice.invoiceNumber}.`) }}>Send Reminder</button></div></td></tr>})}</DataTable></Card>}
+    : <Card title={`${selectedGroup.customer.companyName} - Account ${selectedGroup.customer.customerNumber}`} actions={<button className="btn btn-secondary btn-sm" onClick={() => setCustomerId('')}>Back to Customers</button>}><div className="customer-outstanding-heading"><span>Total Overdue</span><strong>{money(selectedGroup.outstanding)}</strong></div><div style={{ padding: '0 16px 12px', color: '#6b7280', fontSize: 13 }}>{selectedGroup.customer.email || 'No email'} · {formatUkPhoneForDisplay(selectedGroup.customer.phone) || 'No phone'}</div><DataTable columns={['Invoice No','Invoice Date','Due Date','Days Overdue','Invoice Total','Outstanding','Last Reminder','Actions']}>{selectedGroup.rows.map(invoice => { const last = lastReminderFor(invoice.id); return <tr key={invoice.id}><td><strong>{invoice.invoiceNumber}</strong></td><td>{invoice.date || '—'}</td><td>{invoice.dueDate}</td><td><span className="status-badge danger">{daysOverdue(invoice)} days</span></td><td>{money(invoice.amount)}</td><td><strong>{money(invoiceOutstanding(invoice))}</strong></td><td>{last ? `${(last.sentAt ?? '').slice(0, 10)} (${last.channel})` : '—'}</td><td><div className="table-actions"><button className="btn btn-secondary btn-sm" onClick={() => downloadDuePdf(invoice, selectedGroup.customer)}>View Invoice</button><button className="btn btn-secondary btn-sm" onClick={() => openPayment(invoice)}>Record Payment</button><button className="btn btn-primary btn-sm" onClick={() => openPayment(invoice, true)}>Customer Has Paid</button><button className="btn btn-secondary btn-sm" onClick={() => onSendReminder(invoice, selectedGroup.customer)}>Send Reminder</button></div></td></tr>})}</DataTable></Card>}
     {notice && <p className="success-message">{notice}</p>}
     {selected && <div className="modal-backdrop" role="presentation"><div className="modal-card" role="dialog" aria-modal="true"><h2>{confirmStep ? (confirmStep === 1 ? 'Confirm Customer Payment' : 'Final Confirmation') : 'Record Payment'}</h2><p>{confirmStep === 1 ? `You are about to mark ${selected.invoiceNumber} as fully paid.` : confirmStep === 2 ? `Are you sure the full outstanding payment of ${money(invoiceOutstanding(selected))} has been received?` : `${selected.invoiceNumber} · ${money(invoiceOutstanding(selected))} outstanding`}</p>{!confirmStep && <label>Amount received<input className="input" type="number" min="0.01" max={invoiceOutstanding(selected)} step="0.01" value={payment} onChange={event => setPayment(event.target.value)} disabled={submitting} /></label>}<div className="modal-actions"><button className="btn btn-ghost" type="button" disabled={submitting} onClick={() => { setSelected(null); setConfirmStep(null) }}>{confirmStep === 2 ? 'Go Back' : 'Cancel'}</button>{confirmStep === 1 && <button className="btn btn-primary" type="button" onClick={() => setConfirmStep(2)}>Continue</button>}{confirmStep === 2 && <button className="btn btn-primary" type="button" disabled={submitting} onClick={async () => {
       if (submitting) return

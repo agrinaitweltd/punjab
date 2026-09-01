@@ -27,7 +27,7 @@ for (const viewport of [
     if (viewport.name === 'desktop') {
       await sidebarParent('Customers').click()
       await expect(page.getByRole('button', { name: 'Add Customer', exact: true })).toBeVisible()
-      await sidebarParent('Finance').click()
+      await sidebarParent('Payments').click()
       await expect(page.getByRole('button', { name: 'Add Customer', exact: true })).toHaveCount(0)
       await page.getByRole('button', { name: 'Expenses', exact: true }).click()
       await expect(page.locator('.topbar-title')).toHaveText('Expenses')

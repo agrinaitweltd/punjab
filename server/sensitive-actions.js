@@ -24,10 +24,10 @@ export function verifySensitiveToken(token, userId) {
   } catch { return false }
 }
 
-export async function requireSensitiveStaff(req, res, { systemDeveloperOnly = false } = {}) {
+export async function requireSensitiveStaff(req, res, { systemDeveloperOnly = false, requireToken = true } = {}) {
   const user = await requireUser(req, res, { adminOnly: true })
   if (!user) return null
-  if (!verifySensitiveToken(req.headers?.['x-sensitive-action-token'], user.id)) {
+  if (requireToken && !verifySensitiveToken(req.headers?.['x-sensitive-action-token'], user.id)) {
     res.status(401).json({ error: 'Please verify your password again to continue.' })
     return null
   }

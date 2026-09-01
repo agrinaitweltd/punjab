@@ -42,6 +42,7 @@ async function renderFallback(data) {
   page.drawText(`Total Goods: ${money(invoice.totalGoods)}`, { x: 380, y: totalY, size: 10, font: regular })
   page.drawText(`VAT: ${money(invoice.vatTotal)}`, { x: 380, y: totalY - 20, size: 10, font: regular })
   page.drawText(`Grand Total: ${money(invoice.grandTotal)}`, { x: 380, y: totalY - 46, size: 13, font: bold, color: green })
+  page.drawText('Please Pay Invoice in 21 Days.', { x: 36, y: 46, size: 8, font: bold, color: green })
   page.drawText('Punjab Exotic Foods Limited | New Spitalfields Market, London E10 5SQ', { x: 36, y: 34, size: 8, font: regular, color: muted })
   return Buffer.from(await pdf.save())
 }

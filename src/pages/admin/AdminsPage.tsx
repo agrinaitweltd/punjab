@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
 import { EMPTY_PERMISSIONS, FALLBACK_ROLE_TEMPLATES } from "../../lib/permissions"
+import { isSensitiveAdminGrant } from "../../lib/adminAccess"
 import { SensitiveActionDialog } from "../../components/SensitiveActionDialog"
 
 const ALL_PERMISSIONS = Object.keys(EMPTY_PERMISSIONS) as (keyof PermissionSet)[]
@@ -112,7 +113,7 @@ export function AdminsPage({
 }: {
   admins: AdminStaff[]
   salesmen?: Salesman[]
-  onCreate: (name: string, email: string, role: string, jobTitle: string, permissions: PermissionSet, isSalesman: boolean, salesmanIds: string[], sensitiveToken: string) => Promise<void>
+  onCreate: (name: string, email: string, role: string, jobTitle: string, permissions: PermissionSet, isSalesman: boolean, salesmanIds: string[], sensitiveToken?: string) => Promise<void>
   onUpdate?: (id: string, data: Partial<AdminStaff>, sensitiveToken: string) => Promise<void>
   onDelete?: (id: string, sensitiveToken: string) => Promise<void>
   onToggleActive?: (id: string, active: boolean, sensitiveToken: string) => Promise<void>
@@ -131,6 +132,7 @@ export function AdminsPage({
   const [salesmanIds, setSalesmanIds] = useState<string[]>([])
   const [roleTemplates, setRoleTemplates] = useState<AdminRole[]>(FALLBACK_ROLE_TEMPLATES)
   const [formError, setFormError]   = useState("")
+  const [creating, setCreating]     = useState(false)
   const [sensitiveAction, setSensitiveAction] = useState<null | {
     title: string; warning?: string; actionLabel: string; run: (token: string) => Promise<void>
   }>(null)
@@ -155,11 +157,27 @@ export function AdminsPage({
     }
   }
 
-  const submitCreate = (e: FormEvent) => {
+  const submitCreate = async (e: FormEvent) => {
     e.preventDefault()
     setFormError("")
     if (!name.trim() || !email.trim()) { setFormError("Name and email are required."); return }
     if (admins.some(a => a.email.toLowerCase() === email.trim().toLowerCase())) { setFormError("An admin with that email already exists."); return }
+
+    // Routine, low-privilege invites (the common case) go straight through -
+    // only granting an elevated role or a user/app-management permission
+    // needs a fresh password re-check. Keeps this in sync with the same
+    // check the server enforces in invite-admin.js.
+    if (!isSensitiveAdminGrant(role, perms)) {
+      setCreating(true)
+      try {
+        await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, isSalesman, salesmanIds)
+        resetForm(); setShowCreate(false)
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : "Couldn't send the invitation — please try again.")
+      } finally { setCreating(false) }
+      return
+    }
+
     setSensitiveAction({
       title: "Send administrator invitation",
       warning: "A one-time account setup link will be emailed to " + email.trim() + ". No password will be created or sent by you.",
@@ -346,8 +364,10 @@ export function AdminsPage({
           <PermGrid perms={perms} onChange={setPerms} />
           {formError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{formError}</p>}
           <div className="wide actions-row">
-            <Button type="submit">Continue to Verification</Button>
-            <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button type="submit" disabled={creating}>
+              {creating ? "Sending Invitation…" : isSensitiveAdminGrant(role, perms) ? "Continue to Verification" : "Send Invitation"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setShowCreate(false)} disabled={creating}>Cancel</Button>
           </div>
         </form>
       </Modal>

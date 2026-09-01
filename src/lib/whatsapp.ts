@@ -38,6 +38,22 @@ export function isValidPhone(raw: string): boolean {
   return normalizePhone(raw) !== null
 }
 
+/** UI-facing counterpart to normalizePhone() - renders a UK number back into
+    the local "07XXX XXXXXX" format admins expect to see/type, from either a
+    +44/44-prefixed backend value or an already-local 0-prefixed one. Numbers
+    that aren't recognisably UK (no 44/0 prefix after normalizing) are
+    returned unchanged rather than mangled, since this app also stores the
+    occasional non-UK contact number. */
+export function formatUkPhoneForDisplay(raw: string): string {
+  const trimmed = (raw || '').trim()
+  if (!trimmed) return ''
+  const normalized = normalizePhone(trimmed)
+  if (!normalized || !normalized.startsWith('44')) return trimmed
+  const local = `0${normalized.slice(2)}`
+  if (!/^0\d{10}$/.test(local)) return trimmed
+  return `${local.slice(0, 5)} ${local.slice(5)}`
+}
+
 export function fillTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "")
 }

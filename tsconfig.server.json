@@ -13,5 +13,5 @@
     "noEmit": false,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/lib/invoiceImport.ts", "src/lib/importMatching.ts", "src/lib/statementImport.ts", "src/types/index.ts"]
+  "include": ["src/lib/invoiceImport.ts", "src/lib/importMatching.ts", "src/lib/statementImport.ts", "src/lib/adminAccess.ts", "src/types/index.ts"]
 }

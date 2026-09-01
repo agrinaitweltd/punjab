@@ -6,7 +6,7 @@
 import { extractPdfTextLines } from './extract-pdf-text.js'
 // Compiled from src/lib/invoiceImport.ts - see process-mailbox.js's comment
 // on the same import for why the raw .ts source can't be used here.
-import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines } from '../../server-dist/lib/invoiceImport.js'
+import { detectImportDocumentType, parseLegacyInvoiceLines, parseCreditNoteLines, isInvalidReferenceValue } from '../../server-dist/lib/invoiceImport.js'
 import { createRecordFromImport, resolveOrCreateCustomer, notify } from './create-records.js'
 
 async function loadStoredPdf(admin, table, fileId) {
@@ -95,7 +95,9 @@ export async function approveReview(admin, table, emailImportId, edited, { custo
   const documentType = edited.documentType === 'credit_note' ? 'credit_note' : 'invoice'
   if (!edited.items?.length) throw new Error('At least one product line is required.')
   if (documentType === 'invoice' && !String(edited.invoice?.invoiceNumber || '').trim()) throw new Error('An invoice number is required.')
+  if (documentType === 'invoice' && isInvalidReferenceValue(String(edited.invoice?.invoiceNumber || ''))) throw new Error('Invoice number "1" is not a valid reference - please enter the real invoice number.')
   if (documentType === 'invoice' && !(Number(edited.invoice?.grandTotal) > 0)) throw new Error('A positive invoice total is required.')
+  if (isInvalidReferenceValue(String(edited.customer?.accountNumber || ''))) throw new Error('Account number "1" is not a valid reference - please enter the real account number, or leave it blank.')
   if (documentType === 'credit_note' && !(Math.abs(Number(edited.creditNote?.grandTotal)) > 0)) throw new Error('A non-zero credit note total is required.')
 
   const changes = diffDocument(original, edited)

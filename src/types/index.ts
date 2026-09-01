@@ -368,6 +368,15 @@ export interface NotificationLog {
   scheduledFor?: string
   sentAt?: string
   error?: string
+  /** Which reminder stage this send belongs to - 'day-14' | 'day-21' |
+      'overdue-N' | 'due-today' | 'seven-days-before-due' | undefined for
+      older rows sent before this was tracked. Written by the cron's
+      reminderStage() and by the manual reminder composer. */
+  reminderStage?: string
+  idempotencyKey?: string
+  /** Admin display name who triggered a manual send; absent for
+      automated/cron sends. */
+  sentBy?: string
 }
 
 export interface SupportTicket {
