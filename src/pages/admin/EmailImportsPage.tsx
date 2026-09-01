@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { Customer } from "../../types"
+import type { Customer, Invoice } from "../../types"
 import type { ImportedFinancialDocument, ImportedInvoiceItem } from "../../lib/invoiceImport"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
@@ -29,7 +29,7 @@ function emptyItem(): ImportedInvoiceItem {
 
 const fmt = (value: string | null) => value ? new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
 
-export function EmailImportsPage({ imports, hasMore, counts, total, customers, onRefresh, onLoadMore, onOpenCustomer }: {
+export function EmailImportsPage({ imports, hasMore, counts, total, customers, invoices = [], onRefresh, onLoadMore, onOpenCustomer }: {
   /** The newest-loaded page(s) - not the complete history. Search bypasses
       this entirely and queries the full table server-side (item 9). */
   imports: EmailImportRow[]
@@ -39,6 +39,10 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, o
   counts: Partial<Record<EmailImportStatus, number>>
   total: number
   customers: Customer[]
+  /** Used to show live "Generated PDF" status against the linked invoice
+      (item 7) - reflects the SAME invoice record's canonical PDF state,
+      never a second email-import row. */
+  invoices?: Invoice[]
   onRefresh: () => Promise<void>
   onLoadMore: () => Promise<void>
   /** Jumps to that customer's Open Invoices page (same destination as
@@ -74,6 +78,7 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, o
   const [showRejectBox, setShowRejectBox] = useState(false)
 
   const customerById = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers])
+  const invoiceById = useMemo(() => new Map(invoices.map(i => [i.id, i])), [invoices])
 
   const openReview = async (row: EmailImportRow) => {
     setReviewFor(row); setReviewLoading(true); setReviewError(""); setShowRejectBox(false); setRejectReason("")
@@ -227,6 +232,19 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, o
           {row.error_message && row.status !== 'imported' && (
             <div style={{ marginTop: 4, fontSize: 11.5, color: "#9ca3af", maxWidth: 220 }}>{row.error_message}</div>
           )}
+          {/* Item 7: reflects the SAME invoice's live canonical-PDF state -
+              never a second email-import row. Imported/Parsed are implied by
+              status === 'imported' itself (the document was matched, parsed
+              and saved); this only adds the third step. */}
+          {row.status === 'imported' && row.invoice_id && (() => {
+            const linkedInvoice = invoiceById.get(row.invoice_id!)
+            const pdfPending = Boolean(linkedInvoice?.importedMetadata?.pdfGenerationPending)
+            return (
+              <div style={{ marginTop: 4, fontSize: 11.5, color: pdfPending ? '#b45309' : '#15803d' }}>
+                Imported ✓ · Parsed ✓ · Generated PDF {pdfPending ? '✗ (needs review)' : '✓'}
+              </div>
+            )
+          })()}
         </td>
         <td>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>

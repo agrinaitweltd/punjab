@@ -73,6 +73,7 @@ export function mapInvoice(r: any): Invoice {
     canonicalDocumentId: r.canonical_document_id ?? undefined,
     canonicalPdfFileName: r.canonical_pdf_file_name ?? undefined,
     canonicalPdfGeneratedAt: r.canonical_pdf_generated_at ?? undefined,
+    canonicalPdfProvider: r.canonical_pdf_provider ?? undefined,
     totalGoods: r.total_goods === undefined ? undefined : Number(r.total_goods),
     totalVat: r.total_vat === undefined ? undefined : Number(r.total_vat),
     packages: r.packages === undefined ? undefined : Number(r.packages),
@@ -477,6 +478,7 @@ class SupabaseDatabaseService {
     if (input.canonicalDocumentId !== undefined) row.canonical_document_id = input.canonicalDocumentId || null
     if (input.canonicalPdfFileName !== undefined) row.canonical_pdf_file_name = input.canonicalPdfFileName || null
     if (input.canonicalPdfGeneratedAt !== undefined) row.canonical_pdf_generated_at = input.canonicalPdfGeneratedAt || null
+    if (input.canonicalPdfProvider !== undefined) row.canonical_pdf_provider = input.canonicalPdfProvider || null
     if (input.totalGoods !== undefined) row.total_goods = input.totalGoods
     if (input.totalVat !== undefined) row.total_vat = input.totalVat
     if (input.packages !== undefined) row.packages = input.packages
@@ -506,6 +508,7 @@ class SupabaseDatabaseService {
     if (input.canonicalDocumentId !== undefined) row.canonical_document_id = input.canonicalDocumentId || null
     if (input.canonicalPdfFileName !== undefined) row.canonical_pdf_file_name = input.canonicalPdfFileName || null
     if (input.canonicalPdfGeneratedAt !== undefined) row.canonical_pdf_generated_at = input.canonicalPdfGeneratedAt || null
+    if (input.canonicalPdfProvider !== undefined) row.canonical_pdf_provider = input.canonicalPdfProvider || null
     if (input.totalGoods !== undefined) row.total_goods = input.totalGoods
     if (input.totalVat !== undefined) row.total_vat = input.totalVat
     if (input.packages !== undefined) row.packages = input.packages

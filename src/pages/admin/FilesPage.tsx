@@ -134,8 +134,12 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
   const generatedDocs = useMemo(
     () => files.filter(f => (f.documentRole && f.documentRole !== 'general') || isPendingReviewDoc(f))
       .filter(f => {
+        // A generated invoice PDF still on the pdf-lib fallback (converter
+        // was down) counts as "Needs Review" here too, not just an email
+        // import stuck in review (item 10).
+        const pdfFailed = f.documentRole === 'canonical_invoice' && Boolean((f.invoiceId ? invoiceById.get(f.invoiceId) : undefined)?.importedMetadata?.pdfGenerationPending)
         if (docTypeFilter === 'All') return true
-        if (docTypeFilter === 'Needs Review') return isPendingReviewDoc(f)
+        if (docTypeFilter === 'Needs Review') return isPendingReviewDoc(f) || pdfFailed
         if (docTypeFilter === 'Invoices') return f.documentRole === 'legacy_source' && Boolean(f.invoiceId)
         if (docTypeFilter === 'Generated PDFs') return f.documentRole === 'canonical_invoice'
         if (docTypeFilter === 'Credit Notes') return f.documentRole === 'credit_note_source'
@@ -143,7 +147,7 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
         return true
       })
       .filter(f => !folderQuery.trim() || `${f.name} ${f.customerName} ${documentReference(f)}`.toLowerCase().includes(folderQuery.trim().toLowerCase())),
-    [files, folderQuery, docTypeFilter],
+    [files, folderQuery, docTypeFilter, invoiceById],
   )
   const generatedGroups = useMemo(() => groupByDate(generatedDocs, f => f.uploadedAt || '', sortDirection), [generatedDocs, sortDirection])
 
@@ -291,24 +295,31 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
                       const customer = f.customerId ? customerByIdMap.get(f.customerId) : undefined
                       const subtitle = documentSubtitle(f)
                       const pending = pendingReviewMatch(f)
-                      const status = pending ? (pending[1].toLowerCase() === 'failed' ? 'Import Failed' : 'Awaiting Review') : invoice ? invoice.status : (f.creditNoteId ? 'Active' : '—')
+                      // A "Generated Invoice" whose invoice is still flagged
+                      // pdfGenerationPending only has the pdf-lib fallback
+                      // linked (converter was down) - item 10: surface this
+                      // clearly here too, not just on the invoice itself.
+                      const pdfFailed = f.documentRole === 'canonical_invoice' && Boolean(invoice?.importedMetadata?.pdfGenerationPending)
+                      const status = pdfFailed ? 'PDF Generation Failed' : pending ? (pending[1].toLowerCase() === 'failed' ? 'Import Failed' : 'Awaiting Review') : invoice ? invoice.status : (f.creditNoteId ? 'Active' : '—')
                       return (
                       <tr key={f.id}>
                         <td>
                           <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>{pending ? 'Email Import' : documentTypeLabel(f)}</span>
                           {subtitle && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{subtitle}</div>}
+                          {pdfFailed && <div style={{ fontSize: 11, color: "#b45309", marginTop: 2 }}>Basic fallback PDF - not the official template</div>}
                         </td>
                         <td>{f.customerName || 'Internal'}</td>
                         <td>{customer?.customerNumber || '—'}</td>
                         <td>{documentReference(f)}</td>
                         <td>{f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                         <td>{importSource(f)}</td>
-                        <td><span className={`ps-badge ${status === 'Import Failed' ? 'ps-badge-red' : status === 'Awaiting Review' ? '' : 'ps-badge-green'}`} style={status === 'Awaiting Review' ? { background: '#fef3c7', color: '#b45309' } : undefined}>{status}</span></td>
+                        <td><span className={`ps-badge ${status === 'Import Failed' || status === 'PDF Generation Failed' ? 'ps-badge-red' : status === 'Awaiting Review' ? '' : 'ps-badge-green'}`} style={status === 'Awaiting Review' ? { background: '#fef3c7', color: '#b45309' } : undefined}>{status === 'PDF Generation Failed' ? 'Failed — Needs Review' : status}</span></td>
                         <td style={{ textAlign: 'right' }}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                             {(f.type.startsWith("image/") || f.type === "application/pdf") && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>View</Button>}
                             <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
                             {pending && onNavigate && <Button className="btn-sm" onClick={() => onNavigate('email-imports')}>Review</Button>}
+                            {pdfFailed && onNavigate && <Button className="btn-sm" onClick={() => onNavigate('invoices')}>Retry in Invoices</Button>}
                           </div>
                         </td>
                       </tr>

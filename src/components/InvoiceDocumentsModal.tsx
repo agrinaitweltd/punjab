@@ -33,6 +33,12 @@ export function InvoiceDocumentsModal({ invoice, onClose, onRegenerate, regenera
   if (!invoice) return null
 
   const isStatementBackfill = invoice.importedMetadata?.source === 'statement_backfill'
+  // item 10: a linked "generated" PDF that came from the pdf-lib fallback
+  // renderer (converter was down) is not the official template - surfaced
+  // here exactly like a hard generation failure, with the same retry entry
+  // point (item 9), rather than looking like a normal success.
+  const pdfGenerationPending = Boolean(invoice.importedMetadata?.pdfGenerationPending)
+  const pdfGenerationError = typeof invoice.importedMetadata?.pdfGenerationError === 'string' ? invoice.importedMetadata.pdfGenerationError : ''
   const download = (file: StoredFile) => { const anchor = document.createElement('a'); anchor.href = file.dataUri; anchor.download = file.name; anchor.click() }
 
   const section = (title: string, state: StoredFile | null | 'loading', emptyReason: string) => (
@@ -58,6 +64,12 @@ export function InvoiceDocumentsModal({ invoice, onClose, onRegenerate, regenera
     <>
       <Modal open={Boolean(invoice) && !preview} title={`Invoice ${invoice.invoiceNumber}`} onClose={onClose}>
         <div className="stack" style={{ gap: 12 }}>
+          {pdfGenerationPending && (
+            <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px' }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: '#854d0e', margin: '0 0 3px' }}>Generated PDF: Failed — Needs Review</p>
+              <p style={{ fontSize: 12.5, color: '#854d0e', margin: 0 }}>{pdfGenerationError || 'The official PDF could not be generated. A basic fallback version is shown below if one exists.'}</p>
+            </div>
+          )}
           {section('Original Invoice', original, 'No original document on file for this invoice.')}
           {section(
             'Generated Invoice',
@@ -68,7 +80,7 @@ export function InvoiceDocumentsModal({ invoice, onClose, onRegenerate, regenera
           )}
           {onRegenerate && (
             <Button variant="ghost" disabled={regenerating} onClick={onRegenerate}>
-              {regenerating ? 'Regenerating…' : 'Regenerate Official PDF'}
+              {regenerating ? 'Regenerating…' : pdfGenerationPending ? 'Retry PDF Generation' : 'Regenerate Official PDF'}
             </Button>
           )}
           <div className="actions-row"><Button variant="secondary" onClick={onClose}>Close</Button></div>

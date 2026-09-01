@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { DateAccordion } from '../../components/ui/DateAccordion'
 import { InvoiceDocumentsModal } from '../../components/InvoiceDocumentsModal'
 import { ReminderStatusButton } from '../../components/ReminderStatusButton'
+import { PdfBacklogBanner } from '../../components/PdfBacklogBanner'
 import { classifyInvoice, invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 import { groupByDate } from '../../lib/dateGrouping'
 import { isReminderDueToday, type ReminderStage } from '../../lib/reminderTemplates'
@@ -47,7 +48,7 @@ function matchesDateRange(date: string, from: string, to: string): boolean {
   return true
 }
 
-export function InvoicesPage({ invoices, customers, creditNotes = [], allocations = [], onOpenCreditNote, onNavigate, onRecordPayment, onSendReminder, onRegeneratePdf, customerId, onClearCustomerFilter }: {
+export function InvoicesPage({ invoices, customers, creditNotes = [], allocations = [], onOpenCreditNote, onNavigate, onRecordPayment, onSendReminder, onRegeneratePdf, customerId, onClearCustomerFilter, onRefresh }: {
   invoices: Invoice[]
   customers: Customer[]
   creditNotes?: CreditNote[]
@@ -62,6 +63,9 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
       on a customer record lands here instead of the general profile modal. */
   customerId?: string | null
   onClearCustomerFilter?: () => void
+  /** Refreshes the invoices list after a bulk generated-PDF backlog repair
+      (see PdfBacklogBanner) so newly-regenerated PDFs show correctly. */
+  onRefresh?: () => void
 }) {
   const [tab, setTab] = useState<'open' | 'paid'>('open')
   const [query, setQuery] = useState('')
@@ -161,6 +165,8 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
 
   return (
     <div className="stack">
+      <PdfBacklogBanner onRepaired={onRefresh} />
+
       {scopedCustomer && (
         <Card title={`${scopedCustomer.companyName} — Open Invoices`} actions={onClearCustomerFilter && <Button variant="secondary" className="btn-sm" onClick={onClearCustomerFilter}>Back to All Invoices</Button>}>
           <div className="customer-finance-grid">

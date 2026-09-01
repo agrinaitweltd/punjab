@@ -184,6 +184,31 @@ export function softWarnings(document) {
  *  it's created. `invoiceRow`/`customerRow` are raw snake_case DB rows;
  *  `items` are invoice_items rows (also snake_case). Returns the uploaded
  *  file's { id, name }. */
+// The user-facing note stored in imported_metadata.pdfGenerationError when
+// the converter is unavailable and the crude pdf-lib fallback was used
+// instead of the approved Word template - shared so every call site (email
+// import, nightly health check, bulk backlog repair) writes the identical
+// message and the "is this invoice still on the fallback" check has one
+// string to match against.
+export const FALLBACK_PDF_NOTE = 'The Word-to-PDF converter was unavailable, so a basic fallback PDF was generated instead of the official template. Use Retry PDF Generation once the converter is back.'
+
+/** Generates the official Punjab Exotic Foods PDF for an already-saved
+ *  invoice and links it - shared by createRecordFromImport (new imports),
+ *  the nightly health check repair pass, and the on-demand backlog repair
+ *  action, so there's exactly one place that builds this PDF regardless of
+ *  when/why it's (re)generated. `invoiceRow`/`customerRow` are raw
+ *  snake_case DB rows; `items` are invoice_items rows (also snake_case).
+ *  Returns the uploaded file's { id, name, provider, usedFallback }.
+ *
+ *  If the converter is down, convertDocxToPdf() already falls back to a
+ *  bare pdf-lib render rather than throwing - correct, so one bad
+ *  conversion never blocks a whole import - but that used to be recorded
+ *  identically to a real success (2026-08-27 to 09-01: 177 invoices got the
+ *  fallback PDF with zero visible sign anything was wrong). This now always
+ *  records which renderer actually produced the file (canonical_pdf_provider)
+ *  and, when it's the fallback, flags the invoice as pending review with a
+ *  notification - exactly the same "needs retry" state a hard failure
+ *  already produces, so both surface identically in the UI. */
 export async function generateAndAttachCanonicalPdf(admin, table, invoiceRow, customerRow, items) {
   const address = customerRow.address || ''
   const official = await buildOfficialInvoicePdf({
@@ -196,9 +221,32 @@ export async function generateAndAttachCanonicalPdf(admin, table, invoiceRow, cu
     note: `Invoices: ${invoiceRow.invoice_number}`, customerId: customerRow.id, customerName: customerRow.company_name,
     document: { invoiceId: invoiceRow.id, invoiceNumber: invoiceRow.invoice_number, invoiceAmount: invoiceRow.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID },
   })
-  const { error: linkErr } = await admin.from(table('invoices')).update({ canonical_document_id: officialFile.id, canonical_pdf_file_name: officialFile.name, canonical_pdf_generated_at: new Date().toISOString() }).eq('id', invoiceRow.id)
+
+  const usedFallback = official.provider !== 'ConvertAPI'
+  // Read-modify-write imported_metadata fresh rather than trusting whatever
+  // the caller passed in invoiceRow - the nightly health check's own select
+  // doesn't include imported_metadata at all, so merging against a stale/
+  // missing copy here would silently wipe it.
+  const { data: currentRow } = await admin.from(table('invoices')).select('imported_metadata').eq('id', invoiceRow.id).maybeSingle()
+  const metadata = { ...(currentRow?.imported_metadata || {}) }
+  if (usedFallback) { metadata.pdfGenerationPending = true; metadata.pdfGenerationError = FALLBACK_PDF_NOTE }
+  else { delete metadata.pdfGenerationPending; delete metadata.pdfGenerationError }
+
+  const { error: linkErr } = await admin.from(table('invoices')).update({
+    canonical_document_id: officialFile.id, canonical_pdf_file_name: officialFile.name,
+    canonical_pdf_generated_at: new Date().toISOString(), canonical_pdf_provider: official.provider,
+    imported_metadata: metadata,
+  }).eq('id', invoiceRow.id)
   if (linkErr) throw linkErr
-  return officialFile
+
+  if (usedFallback) {
+    await notify(admin, table, {
+      type: 'pdf_generation_failed', title: 'Generated PDF used a fallback renderer',
+      message: `Invoice ${invoiceRow.invoice_number} for ${customerRow.company_name} got a basic fallback PDF because the Word-to-PDF converter failed. Retry PDF Generation once it's back.`,
+      targetType: 'invoice', targetId: invoiceRow.id,
+    })
+  }
+  return { ...officialFile, provider: official.provider, usedFallback }
 }
 
 /** Creates the invoice/credit note + items + source & canonical PDFs for one

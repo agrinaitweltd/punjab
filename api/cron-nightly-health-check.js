@@ -76,8 +76,15 @@ export default async function handler(req, res) {
       ['Imported Today', String(summary.invoicesImported)],
       ['Paid (total)', String(summary.paidInvoices)],
       ['Open (total)', String(summary.outstandingInvoices)],
-      ['Missing Generated PDFs Repaired', String(summary.pdfsGenerated)],
       ['Needing Review', String(review.length)],
+    ]
+    // Item 11: explicit generated-PDF backlog stats, separate from the
+    // generic invoice summary above.
+    const pdfBacklogRows = [
+      ['Missing PDFs Detected', String(summary.pdfsMissingDetected)],
+      ['Successfully Regenerated', String(summary.pdfsRegenerated)],
+      ['Still Failed', String(summary.pdfsStillFailed)],
+      ['Needs Review', String(summary.pdfsStillFailed)],
     ]
     const problemInvoicesHtml = details.problemInvoices.length
       ? dataTable(['Customer', 'Account No.', 'Invoice No.', 'Amount', 'Status', 'Issue'], details.problemInvoices.slice(0, 30).map(i => [i.customerName, i.accountNumber, i.invoiceNumber, money(i.amount), i.status, i.issue]))
@@ -134,6 +141,9 @@ export default async function handler(req, res) {
       sectionHeading('Invoices'),
       summaryTable(invoiceSummaryRows),
       problemInvoicesHtml,
+
+      sectionHeading('Generated PDF Backlog'),
+      summaryTable(pdfBacklogRows),
 
       sectionHeading('Credit Notes'),
       summaryTable([['Total Credit Value', money(creditNotesTotal)], ['Customers Affected', String(new Set(details.creditNotes.map(c => c.customerName)).size)]]),

@@ -149,7 +149,7 @@ import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEma
 import { EmailImportsPage } from './EmailImportsPage'
 import { NotFoundPage } from './NotFoundPage'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
-import { getNotifications, markNotificationRead, markAllNotificationsRead, mapNotificationRow } from '../../lib/notificationsService'
+import { getNotifications, markNotificationRead, markAllNotificationsRead, mapNotificationRow, createNotification } from '../../lib/notificationsService'
 import type { AppNotification } from '../../types'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -424,8 +424,20 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     const items = await getInvoiceItems(invoice.id)
     const pdf = await generateCanonicalInvoicePdf(invoice, customer, items)
     const stored = await uploadFile(pdf.fileName, 'application/pdf', pdf.blob.size, pdf.dataUri, `Invoices: ${invoice.invoiceNumber}`, customer.id, customer.companyName, { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceAmount: invoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
-    const updated = await updateInvoice(invoice.id, { canonicalDocumentId: stored.id, canonicalPdfFileName: stored.name, canonicalPdfGeneratedAt: new Date().toISOString() })
+    // A fallback PDF still counts as "generated" (something to view/send is
+    // now linked) but is not the official template - flag it exactly like a
+    // hard failure would be, instead of silently reporting success (item 10;
+    // matches generateAndAttachCanonicalPdf's server-side equivalent).
+    const usedFallback = pdf.provider !== 'ConvertAPI'
+    const metadata = { ...(invoice.importedMetadata || {}) }
+    if (usedFallback) { metadata.pdfGenerationPending = true; metadata.pdfGenerationError = 'The Word-to-PDF converter was unavailable, so a basic fallback PDF was generated instead of the official template. Retry once the converter is back.' }
+    else { delete metadata.pdfGenerationPending; delete metadata.pdfGenerationError }
+    const updated = await updateInvoice(invoice.id, { canonicalDocumentId: stored.id, canonicalPdfFileName: stored.name, canonicalPdfGeneratedAt: new Date().toISOString(), canonicalPdfProvider: pdf.provider, importedMetadata: metadata })
     if (!updated) throw new Error('The official PDF was generated but could not be linked to the invoice.')
+    if (usedFallback) {
+      await createNotification({ type: 'pdf_generation_failed', title: 'Generated PDF used a fallback renderer', message: `Invoice ${invoice.invoiceNumber} for ${customer.companyName} got a basic fallback PDF because the Word-to-PDF converter failed. Retry once it's back.`, targetType: 'invoice', targetId: invoice.id, createdBy: user.displayName })
+      showNotice('The converter is still unavailable, so a basic fallback PDF was generated. Retry once it\'s back.')
+    }
     void logActivity(user.displayName, `regenerated official PDF for invoice ${invoice.invoiceNumber}`)
     await load()
   }
@@ -575,9 +587,18 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           generateCanonicalInvoicePdf(createdInvoice, savedCustomer, document.items),
         ])
         const official = await uploadFile(canonical.fileName, 'application/pdf', canonical.blob.size, canonical.dataUri, `Invoices: ${createdInvoice.invoiceNumber}`, savedCustomer.id, savedCustomer.companyName, { invoiceId: createdInvoice.id, invoiceNumber: createdInvoice.invoiceNumber, invoiceAmount: createdInvoice.amount, documentRole: 'canonical_invoice', templateId: APPROVED_INVOICE_TEMPLATE_ID })
-        const linked = await updateInvoice(createdInvoice.id, { sourceDocumentId: source?.id, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString() })
+        // Same fallback-detection as regenerateInvoicePdf/generateAndAttachCanonicalPdf
+        // (item 10) - a fallback PDF still gets linked (something to view/
+        // send), but flagged for review rather than reported as a clean win.
+        const usedFallback = canonical.provider !== 'ConvertAPI'
+        const metadata = { ...(createdInvoice.importedMetadata || {}) }
+        if (usedFallback) { metadata.pdfGenerationPending = true; metadata.pdfGenerationError = 'The Word-to-PDF converter was unavailable, so a basic fallback PDF was generated instead of the official template. Retry once the converter is back.' }
+        const linked = await updateInvoice(createdInvoice.id, { sourceDocumentId: source?.id, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfGeneratedAt: new Date().toISOString(), canonicalPdfProvider: canonical.provider, importedMetadata: metadata })
         if (!linked) throw new Error('The invoice was imported, but its PDF references could not be linked.')
-        const finalInvoice = { ...createdInvoice, sourceDocumentId: source?.id, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, creditApplied: 0 }
+        if (usedFallback) {
+          await createNotification({ type: 'pdf_generation_failed', title: 'Generated PDF used a fallback renderer', message: `Invoice ${createdInvoice.invoiceNumber} for ${savedCustomer.companyName} got a basic fallback PDF because the Word-to-PDF converter failed. Retry once it's back.`, targetType: 'invoice', targetId: createdInvoice.id, createdBy: user.displayName })
+        }
+        const finalInvoice = { ...createdInvoice, sourceDocumentId: source?.id, canonicalDocumentId: official.id, canonicalPdfFileName: official.name, canonicalPdfProvider: canonical.provider, importedMetadata: metadata, creditApplied: 0 }
         availableInvoices.push(finalInvoice)
         newInvoices.push(finalInvoice)
         workingBalance = Math.max(0, workingBalance + document.invoice.grandTotal)
@@ -837,6 +858,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           counts={emailImportsCounts}
           total={emailImportsTotal}
           customers={customers}
+          invoices={invoices}
           onRefresh={async () => {
             const page = await getEmailImports()
             setEmailImports(page.imports); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total)
@@ -1166,6 +1188,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onRegeneratePdf={regenerateInvoicePdf}
           customerId={invoicesCustomerFilter}
           onClearCustomerFilter={() => setInvoicesCustomerFilter(null)}
+          onRefresh={load}
         />
       )
     }

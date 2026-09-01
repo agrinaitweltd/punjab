@@ -74,6 +74,6 @@ export async function buildOfficialInvoicePdf(payload, buildInvoiceDocx) {
   const docx = buildInvoiceDocx(payload)
   const safeInvoice = String(payload.invoice.invoiceNumber).replace(/[^a-zA-Z0-9_-]/g, '_')
   const docxFileName = `Punjab-Invoice-${safeInvoice}.docx`
-  const { buffer } = await convertDocxToPdf(docx.toString('base64'), docxFileName, payload)
-  return { buffer, fileName: `Punjab-Invoice-${safeInvoice}-${payload.customer.accountNumber}.pdf` }
+  const { buffer, provider } = await convertDocxToPdf(docx.toString('base64'), docxFileName, payload)
+  return { buffer, fileName: `Punjab-Invoice-${safeInvoice}-${payload.customer.accountNumber}.pdf`, provider }
 }

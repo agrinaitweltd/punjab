@@ -9,6 +9,7 @@ const handlers = {
   'invite-customer': () => import('../server/admin-actions/invite-customer.js'),
   'manage-admin': () => import('../server/admin-actions/manage-admin.js'),
   'record-login': () => import('../server/admin-actions/record-login.js'),
+  'repair-pdf-backlog': () => import('../server/admin-actions/repair-pdf-backlog.js'),
   'report-error': () => import('../server/admin-actions/report-error.js'),
   'error-log': () => import('../server/admin-actions/error-log.js'),
   'reset-admin-credentials': () => import('../server/admin-actions/reset-admin-credentials.js'),

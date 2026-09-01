@@ -7,6 +7,11 @@ export type CanonicalInvoicePdf = {
   dataUri: string
   base64: string
   fileName: string
+  /** Which renderer actually produced this PDF - 'ConvertAPI' is the
+      official Word-template render; anything else (the pdf-lib fallback)
+      means the converter is down and the caller should flag this invoice
+      for review instead of treating it as a normal success (item 10). */
+  provider: string
 }
 
 function blobToDataUri(blob: Blob): Promise<string> {
@@ -71,6 +76,7 @@ export async function generateCanonicalInvoicePdf(
     body: JSON.stringify({ docxBase64: docxDataUri.split(',')[1] || '', fileName: docxFileName, data: payload }),
   })
   if (!pdfResponse.ok) throw new Error('Official invoice PDF conversion failed.')
+  const provider = pdfResponse.headers.get('X-PDF-Provider') || 'unknown'
   const blob = await pdfResponse.blob()
   const dataUri = await blobToDataUri(blob)
   return {
@@ -78,5 +84,6 @@ export async function generateCanonicalInvoicePdf(
     dataUri,
     base64: dataUri.split(',')[1] || '',
     fileName: `Punjab-Invoice-${safeInvoice}-${customer.customerNumber}.pdf`,
+    provider,
   }
 }

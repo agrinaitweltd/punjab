@@ -67,6 +67,23 @@ export async function sendInvoiceReminder(input: SendReminderInput) {
   return api<{ ok: true; simulated?: boolean; nextAllowedAt?: string; sentAt?: string }>('/api/admin-security?action=send-reminder', { method: 'POST', body: JSON.stringify(input) })
 }
 
+/** Backlog of invoices whose generated PDF is missing, broken, or was
+    produced by the fallback renderer while the Word-to-PDF converter was
+    down (items 2/3/14) - available to any authorised admin, not just
+    System Developer (item 12). GET reports without changing anything;
+    POST processes one batch so a large backlog can't time out a single
+    request (item 3) - call again while `remaining > 0`. */
+export async function getPdfBacklogReport() {
+  return api<{ ok: true; totalChecked: number; alreadyHavePdf: number; needingRepair: number }>('/api/admin-security?action=repair-pdf-backlog', { method: 'GET' })
+}
+export async function repairPdfBacklogBatch(batchSize = 20) {
+  return api<{
+    ok: true; simulated?: boolean; totalChecked: number; alreadyHavePdf: number; processed: number
+    regenerated: number; stillFailed: number; remaining: number
+    results: Array<{ invoiceNumber: string; ok: boolean; reason?: string }>
+  }>('/api/admin-security?action=repair-pdf-backlog', { method: 'POST', body: JSON.stringify({ batchSize }) })
+}
+
 export type EmailImportStatus = 'processing' | 'imported' | 'needs_review' | 'failed' | 'duplicate' | 'rejected'
 export type EmailImportRow = {
   id: string; message_id: string; received_at: string | null; sender: string | null; subject: string | null

@@ -23,6 +23,10 @@ export async function runHealthCheck(admin, table) {
     newCustomers: 0, customersAutoCreated: 0, invoicesImported: 0, creditNotesImported: 0, pdfsGenerated: 0,
     paymentsRecorded: 0, paidInvoices: 0, outstandingInvoices: 0, emailsSent: 0, remindersSent: 0, emailsFailed: 0,
     documentsReceived: 0, needsReview: 0, errorsFound: 0, autoFixed: 0,
+    // Item 11: explicit PDF-backlog stats for the daily summary, separate
+    // from the generic autoFixed/needsReview counts above so "how many
+    // invoices had a PDF problem today" is its own visible number.
+    pdfsMissingDetected: 0, pdfsRegenerated: 0, pdfsStillFailed: 0,
   }
   const issues = [] // { severity: 'fixed' | 'review', text }
   // Structured detail for the daily email's tables - kept alongside the
@@ -32,7 +36,7 @@ export async function runHealthCheck(admin, table) {
 
   const [customersRes, invoicesRes, creditNotesRes, paymentsRes, emailImportsRes, commLogsRes] = await Promise.all([
     admin.from(table('customers')).select('id,company_name,customer_number,balance,created_at'),
-    admin.from(table('invoices')).select('id,invoice_number,customer_id,amount,amount_paid,status,canonical_document_id,source_document_id,created_at'),
+    admin.from(table('invoices')).select('id,invoice_number,customer_id,amount,amount_paid,status,canonical_document_id,canonical_pdf_provider,source_document_id,created_at'),
     admin.from(table('credit_notes')).select('id,credit_number,customer_id,amount,remaining_balance,linked_invoice_id,original_invoice_reference,created_at'),
     admin.from(table('payments')).select('id,customer_id,amount,payment_reference,created_at').gte('created_at', since),
     admin.from(table('email_imports')).select('id,status,document_type,attachment_filename,error_message,created_at,invoice_id,credit_note_id,detected_customer_id,detected_customer_name,detected_invoice_number'),
@@ -75,15 +79,21 @@ export async function runHealthCheck(admin, table) {
   summary.emailsFailed = commLogs.filter(c => c.status === 'Failed').length
   summary.remindersSent = commLogs.filter(c => c.status === 'Sent' && c.communication_type === 'payment_reminder').length
 
-  // --- Check + auto-repair: invoice missing its generated PDF, or the PDF
-  // row it points to no longer exists (broken storage reference). Safe to
-  // auto-fix: regenerating from the invoice's own already-stored line items
-  // reproduces exactly what import-time generation would have produced -
-  // it's not a financial decision, just re-running a deterministic render.
+  // --- Check + auto-repair: invoice missing its generated PDF, the PDF row
+  // it points to no longer exists (broken storage reference), or it's
+  // linked but was produced by the pdf-lib fallback renderer instead of the
+  // approved Word template (converter was down at generation time - see
+  // canonical_pdf_provider / generateAndAttachCanonicalPdf's own comment).
+  // Safe to auto-fix: regenerating from the invoice's own already-stored
+  // line items reproduces exactly what import-time generation would have
+  // produced - it's not a financial decision, just re-running a
+  // deterministic render.
   const canonicalIds = invoices.map(i => i.canonical_document_id).filter(Boolean)
   const { data: canonicalFiles } = canonicalIds.length ? await admin.from(table('activity_log')).select('id').in('id', canonicalIds) : { data: [] }
   const existingCanonicalIds = new Set((canonicalFiles || []).map(f => f.id))
-  const invoicesNeedingPdf = invoices.filter(i => !i.canonical_document_id || !existingCanonicalIds.has(i.canonical_document_id))
+  const invoicesNeedingPdf = invoices.filter(i =>
+    !i.canonical_document_id || !existingCanonicalIds.has(i.canonical_document_id) || (i.canonical_document_id && i.canonical_pdf_provider && i.canonical_pdf_provider !== 'ConvertAPI'))
+  summary.pdfsMissingDetected = invoicesNeedingPdf.length
   // Populated below whenever this loop already reports an invoice as having
   // no line items, so the separate items-only check further down doesn't
   // flag the same invoice a second time under a near-identical message -
@@ -96,13 +106,22 @@ export async function runHealthCheck(admin, table) {
         admin.from(table('customers')).select('*').eq('id', invoice.customer_id).maybeSingle(),
         admin.from(table('invoice_items')).select('*').eq('invoice_id', invoice.id),
       ])
-      if (!customer) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no matching customer to build one from.` }); summary.needsReview += 1; details.problemInvoices.push({ customerName: 'Unknown', accountNumber: '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no matching customer' }); continue }
-      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; flaggedNoItems.add(invoice.id); details.problemInvoices.push({ customerName: customer.company_name, accountNumber: customer.customer_number, invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no line items' }); continue }
-      await generateAndAttachCanonicalPdf(admin, table, invoice, customer, items)
-      summary.pdfsGenerated += 1; summary.autoFixed += 1
-      issues.push({ severity: 'fixed', text: `Generated the missing official PDF for invoice ${invoice.invoice_number}.` })
+      if (!customer) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no matching customer to build one from.` }); summary.needsReview += 1; summary.pdfsStillFailed += 1; details.problemInvoices.push({ customerName: 'Unknown', accountNumber: '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no matching customer' }); continue }
+      if (!items?.length) { issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and has no stored line items to build one from.` }); summary.needsReview += 1; summary.pdfsStillFailed += 1; flaggedNoItems.add(invoice.id); details.problemInvoices.push({ customerName: customer.company_name, accountNumber: customer.customer_number, invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Missing generated PDF, no line items' }); continue }
+      const result = await generateAndAttachCanonicalPdf(admin, table, invoice, customer, items)
+      if (result.usedFallback) {
+        // The converter is still down - a fallback PDF is now linked (so
+        // the invoice isn't left with nothing to view/send) but this is not
+        // a fix; it'll be retried again the next time this check runs.
+        summary.needsReview += 1; summary.pdfsStillFailed += 1
+        issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number}'s PDF still could not be generated with the official template - the converter appears to still be down. A fallback PDF is in place for now.` })
+        details.problemInvoices.push({ customerName: customer.company_name, accountNumber: customer.customer_number, invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'Converter still unavailable - using fallback PDF' })
+      } else {
+        summary.pdfsGenerated += 1; summary.autoFixed += 1; summary.pdfsRegenerated += 1
+        issues.push({ severity: 'fixed', text: `Generated the missing official PDF for invoice ${invoice.invoice_number}.` })
+      }
     } catch (error) {
-      summary.needsReview += 1
+      summary.needsReview += 1; summary.pdfsStillFailed += 1
       issues.push({ severity: 'review', text: `Invoice ${invoice.invoice_number} is missing its generated PDF and it could not be regenerated automatically: ${error.message}` })
       details.problemInvoices.push({ customerName: customersById.get(invoice.customer_id)?.company_name || 'Unknown', accountNumber: customersById.get(invoice.customer_id)?.customer_number || '', invoiceNumber: invoice.invoice_number, amount: Number(invoice.amount || 0), status: invoice.status, issue: 'PDF generation failed' })
     }

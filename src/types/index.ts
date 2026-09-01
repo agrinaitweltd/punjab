@@ -233,6 +233,11 @@ export interface Invoice {
   canonicalDocumentId?: string
   canonicalPdfFileName?: string
   canonicalPdfGeneratedAt?: string
+  /** Which renderer actually produced the generated PDF - 'ConvertAPI' is
+      the official Word-template render; anything else means the converter
+      was down and this invoice only has the basic pdf-lib fallback (item
+      10 - see imported_metadata.pdfGenerationPending/pdfGenerationError). */
+  canonicalPdfProvider?: string
   totalGoods?: number
   totalVat?: number
   packages?: number
