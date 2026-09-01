@@ -6,7 +6,7 @@ import { Modal } from "../../components/ui/Modal"
 import { Spinner } from "../../components/ui/Spinner"
 import { DateAccordion } from "../../components/ui/DateAccordion"
 import { getFileById } from "../../lib/fileService"
-import type { EmailImportRow, EmailImportStatus } from "../../lib/secureAdminApi"
+import type { EmailImportRow, EmailImportStatus, EmailImportStats } from "../../lib/secureAdminApi"
 import { retryEmailImport as retryEmailImportRequest, getReviewDocument, approveReviewedDocument, rejectReviewedDocument, getEmailImports } from "../../lib/secureAdminApi"
 import { showAppError, showSuccess } from "../../lib/appDialogs"
 import { groupByDate } from "../../lib/dateGrouping"
@@ -29,7 +29,7 @@ function emptyItem(): ImportedInvoiceItem {
 
 const fmt = (value: string | null) => value ? new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
 
-export function EmailImportsPage({ imports, hasMore, counts, total, customers, invoices = [], onRefresh, onLoadMore, onOpenCustomer }: {
+export function EmailImportsPage({ imports, hasMore, counts, total, stats, customers, invoices = [], onRefresh, onLoadMore, onOpenCustomer }: {
   /** The newest-loaded page(s) - not the complete history. Search bypasses
       this entirely and queries the full table server-side (item 9). */
   imports: EmailImportRow[]
@@ -38,6 +38,9 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
       many rows are currently loaded, so the stat cards are always accurate. */
   counts: Partial<Record<EmailImportStatus, number>>
   total: number
+  /** Full-dataset aggregate stats (never just the loaded page/today/first
+      batch) - Total/Invoices/Credit Notes/Statements/Missing PDFs. */
+  stats: EmailImportStats
   customers: Customer[]
   /** Used to show live "Generated PDF" status against the linked invoice
       (item 7) - reflects the SAME invoice record's canonical PDF state,
@@ -58,6 +61,9 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
   const [searching, setSearching] = useState(false)
   const searchToken = useRef(0)
   const [preview, setPreview] = useState<{ name: string; dataUri: string } | 'loading' | 'missing' | null>(null)
+  const [viewEmailFor, setViewEmailFor] = useState<EmailImportRow | null>(null)
+  const [generatedFile, setGeneratedFile] = useState<{ name: string; dataUri: string; uploadedAt: string } | 'loading' | 'missing' | null>(null)
+  const [originalFile, setOriginalFile] = useState<{ name: string; dataUri: string; uploadedAt: string } | 'loading' | 'missing' | null>(null)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [pickerFor, setPickerFor] = useState<EmailImportRow | null>(null)
   const [pickedCustomerId, setPickedCustomerId] = useState("")
@@ -173,6 +179,25 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
     return () => clearTimeout(timer)
   }, [query])
 
+  // Loads the linked invoice's GENERATED (canonical) PDF for View Email's
+  // attachment section, alongside its already-loaded ORIGINAL source PDF
+  // (row.file_id) - both point at the SAME invoice record (item 5), never
+  // a second invoice.
+  useEffect(() => {
+    const invoiceId = viewEmailFor?.document_type === 'invoice' ? viewEmailFor.invoice_id : null
+    const canonicalId = invoiceId ? invoiceById.get(invoiceId)?.canonicalDocumentId : null
+    if (!canonicalId) { setGeneratedFile(null); return }
+    setGeneratedFile('loading')
+    getFileById(canonicalId).then(file => setGeneratedFile(file ? { name: file.name, dataUri: file.dataUri, uploadedAt: file.uploadedAt } : 'missing'))
+  }, [viewEmailFor, invoiceById])
+
+  useEffect(() => {
+    const fileId = viewEmailFor?.file_id
+    if (!fileId) { setOriginalFile(null); return }
+    setOriginalFile('loading')
+    getFileById(fileId).then(file => setOriginalFile(file ? { name: file.name, dataUri: file.dataUri, uploadedAt: file.uploadedAt } : 'missing'))
+  }, [viewEmailFor])
+
   const isSearchMode = query.trim().length > 0
 
   const filtered = useMemo(() => {
@@ -248,6 +273,7 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
         </td>
         <td>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Button className="btn-sm" variant="secondary" onClick={() => setViewEmailFor(row)}>View Email</Button>
             {row.file_id && <Button className="btn-sm" variant="secondary" onClick={() => viewFile(row.file_id)}>View PDF</Button>}
             {customer && onOpenCustomer && <Button className="btn-sm" variant="secondary" onClick={() => onOpenCustomer(customer.id)}>Open Invoice</Button>}
             {(row.status === "needs_review" || row.status === "failed") && (
@@ -274,11 +300,15 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
         </p>
       </div>
 
-      <div className="ps-stats-row">
-        <div className="ps-stat"><p className="ps-stat-label">Imported</p><p className="ps-stat-value">{counts.imported ?? 0}</p></div>
-        <div className="ps-stat"><p className="ps-stat-label">Needs Review</p><p className="ps-stat-value">{counts.needs_review ?? 0}</p></div>
-        <div className="ps-stat"><p className="ps-stat-label">Failed</p><p className="ps-stat-value">{counts.failed ?? 0}</p></div>
-        <div className="ps-stat"><p className="ps-stat-label">Duplicate</p><p className="ps-stat-value">{counts.duplicate ?? 0}</p></div>
+      <div className="ps-stats-row" style={{ flexWrap: "wrap" }}>
+        <div className="ps-stat"><p className="ps-stat-label">Total Imports</p><p className="ps-stat-value">{stats.total.toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Invoices</p><p className="ps-stat-value">{stats.invoices.toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Credit Notes</p><p className="ps-stat-value">{stats.creditNotes.toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Statements</p><p className="ps-stat-value">{stats.statements.toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Successfully Processed</p><p className="ps-stat-value">{(counts.imported ?? 0).toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Needs Review</p><p className="ps-stat-value">{(counts.needs_review ?? 0).toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Failed</p><p className="ps-stat-value">{(counts.failed ?? 0).toLocaleString()}</p></div>
+        <div className="ps-stat"><p className="ps-stat-label">Missing Generated PDFs</p><p className="ps-stat-value">{stats.missingPdfs.toLocaleString()}</p></div>
       </div>
 
       <div className="ps-table-card">
@@ -311,10 +341,12 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
             defaultOpenCount={isSearchMode ? groups.length : 1}
             emptyMessage="No email imports yet. Send or forward a PDF invoice to receivables@punjabexoticfoods.com."
             renderGroup={group => (
-              <table className="ps-table">
-                <thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Attachment</th><th>Customer</th><th>Account No.</th><th>Invoice No.</th><th>Status</th><th></th></tr></thead>
-                <tbody>{group.items.map(row => emailImportRow(row))}</tbody>
-              </table>
+              <div className="table-wrap">
+                <table className="ps-table">
+                  <thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Attachment</th><th>Customer</th><th>Account No.</th><th>Invoice No.</th><th>Status</th><th></th></tr></thead>
+                  <tbody>{group.items.map(row => emailImportRow(row))}</tbody>
+                </table>
+              </div>
             )}
           />
           {!isSearchMode && hasMore && (
@@ -331,6 +363,61 @@ export function EmailImportsPage({ imports, hasMore, counts, total, customers, i
           {preview === 'missing' && <p className="error-message">This PDF could not be found — it may have been removed.</p>}
           {typeof preview === 'object' && preview && <embed src={preview.dataUri} type="application/pdf" className="invoice-pdf-embed" />}
         </div>
+      </Modal>
+
+      <Modal open={Boolean(viewEmailFor)} title="Email" onClose={() => setViewEmailFor(null)} wide>
+        {viewEmailFor && (() => {
+          const row = viewEmailFor
+          const customer = row.detected_customer_id ? customerById.get(row.detected_customer_id) : undefined
+          const docLabel = row.document_type === 'invoice' ? 'Invoice' : row.document_type === 'credit_note' ? 'Credit Note' : row.document_type === 'statement' ? 'Statement' : 'Unclassified'
+          const field = (label: string, value: string) => (
+            <div style={{ display: 'flex', gap: 8, fontSize: 13, padding: '4px 0', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ color: '#9ca3af', minWidth: 110 }}>{label}</span><span style={{ color: '#111827', wordBreak: 'break-word' }}>{value || '—'}</span>
+            </div>
+          )
+          const docFile = (label: string, file: typeof originalFile) => (
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', flex: '1 1 220px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6b7280', margin: '0 0 6px' }}>{label}</p>
+              {file === 'loading' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280', fontSize: 13 }}><Spinner size={13} /> Loading…</div>}
+              {file === 'missing' && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>Not found.</p>}
+              {file === null && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>None on file.</p>}
+              {file && typeof file === 'object' && (
+                <>
+                  <p style={{ fontSize: 12, color: '#374151', margin: '0 0 8px' }}>{fmt(file.uploadedAt)}</p>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Button variant="secondary" className="btn-sm" onClick={() => setPreview({ name: file.name, dataUri: file.dataUri })}>View</Button>
+                    <a className="btn btn-secondary btn-sm" href={file.dataUri} download={file.name}>Download</a>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+          return (
+            <div className="stack" style={{ gap: 14 }}>
+              <div>
+                {field('From', row.sender || '')}
+                {field('To', row.recipient || '')}
+                {field('Subject', row.subject || '')}
+                {field('Received', fmt(row.received_at))}
+                {field('Document Type', docLabel)}
+                {field('Customer Matched', row.detected_customer_name || (customer?.companyName ?? ''))}
+                {field('Account Number', customer?.customerNumber || '')}
+                {field('Import Status', STATUS_LABELS[row.status])}
+              </div>
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6b7280', margin: '0 0 6px' }}>Email Body</p>
+                {row.body_text
+                  ? <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#374151', background: '#f9fafb', borderRadius: 8, padding: 12, maxHeight: 260, overflowY: 'auto' }}>{row.body_text}</div>
+                  : <p style={{ fontSize: 12.5, color: '#9ca3af', fontStyle: 'italic' }}>The email body was not retained for this historical import. Only metadata is available above.</p>}
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {docFile('Original ' + docLabel, originalFile)}
+                {row.document_type === 'invoice' && docFile('Generated Invoice', generatedFile)}
+              </div>
+              <div className="actions-row"><Button variant="secondary" onClick={() => setViewEmailFor(null)}>Close</Button></div>
+            </div>
+          )
+        })()}
       </Modal>
 
       <Modal open={Boolean(pickerFor)} title="Select the customer for this document" onClose={() => setPickerFor(null)}>

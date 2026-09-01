@@ -145,7 +145,7 @@ import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { DatabaseResetPage } from './DatabaseResetPage'
 import { LoginActivityPage } from './LoginActivityPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
-import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, sendInvoiceReminder, type EmailImportRow, type EmailImportStatus } from '../../lib/secureAdminApi'
+import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, sendInvoiceReminder, type EmailImportRow, type EmailImportStatus, type EmailImportStats } from '../../lib/secureAdminApi'
 import { EmailImportsPage } from './EmailImportsPage'
 import { NotFoundPage } from './NotFoundPage'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
@@ -190,6 +190,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [emailImportsHasMore, setEmailImportsHasMore] = useState(false)
   const [emailImportsCounts, setEmailImportsCounts] = useState<Partial<Record<EmailImportStatus, number>>>({})
   const [emailImportsTotal, setEmailImportsTotal] = useState(0)
+  const [emailImportsStats, setEmailImportsStats] = useState<EmailImportStats>({ total: 0, invoices: 0, creditNotes: 0, statements: 0, missingPdfs: 0 })
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [globalSearchTerm, setGlobalSearchTerm] = useState('')
 
@@ -250,7 +251,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getWhatsAppTemplates(),
       getExpenses(),
       getCommunicationDeliveryLogs(),
-      getEmailImports().catch(() => ({ imports: [], hasMore: false, counts: {}, total: 0 })),
+      getEmailImports().catch(() => ({ imports: [], hasMore: false, counts: {}, total: 0, stats: { total: 0, invoices: 0, creditNotes: 0, statements: 0, missingPdfs: 0 } })),
       getNotifications(),
     ])
 
@@ -284,6 +285,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setEmailImportsHasMore(emailImportsData.hasMore)
     setEmailImportsCounts(emailImportsData.counts)
     setEmailImportsTotal(emailImportsData.total)
+    setEmailImportsStats(emailImportsData.stats)
     setNotifications(notificationsData)
   }, [])
 
@@ -857,18 +859,19 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           hasMore={emailImportsHasMore}
           counts={emailImportsCounts}
           total={emailImportsTotal}
+          stats={emailImportsStats}
           customers={customers}
           invoices={invoices}
           onRefresh={async () => {
             const page = await getEmailImports()
-            setEmailImports(page.imports); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total)
+            setEmailImports(page.imports); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total); setEmailImportsStats(page.stats)
           }}
           onLoadMore={async () => {
             const last = emailImports[emailImports.length - 1]
             const cursor = last?.received_at ?? last?.created_at
             if (!cursor || !last) return
             const page = await getEmailImports({ before: cursor, beforeId: last.id })
-            setEmailImports(prev => [...prev, ...page.imports]); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total)
+            setEmailImports(prev => [...prev, ...page.imports]); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total); setEmailImportsStats(page.stats)
           }}
           onOpenCustomer={(customerId) => { setInvoicesCustomerFilter(customerId); navigate('invoices') }}
         />

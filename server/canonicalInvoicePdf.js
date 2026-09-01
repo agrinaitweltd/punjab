@@ -47,24 +47,62 @@ async function renderFallback(data) {
   return Buffer.from(await pdf.save())
 }
 
-/** Converts a DOCX buffer to a PDF buffer. Returns { buffer, provider }. */
+const CONVERTAPI_TIMEOUT_MS = 25_000
+
+/** One attempt at the ConvertAPI call with a given auth style. ConvertAPI
+ *  issues two different credential shapes from its dashboard - a plain
+ *  32-char "Secret" (authenticated via a `Secret=` query param) and an
+ *  OAuth-style token (authenticated via `Authorization: Bearer`) - and a
+ *  key pasted from the "Secret" page will 401 if sent as a Bearer token.
+ *  Returns { ok, buffer } on success or { ok: false, status, message } with
+ *  the REAL provider error text so it's debuggable from the dashboard
+ *  instead of only in server logs. */
+async function attemptConvertApi(url, docxBase64, fileName, bearerToken) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), CONVERTAPI_TIMEOUT_MS)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}) },
+      signal: controller.signal,
+      body: JSON.stringify({ Parameters: [{ Name: 'File', FileValue: { Name: fileName || 'invoice.docx', Data: docxBase64 } }] }),
+    })
+    const result = await response.json().catch(() => ({}))
+    const encoded = result?.Files?.[0]?.FileData
+    if (!response.ok || !encoded) return { ok: false, status: response.status, message: result?.Message || `HTTP ${response.status}` }
+    return { ok: true, buffer: Buffer.from(encoded, 'base64') }
+  } catch (error) {
+    const timedOut = error?.name === 'AbortError'
+    return { ok: false, status: 0, message: timedOut ? `Timed out after ${CONVERTAPI_TIMEOUT_MS / 1000}s` : (error instanceof Error ? error.message : 'Network error') }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Converts a DOCX buffer to a PDF buffer. Returns { buffer, provider,
+ *  error? } - error is the real ConvertAPI failure reason, present only
+ *  when it fell back to the pdf-lib renderer, so callers can store/surface
+ *  something more useful than a generic "converter unavailable" message. */
 export async function convertDocxToPdf(docxBase64, fileName, data) {
   const token = process.env.CONVERTAPI_TOKEN
   if (token) {
-    try {
-      const response = await fetch('https://v2.convertapi.com/convert/docx/to/pdf', {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Parameters: [{ Name: 'File', FileValue: { Name: fileName || 'invoice.docx', Data: docxBase64 } }] }),
-      })
-      const result = await response.json()
-      const encoded = result?.Files?.[0]?.FileData
-      if (!response.ok || !encoded) throw new Error(result?.Message || 'ConvertAPI returned no PDF')
-      return { buffer: Buffer.from(encoded, 'base64'), provider: 'ConvertAPI' }
-    } catch (error) {
-      console.error('ConvertAPI conversion failed; using PDF renderer', error)
+    // Try Bearer auth first (the common case for a modern ConvertAPI
+    // token), then the Secret query-param style if that's specifically an
+    // auth failure (401/403) - a genuine conversion error (e.g. malformed
+    // docx) shouldn't trigger a pointless second attempt.
+    const bearerAttempt = await attemptConvertApi('https://v2.convertapi.com/convert/docx/to/pdf', docxBase64, fileName, token)
+    if (bearerAttempt.ok) return { buffer: bearerAttempt.buffer, provider: 'ConvertAPI' }
+    let finalAttempt = bearerAttempt
+    if (bearerAttempt.status === 401 || bearerAttempt.status === 403) {
+      const secretUrl = `https://v2.convertapi.com/convert/docx/to/pdf?Secret=${encodeURIComponent(token)}`
+      const secretAttempt = await attemptConvertApi(secretUrl, docxBase64, fileName)
+      if (secretAttempt.ok) return { buffer: secretAttempt.buffer, provider: 'ConvertAPI' }
+      finalAttempt = secretAttempt
     }
+    console.error('ConvertAPI conversion failed; using PDF renderer', finalAttempt.status, finalAttempt.message)
+    return { buffer: await renderFallback(data), provider: 'pdf-lib-fallback', error: `ConvertAPI ${finalAttempt.status || ''}: ${finalAttempt.message}`.trim().slice(0, 300) }
   }
-  return { buffer: await renderFallback(data), provider: 'pdf-lib-fallback' }
+  return { buffer: await renderFallback(data), provider: 'pdf-lib-fallback', error: 'CONVERTAPI_TOKEN is not set on the server.' }
 }
 
 /** Builds the complete official invoice PDF straight from the same payload
@@ -74,6 +112,6 @@ export async function buildOfficialInvoicePdf(payload, buildInvoiceDocx) {
   const docx = buildInvoiceDocx(payload)
   const safeInvoice = String(payload.invoice.invoiceNumber).replace(/[^a-zA-Z0-9_-]/g, '_')
   const docxFileName = `Punjab-Invoice-${safeInvoice}.docx`
-  const { buffer, provider } = await convertDocxToPdf(docx.toString('base64'), docxFileName, payload)
-  return { buffer, fileName: `Punjab-Invoice-${safeInvoice}-${payload.customer.accountNumber}.pdf`, provider }
+  const { buffer, provider, error } = await convertDocxToPdf(docx.toString('base64'), docxFileName, payload)
+  return { buffer, fileName: `Punjab-Invoice-${safeInvoice}-${payload.customer.accountNumber}.pdf`, provider, error }
 }

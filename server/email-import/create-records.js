@@ -229,7 +229,7 @@ export async function generateAndAttachCanonicalPdf(admin, table, invoiceRow, cu
   // missing copy here would silently wipe it.
   const { data: currentRow } = await admin.from(table('invoices')).select('imported_metadata').eq('id', invoiceRow.id).maybeSingle()
   const metadata = { ...(currentRow?.imported_metadata || {}) }
-  if (usedFallback) { metadata.pdfGenerationPending = true; metadata.pdfGenerationError = FALLBACK_PDF_NOTE }
+  if (usedFallback) { metadata.pdfGenerationPending = true; metadata.pdfGenerationError = official.error ? `${FALLBACK_PDF_NOTE} (${official.error})` : FALLBACK_PDF_NOTE }
   else { delete metadata.pdfGenerationPending; delete metadata.pdfGenerationError }
 
   const { error: linkErr } = await admin.from(table('invoices')).update({

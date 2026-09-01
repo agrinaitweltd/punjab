@@ -42,7 +42,7 @@ function isRealPdfAttachment(attachment) {
   return Buffer.isBuffer(attachment.content) && attachment.content.subarray(0, 5).toString('latin1') === '%PDF-'
 }
 
-export async function processAttachment(admin, table, { messageId, uid, sender, subject, receivedAt, attachment }) {
+export async function processAttachment(admin, table, { messageId, uid, sender, subject, receivedAt, recipient, bodyText, attachment }) {
   let filename
   try { filename = safeFileName(attachment.filename || 'attachment.pdf') } catch { filename = `email-attachment-${Date.now()}.pdf` }
   const size = attachment.size ?? attachment.content.length
@@ -57,6 +57,7 @@ export async function processAttachment(admin, table, { messageId, uid, sender, 
   const baseRow = {
     id: `ei-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     message_id: messageId, uid, received_at: receivedAt, sender, subject,
+    recipient: recipient || null, body_text: bodyText || null,
     attachment_filename: filename, attachment_hash: hash, attachment_size: size,
     status: 'processing',
   }
@@ -218,13 +219,20 @@ export async function processMailbox(admin, table, testMode = false) {
       const sender = parsedEmail.from?.text || ''
       const subject = parsedEmail.subject || ''
       const receivedAt = (parsedEmail.date || new Date()).toISOString()
+      const recipient = parsedEmail.to?.text || ''
+      // Plain text only, never raw HTML (item 4) - mailparser already
+      // derives .text from an HTML-only body, so this is never lossy for
+      // review purposes and is inherently XSS-safe to render as-is (no
+      // markup is ever interpreted), capped well above any real reminder/
+      // invoice email's length.
+      const bodyText = (parsedEmail.text || '').slice(0, 20_000)
       const pdfAttachments = (parsedEmail.attachments || []).filter(isRealPdfAttachment)
 
       summary.checked += 1
       if (!pdfAttachments.length) { summary.skipped_no_pdf += 1; continue }
 
       for (const attachment of pdfAttachments) {
-        const outcome = await processAttachment(admin, table, { messageId, uid, sender, subject, receivedAt, attachment })
+        const outcome = await processAttachment(admin, table, { messageId, uid, sender, subject, receivedAt, recipient, bodyText, attachment })
         if (outcome) summary[outcome] = (summary[outcome] || 0) + 1
       }
     }

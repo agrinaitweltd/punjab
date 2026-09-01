@@ -16,13 +16,28 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      // Status counts always reflect the FULL table (not just the loaded
-      // page) so the stat cards stay accurate regardless of pagination -
-      // a single narrow column, cheap even at a few thousand rows.
-      const { data: statusRows, error: countError } = await admin.from(table('email_imports')).select('status')
+      // Stats always reflect the FULL table (not just the loaded page,
+      // today, or the first batch) - three narrow columns, cheap even at a
+      // few thousand rows (item 2).
+      const { data: statusRows, error: countError } = await admin.from(table('email_imports')).select('status,document_type,invoice_id')
       if (countError) throw countError
       const counts = {}
-      for (const row of statusRows) counts[row.status] = (counts[row.status] ?? 0) + 1
+      const byType = { invoice: 0, credit_note: 0, statement: 0 }
+      const invoiceIds = []
+      for (const row of statusRows) {
+        counts[row.status] = (counts[row.status] ?? 0) + 1
+        if (row.document_type && byType[row.document_type] !== undefined) byType[row.document_type] += 1
+        if (row.invoice_id) invoiceIds.push(row.invoice_id)
+      }
+      // Missing-generated-PDF count, scoped to invoices this table actually
+      // links to (not every invoice in the system) - reuses the same
+      // pdfGenerationPending flag generateAndAttachCanonicalPdf writes.
+      let missingPdfs = 0
+      if (invoiceIds.length) {
+        const { data: linkedInvoices } = await admin.from(table('invoices')).select('imported_metadata').in('id', [...new Set(invoiceIds)])
+        missingPdfs = (linkedInvoices || []).filter(row => row.imported_metadata?.pdfGenerationPending).length
+      }
+      const stats = { total: statusRows.length, invoices: byType.invoice, creditNotes: byType.credit_note, statements: byType.statement, missingPdfs }
 
       const search = typeof req.query?.search === 'string' ? req.query.search.trim() : ''
       if (search) {
@@ -32,7 +47,7 @@ export default async function handler(req, res) {
           .order('received_at', { ascending: false })
           .limit(500)
         if (error) throw error
-        return res.status(200).json({ imports: data, hasMore: false, counts, total: statusRows.length })
+        return res.status(200).json({ imports: data, hasMore: false, counts, total: statusRows.length, stats })
       }
 
       const before = typeof req.query?.before === 'string' ? req.query.before : ''
@@ -52,7 +67,7 @@ export default async function handler(req, res) {
       if (error) throw error
       const hasMore = data.length > limit
       const imports = hasMore ? data.slice(0, limit) : data
-      return res.status(200).json({ imports, hasMore, counts, total: statusRows.length })
+      return res.status(200).json({ imports, hasMore, counts, total: statusRows.length, stats })
     }
 
     const op = String(req.body?.op || 'retry')
