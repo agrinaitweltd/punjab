@@ -4,9 +4,12 @@ import type { CommunicationDeliveryLog } from '../../services/communicationLogSe
 import type { ReminderStage } from '../../lib/reminderTemplates'
 import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
+import { DateAccordion } from '../../components/ui/DateAccordion'
 import { CommunicationDetailModal } from '../../components/CommunicationDetailModal'
 import { classifyInvoice, invoiceOutstanding } from '../../lib/creditNotes'
 import { formatUkPhoneForDisplay } from '../../lib/whatsapp'
+import { ReminderStatusButton } from '../../components/ReminderStatusButton'
+import { groupByDate } from '../../lib/dateGrouping'
 
 const money = (value: number) => `£${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const today = () => new Date().toISOString().slice(0, 10)
@@ -44,6 +47,8 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
       .sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''))
   }, [view, notificationLogs])
 
+  const historyGroups = useMemo(() => groupByDate(history, log => log.sentAt ?? log.scheduledFor ?? '', 'desc'), [history])
+
   const findDelivery = (log: NotificationLog): CommunicationDeliveryLog | undefined =>
     deliveryLogs.find(d => d.invoiceId === log.invoiceId && d.customerId === log.customerId && d.idempotencyKey === log.idempotencyKey)
       ?? deliveryLogs.find(d => d.invoiceId === log.invoiceId && d.customerId === log.customerId && d.sentAt === log.sentAt)
@@ -71,7 +76,7 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
         <td>{invoice.date}</td>
         <td>{money(invoice.amount)}</td>
         <td><strong>{money(invoiceOutstanding(invoice))}</strong></td>
-        <td><button className="btn btn-primary btn-sm" onClick={() => onSendReminder(invoice, customer, stage)}>Send Reminder</button></td>
+        <td><ReminderStatusButton invoice={invoice} onSend={() => onSendReminder(invoice, customer, stage)} /></td>
       </tr>
     )
   }
@@ -97,33 +102,42 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
     )
   }
 
+  const historyRow = (log: NotificationLog) => {
+    const invoice = invoices.find(i => i.id === log.invoiceId)
+    const customer = customerFor(log.customerId)
+    const delivery = findDelivery(log)
+    return (
+      <tr key={log.id}>
+        <td>{customer?.companyName ?? '—'}</td>
+        <td>{customer?.customerNumber ?? '—'}</td>
+        <td>{invoice?.invoiceNumber ?? log.invoiceId}</td>
+        <td>{invoice?.date ?? '—'}</td>
+        <td>{invoice ? money(invoice.amount) : '—'}</td>
+        <td>{(log.sentAt ?? log.scheduledFor ?? '').slice(0, 16).replace('T', ' ')}</td>
+        <td>{log.channel === 'email' ? (customer?.email ?? '—') : formatUkPhoneForDisplay(customer?.phone ?? '') || '—'}</td>
+        <td><span className={`status-badge ${log.status === 'Failed' ? 'danger' : log.status === 'Sent' ? 'info' : 'warning'}`}>{log.status}</span></td>
+        <td>{log.sentBy ?? '—'}</td>
+        <td><button className="btn btn-secondary btn-sm" onClick={() => openDetail(log)}>View{delivery?.attachmentNames.length ? ' & Attachment' : ''}</button></td>
+      </tr>
+    )
+  }
+
   return (
     <div className="stack">
       <div className="page-heading"><div><h1>{view === 'day-14' ? '14-Day Reminders' : '21-Day Reminders'}</h1><p>History of {view === 'day-14' ? '14-day' : '21-day'} reminders sent — kept separate from the other stage so it's easy to review.</p></div></div>
       <Card title={`History (${history.length})`}>
-        {history.length === 0 ? <div className="empty-state">No {view === 'day-14' ? '14-day' : '21-day'} reminders have been sent yet.</div> : (
-          <DataTable columns={['Customer', 'Account', 'Invoice', 'Invoice Date', 'Amount', 'Reminder Date', 'Recipient', 'Status', 'Sent By', 'Message']}>
-            {history.map(log => {
-              const invoice = invoices.find(i => i.id === log.invoiceId)
-              const customer = customerFor(log.customerId)
-              const delivery = findDelivery(log)
-              return (
-                <tr key={log.id}>
-                  <td>{customer?.companyName ?? '—'}</td>
-                  <td>{customer?.customerNumber ?? '—'}</td>
-                  <td>{invoice?.invoiceNumber ?? log.invoiceId}</td>
-                  <td>{invoice?.date ?? '—'}</td>
-                  <td>{invoice ? money(invoice.amount) : '—'}</td>
-                  <td>{(log.sentAt ?? log.scheduledFor ?? '').slice(0, 16).replace('T', ' ')}</td>
-                  <td>{log.channel === 'email' ? (customer?.email ?? '—') : formatUkPhoneForDisplay(customer?.phone ?? '') || '—'}</td>
-                  <td><span className={`status-badge ${log.status === 'Failed' ? 'danger' : log.status === 'Sent' ? 'info' : 'warning'}`}>{log.status}</span></td>
-                  <td>{log.sentBy ?? '—'}</td>
-                  <td><button className="btn btn-secondary btn-sm" onClick={() => openDetail(log)}>View{delivery?.attachmentNames.length ? ' & Attachment' : ''}</button></td>
-                </tr>
-              )
-            })}
-          </DataTable>
-        )}
+        <DateAccordion
+          groups={historyGroups}
+          emptyMessage={`No ${view === 'day-14' ? '14-day' : '21-day'} reminders have been sent yet.`}
+          renderGroup={group => (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Customer</th><th>Account</th><th>Invoice</th><th>Invoice Date</th><th>Amount</th><th>Reminder Time</th><th>Recipient</th><th>Status</th><th>Sent By</th><th>Message</th></tr></thead>
+                <tbody>{group.items.map(log => historyRow(log))}</tbody>
+              </table>
+            </div>
+          )}
+        />
       </Card>
       <CommunicationDetailModal log={detail} customers={customers} invoices={invoices} onClose={() => setDetail(null)} />
     </div>

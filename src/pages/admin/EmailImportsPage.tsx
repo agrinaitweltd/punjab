@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { Customer } from "../../types"
 import type { ImportedFinancialDocument, ImportedInvoiceItem } from "../../lib/invoiceImport"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { Spinner } from "../../components/ui/Spinner"
+import { DateAccordion } from "../../components/ui/DateAccordion"
 import { getFileById } from "../../lib/fileService"
 import type { EmailImportRow, EmailImportStatus } from "../../lib/secureAdminApi"
-import { retryEmailImport as retryEmailImportRequest, getReviewDocument, approveReviewedDocument, rejectReviewedDocument } from "../../lib/secureAdminApi"
+import { retryEmailImport as retryEmailImportRequest, getReviewDocument, approveReviewedDocument, rejectReviewedDocument, getEmailImports } from "../../lib/secureAdminApi"
 import { showAppError, showSuccess } from "../../lib/appDialogs"
+import { groupByDate } from "../../lib/dateGrouping"
 
 const STATUS_COLORS: Record<EmailImportStatus, { bg: string; color: string }> = {
   processing: { bg: "#e0e7ff", color: "#4338ca" },
@@ -27,10 +29,18 @@ function emptyItem(): ImportedInvoiceItem {
 
 const fmt = (value: string | null) => value ? new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
 
-export function EmailImportsPage({ imports, customers, onRefresh, onOpenCustomer }: {
+export function EmailImportsPage({ imports, hasMore, counts, total, customers, onRefresh, onLoadMore, onOpenCustomer }: {
+  /** The newest-loaded page(s) - not the complete history. Search bypasses
+      this entirely and queries the full table server-side (item 9). */
   imports: EmailImportRow[]
+  hasMore: boolean
+  /** Status counts across the FULL table (item 7/8) - independent of how
+      many rows are currently loaded, so the stat cards are always accurate. */
+  counts: Partial<Record<EmailImportStatus, number>>
+  total: number
   customers: Customer[]
   onRefresh: () => Promise<void>
+  onLoadMore: () => Promise<void>
   /** Jumps to that customer's Open Invoices page (same destination as
       CustomersPage's own "Open Invoices" button) - covers both "Link to
       customer" and "Link to invoice" (the invoice is right there in that
@@ -39,6 +49,10 @@ export function EmailImportsPage({ imports, customers, onRefresh, onOpenCustomer
 }) {
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"All" | EmailImportStatus>("All")
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [searchResults, setSearchResults] = useState<EmailImportRow[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const searchToken = useRef(0)
   const [preview, setPreview] = useState<{ name: string; dataUri: string } | 'loading' | 'missing' | null>(null)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [pickerFor, setPickerFor] = useState<EmailImportRow | null>(null)
@@ -136,19 +150,37 @@ export function EmailImportsPage({ imports, customers, onRefresh, onOpenCustomer
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return imports.filter(row =>
-      (statusFilter === "All" || row.status === statusFilter) &&
-      (!q || `${row.sender ?? ""} ${row.subject ?? ""} ${row.attachment_filename} ${row.detected_customer_name ?? ""} ${row.detected_invoice_number ?? ""}`.toLowerCase().includes(q))
-    )
-  }, [imports, query, statusFilter])
+  // Search queries the FULL historical table server-side (item 9) - never
+  // just the page(s) currently loaded into the browser. Debounced so we
+  // don't fire a request on every keystroke; searchToken discards a
+  // response that arrives after a newer search has already started.
+  useEffect(() => {
+    const term = query.trim()
+    if (!term) { setSearchResults(null); setSearching(false); return }
+    const token = ++searchToken.current
+    setSearching(true)
+    const timer = setTimeout(() => {
+      getEmailImports({ search: term })
+        .then(page => { if (searchToken.current === token) setSearchResults(page.imports) })
+        .catch(() => { if (searchToken.current === token) setSearchResults([]) })
+        .finally(() => { if (searchToken.current === token) setSearching(false) })
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query])
 
-  const counts = useMemo(() => {
-    const c: Partial<Record<EmailImportStatus, number>> = {}
-    for (const row of imports) c[row.status] = (c[row.status] ?? 0) + 1
-    return c
-  }, [imports])
+  const isSearchMode = query.trim().length > 0
+
+  const filtered = useMemo(() => {
+    const source = isSearchMode ? (searchResults ?? []) : imports
+    return source.filter(row => statusFilter === "All" || row.status === statusFilter)
+  }, [isSearchMode, searchResults, imports, statusFilter])
+
+  const groups = useMemo(() => groupByDate(filtered, row => row.received_at ?? row.created_at ?? "", "desc"), [filtered])
+
+  const loadMore = async () => {
+    setLoadingMore(true)
+    try { await onLoadMore() } finally { setLoadingMore(false) }
+  }
 
   const viewFile = async (fileId: string | null) => {
     if (!fileId) return
@@ -168,6 +200,50 @@ export function EmailImportsPage({ imports, customers, onRefresh, onOpenCustomer
     } finally {
       setRetryingId(null)
     }
+  }
+
+  const emailImportRow = (row: EmailImportRow) => {
+    const customer = row.detected_customer_id ? customerById.get(row.detected_customer_id) : undefined
+    return (
+      <tr key={row.id} className="ps-row">
+        <td style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{fmt(row.received_at)}</td>
+        <td>{row.sender || "—"}</td>
+        <td style={{ maxWidth: 220, color: "#6b7280" }}>{row.subject || "—"}</td>
+        <td>{row.attachment_filename}</td>
+        <td>
+          {customer && onOpenCustomer ? (
+            <button type="button" onClick={() => onOpenCustomer(customer.id)} style={{ background: "none", border: "none", padding: 0, color: "#1d4ed8", textDecoration: "underline", cursor: "pointer", font: "inherit" }}>
+              {row.detected_customer_name}
+            </button>
+          ) : (row.detected_customer_name || "—")}
+        </td>
+        <td>{customer?.customerNumber || "—"}</td>
+        <td>{row.detected_invoice_number || "—"}</td>
+        <td>
+          <span className="ps-badge" style={STATUS_COLORS[row.status]}>{STATUS_LABELS[row.status]}</span>
+          {row.status === 'imported' && (
+            <div style={{ marginTop: 4, fontSize: 11.5, color: "#6b7280" }}>{row.customer_created ? "New Customer Created" : "Added to Existing Customer"}</div>
+          )}
+          {row.error_message && row.status !== 'imported' && (
+            <div style={{ marginTop: 4, fontSize: 11.5, color: "#9ca3af", maxWidth: 220 }}>{row.error_message}</div>
+          )}
+        </td>
+        <td>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {row.file_id && <Button className="btn-sm" variant="secondary" onClick={() => viewFile(row.file_id)}>View PDF</Button>}
+            {customer && onOpenCustomer && <Button className="btn-sm" variant="secondary" onClick={() => onOpenCustomer(customer.id)}>Open Invoice</Button>}
+            {(row.status === "needs_review" || row.status === "failed") && (
+              <>
+                <Button className="btn-sm" onClick={() => openReview(row)}>Review</Button>
+                <Button className="btn-sm" variant="secondary" disabled={retryingId === row.id} onClick={() => row.detected_customer_id ? retry(row) : (setPickerFor(row), setPickedCustomerId(row.detected_customer_id ?? ''))}>
+                  {retryingId === row.id ? "Retrying…" : "Retry"}
+                </Button>
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+    )
   }
 
   return (
@@ -199,62 +275,33 @@ export function EmailImportsPage({ imports, customers, onRefresh, onOpenCustomer
           <div className="ps-toolbar-right">
             <div className="ps-search-wrap">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input className="ps-search" placeholder="Search sender, subject, filename, customer…" value={query} onChange={e => setQuery(e.target.value)} />
+              <input className="ps-search" placeholder="Search all history — sender, subject, filename, customer…" value={query} onChange={e => setQuery(e.target.value)} />
+              {searching && <Spinner size={13} />}
             </div>
           </div>
         </div>
+
+        <p style={{ fontSize: 12, color: "#9ca3af", padding: "10px 16px 0" }}>
+          {isSearchMode
+            ? `${filtered.length} match${filtered.length === 1 ? "" : "es"} across all ${total.toLocaleString()} email imports.`
+            : `Showing ${imports.length.toLocaleString()} of ${total.toLocaleString()} email imports, newest first.`}
+        </p>
+
         <div className="ps-table-wrap">
-          <table className="ps-table">
-            <thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Attachment</th><th>Customer</th><th>Account No.</th><th>Invoice No.</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-              {filtered.map(row => {
-                const customer = row.detected_customer_id ? customerById.get(row.detected_customer_id) : undefined
-                return (
-                <tr key={row.id} className="ps-row">
-                  <td style={{ color: "#6b7280", whiteSpace: "nowrap" }}>{fmt(row.received_at)}</td>
-                  <td>{row.sender || "—"}</td>
-                  <td style={{ maxWidth: 220, color: "#6b7280" }}>{row.subject || "—"}</td>
-                  <td>{row.attachment_filename}</td>
-                  <td>
-                    {customer && onOpenCustomer ? (
-                      <button type="button" onClick={() => onOpenCustomer(customer.id)} style={{ background: "none", border: "none", padding: 0, color: "#1d4ed8", textDecoration: "underline", cursor: "pointer", font: "inherit" }}>
-                        {row.detected_customer_name}
-                      </button>
-                    ) : (row.detected_customer_name || "—")}
-                  </td>
-                  <td>{customer?.customerNumber || "—"}</td>
-                  <td>{row.detected_invoice_number || "—"}</td>
-                  <td>
-                    <span className="ps-badge" style={STATUS_COLORS[row.status]}>{STATUS_LABELS[row.status]}</span>
-                    {row.status === 'imported' && (
-                      <div style={{ marginTop: 4, fontSize: 11.5, color: "#6b7280" }}>{row.customer_created ? "New Customer Created" : "Added to Existing Customer"}</div>
-                    )}
-                    {row.error_message && row.status !== 'imported' && (
-                      <div style={{ marginTop: 4, fontSize: 11.5, color: "#9ca3af", maxWidth: 220 }}>{row.error_message}</div>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {row.file_id && <Button className="btn-sm" variant="secondary" onClick={() => viewFile(row.file_id)}>View PDF</Button>}
-                      {customer && onOpenCustomer && <Button className="btn-sm" variant="secondary" onClick={() => onOpenCustomer(customer.id)}>Open Invoice</Button>}
-                      {(row.status === "needs_review" || row.status === "failed") && (
-                        <>
-                          <Button className="btn-sm" onClick={() => openReview(row)}>Review</Button>
-                          <Button className="btn-sm" variant="secondary" disabled={retryingId === row.id} onClick={() => row.detected_customer_id ? retry(row) : (setPickerFor(row), setPickedCustomerId(row.detected_customer_id ?? ''))}>
-                            {retryingId === row.id ? "Retrying…" : "Retry"}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
-              No email imports yet. Send or forward a PDF invoice to receivables@punjabexoticfoods.com.
+          <DateAccordion
+            groups={groups}
+            defaultOpenCount={isSearchMode ? groups.length : 1}
+            emptyMessage="No email imports yet. Send or forward a PDF invoice to receivables@punjabexoticfoods.com."
+            renderGroup={group => (
+              <table className="ps-table">
+                <thead><tr><th>Received</th><th>Sender</th><th>Subject</th><th>Attachment</th><th>Customer</th><th>Account No.</th><th>Invoice No.</th><th>Status</th><th></th></tr></thead>
+                <tbody>{group.items.map(row => emailImportRow(row))}</tbody>
+              </table>
+            )}
+          />
+          {!isSearchMode && hasMore && (
+            <div style={{ padding: "16px", textAlign: "center" }}>
+              <Button variant="secondary" disabled={loadingMore} onClick={loadMore}>{loadingMore ? "Loading…" : "Load Older Email Imports"}</Button>
             </div>
           )}
         </div>

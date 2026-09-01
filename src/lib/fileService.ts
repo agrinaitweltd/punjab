@@ -21,7 +21,7 @@ export type StoredFile = {
   creditNoteId?: string
   creditNoteNumber?: string
   creditNoteAmount?: number
-  documentRole?: 'canonical_invoice' | 'legacy_source' | 'credit_note_source' | 'general'
+  documentRole?: 'canonical_invoice' | 'legacy_source' | 'credit_note_source' | 'statement_source' | 'general'
   templateId?: 'punjab-approved-letterhead-v1'
 }
 

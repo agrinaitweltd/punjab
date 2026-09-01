@@ -4,7 +4,7 @@ import { ToastStack } from '../../components/ToastStack'
 import { useUnseenCount, useLiveToasts, usePoll } from '../../lib/notifications'
 import { sendEmail, welcomeEmailHtml, paymentReceivedEmailHtml, overdueEmailHtml, orderPaymentRequiredEmailHtml, paymentApprovedEmailHtml, paymentRejectedEmailHtml } from '../../lib/emailService'
 import { getCreditStatus } from '../../lib/creditControl'
-import { APPROVED_INVOICE_TEMPLATE_ID, dataUriBase64, findInvoicePdf, uploadFile } from '../../lib/fileService'
+import { APPROVED_INVOICE_TEMPLATE_ID, uploadFile } from '../../lib/fileService'
 import { generateCanonicalInvoicePdf } from '../../lib/canonicalInvoice'
 import { confirmAction, showNotice, showAppError, showSuccess } from '../../lib/appDialogs'
 import { getInvoiceItems, saveInvoiceItems } from '../../services/invoiceItemService'
@@ -52,7 +52,6 @@ import {
   updateBuyingPrice,
   deleteBuyingPrice,
   getNotificationLogs,
-  createNotificationLog,
   getSuppliers,
   createSupplier,
   updateSupplier,
@@ -73,7 +72,7 @@ import {
   createWhatsAppTemplate,
   updateWhatsAppTemplate,
 } from '../../api/miscApi'
-import { sendWhatsAppDocument, sendWhatsAppMessage, retryWhatsAppMessage, sendInvoiceMessage, sendPaymentReceived, sendOrderConfirmed, sendOrderPacked, sendOrderDelivered, sendAccountApproved, sendAccountSuspended, invalidateTemplateCache } from '../../lib/whatsapp'
+import { sendWhatsAppMessage, retryWhatsAppMessage, sendInvoiceMessage, sendPaymentReceived, sendOrderConfirmed, sendOrderPacked, sendOrderDelivered, sendAccountApproved, sendAccountSuspended, invalidateTemplateCache } from '../../lib/whatsapp'
 import { WhatsAppLogsPage } from './WhatsAppLogsPage'
 import { WhatsAppSendPage } from './WhatsAppSendPage'
 import { attachCreditAllocations, computeCreditApplication, invoiceOutstanding, invoiceStatusFor } from '../../lib/creditNotes'
@@ -146,7 +145,7 @@ import { SystemDeveloperPage } from './SystemDeveloperPage'
 import { DatabaseResetPage } from './DatabaseResetPage'
 import { LoginActivityPage } from './LoginActivityPage'
 import { createExpense, deleteExpense, getExpenses } from '../../services/expenseService'
-import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, type EmailImportRow } from '../../lib/secureAdminApi'
+import { inviteAdmin, inviteCustomer, manageAdmin, resetAdminCredentials, getEmailImports, sendInvoiceReminder, type EmailImportRow, type EmailImportStatus } from '../../lib/secureAdminApi'
 import { EmailImportsPage } from './EmailImportsPage'
 import { NotFoundPage } from './NotFoundPage'
 import { getCommunicationDeliveryLogs, type CommunicationDeliveryLog } from '../../services/communicationLogService'
@@ -188,6 +187,9 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationDeliveryLog[]>([])
   const [emailImports, setEmailImports] = useState<EmailImportRow[]>([])
+  const [emailImportsHasMore, setEmailImportsHasMore] = useState(false)
+  const [emailImportsCounts, setEmailImportsCounts] = useState<Partial<Record<EmailImportStatus, number>>>({})
+  const [emailImportsTotal, setEmailImportsTotal] = useState(0)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [globalSearchTerm, setGlobalSearchTerm] = useState('')
 
@@ -248,7 +250,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       getWhatsAppTemplates(),
       getExpenses(),
       getCommunicationDeliveryLogs(),
-      getEmailImports().then(r => r.imports).catch(() => []),
+      getEmailImports().catch(() => ({ imports: [], hasMore: false, counts: {}, total: 0 })),
       getNotifications(),
     ])
 
@@ -278,7 +280,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     setWhatsappTemplates(whatsappTemplatesData)
     setExpenses(expensesData)
     setCommunicationLogs(communicationLogsData)
-    setEmailImports(emailImportsData)
+    setEmailImports(emailImportsData.imports)
+    setEmailImportsHasMore(emailImportsData.hasMore)
+    setEmailImportsCounts(emailImportsData.counts)
+    setEmailImportsTotal(emailImportsData.total)
     setNotifications(notificationsData)
   }, [])
 
@@ -389,46 +394,30 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     if (key === 'tickets') markTicketsSeen()
   }
 
-  // Manual reminder composer (items 17/20) - admin reviews/edits the message
-  // before sending. Reuses the existing email pipeline (sendEmail ->
-  // /api/send-email -> Resend) unchanged, and always attaches the
-  // SYSTEM-GENERATED invoice PDF (never the original source PDF). Email is
-  // attempted first and unconditionally; WhatsApp is a strictly best-effort
-  // add-on that can never fail or block the email send (item 19) - a
-  // WhatsApp failure/unavailability never blocks the email, is logged
-  // internally, and is never reported to the admin as a successful send.
+  // Manual reminder composer (items 17/20 from the previous pass). Admin
+  // reviews/edits the message before sending; the actual send + 24h
+  // cooldown enforcement (item 2, this pass) now happens entirely
+  // server-side via /api/admin-security?action=send-reminder - see
+  // server/admin-actions/send-reminder.js. The browser no longer calls
+  // sendEmail()/createNotificationLog() directly for reminders, so the
+  // cooldown can't be bypassed by a stale client or a different admin's tab.
   const requestReminder = (invoice: Invoice, customer: Customer, stage: ReminderStage) => setReminderTarget({ invoice, customer, stage })
   const sendManualReminder = async ({ subject, message, alsoWhatsApp }: { subject: string; message: string; alsoWhatsApp: boolean }) => {
     if (!reminderTarget) return
-    const { invoice, customer, stage } = reminderTarget
+    const { invoice, stage } = reminderTarget
     setReminderBusy(true)
     try {
-      const storedPdf = await findInvoicePdf(customer.id, invoice.invoiceNumber, invoice.id, invoice.amount)
-      if (!storedPdf) throw new Error(`The system-generated PDF for invoice ${invoice.invoiceNumber} is missing. Generate it first, then retry.`)
-      const base64 = dataUriBase64(storedPdf.dataUri)
-      const html = `<div style="white-space:pre-line">${message.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char]!))}</div>`
-      const idempotencyKey = `invoice:${invoice.id}:${stage}:email:${new Date().toISOString().slice(0, 10)}`
-      const sent = await sendEmail(customer.email, subject, html, [{ filename: storedPdf.name, content: base64 }], { category: 'notifications', customerId: customer.id, invoiceId: invoice.id, idempotencyKey, communicationType: `reminder_${stage}` })
-      await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'email', status: sent.ok ? 'Sent' : 'Failed', sentAt: sent.ok ? new Date().toISOString() : undefined, error: sent.error, reminderStage: stage, idempotencyKey, sentBy: user.displayName })
-      if (!sent.ok) throw new Error(sent.error || 'The reminder email could not be sent.')
-
-      // WhatsApp is genuinely best-effort here: any failure (invalid number,
-      // channel unavailable, request error) is caught and logged, never
-      // thrown - the email above has already gone out and that's what
-      // matters. sendWhatsAppDocument itself never throws (it always
-      // resolves to a WhatsAppLog), but the try/catch keeps this contract
-      // explicit even if that changes.
-      if (alsoWhatsApp && customer.phone) {
-        try {
-          const whatsapp = await sendWhatsAppDocument(customer.phone, message, storedPdf.name, base64, { customerId: customer.id, customerName: customer.companyName, createdBy: user.displayName })
-          await createNotificationLog({ invoiceId: invoice.id, customerId: customer.id, channel: 'whatsapp', status: whatsapp.status === 'Sent' ? 'Sent' : 'Failed', sentAt: whatsapp.status === 'Sent' ? new Date().toISOString() : undefined, error: whatsapp.status === 'Sent' ? undefined : whatsapp.response, reminderStage: stage, sentBy: user.displayName })
-        } catch { /* WhatsApp is best-effort only - the email already sent successfully */ }
-      }
+      const result = await sendInvoiceReminder({ invoiceId: invoice.id, stage: stage === '21-plus' ? '21-plus' : stage, subject, message, alsoWhatsApp })
       void logActivity(user.displayName, `sent ${stage} reminder for invoice ${invoice.invoiceNumber}`)
-      showSuccess('Reminder sent successfully')
+      showSuccess(result.simulated ? 'Reminder simulated (Test Mode)' : 'Reminder sent successfully')
       setReminderTarget(null)
+    } finally {
+      setReminderBusy(false)
+      // Always reload, success or failure - a failure might mean another
+      // admin's send just landed, and the invoice's cooldown fields need to
+      // reflect the true server state either way.
       await load()
-    } finally { setReminderBusy(false) }
+    }
   }
 
   const regenerateInvoicePdf = async (invoice: Invoice, customer: Customer) => {
@@ -844,8 +833,21 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <EmailImportsPage
           imports={emailImports}
+          hasMore={emailImportsHasMore}
+          counts={emailImportsCounts}
+          total={emailImportsTotal}
           customers={customers}
-          onRefresh={async () => { setEmailImports((await getEmailImports()).imports) }}
+          onRefresh={async () => {
+            const page = await getEmailImports()
+            setEmailImports(page.imports); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total)
+          }}
+          onLoadMore={async () => {
+            const last = emailImports[emailImports.length - 1]
+            const cursor = last?.received_at ?? last?.created_at
+            if (!cursor || !last) return
+            const page = await getEmailImports({ before: cursor, beforeId: last.id })
+            setEmailImports(prev => [...prev, ...page.imports]); setEmailImportsHasMore(page.hasMore); setEmailImportsCounts(page.counts); setEmailImportsTotal(page.total)
+          }}
           onOpenCustomer={(customerId) => { setInvoicesCustomerFilter(customerId); navigate('invoices') }}
         />
       )

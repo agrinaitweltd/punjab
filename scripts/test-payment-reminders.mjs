@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { reminderStage, storedInvoicePdf } from '../api/cron-whatsapp-reminders.js'
+import { reminderStage } from '../api/cron-whatsapp-reminders.js'
+import { storedInvoicePdf } from '../server/reminderShared.js'
 
 const today = '2026-08-22'
 const invoice = {

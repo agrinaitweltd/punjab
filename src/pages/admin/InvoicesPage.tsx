@@ -2,23 +2,23 @@ import { useMemo, useState } from 'react'
 import type { Customer, CreditNote, CreditNoteAllocation, Invoice } from '../../types'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
-import { DataTable } from '../../components/ui/Table'
-import { StoredFileModal } from '../../components/StoredFileModal'
+import { DateAccordion } from '../../components/ui/DateAccordion'
+import { InvoiceDocumentsModal } from '../../components/InvoiceDocumentsModal'
+import { ReminderStatusButton } from '../../components/ReminderStatusButton'
 import { classifyInvoice, invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
-import type { ReminderStage } from '../../lib/reminderTemplates'
+import { groupByDate } from '../../lib/dateGrouping'
+import { isReminderDueToday, type ReminderStage } from '../../lib/reminderTemplates'
 
 type DueFilter = 'all' | 'overdue' | 'yesterday' | 'today' | 'tomorrow' | 'this_week' | 'next_week'
-type DateFilter = 'all' | 'today' | 'yesterday' | 'this_week' | 'older'
+type SortDirection = 'desc' | 'asc'
 
 const DUE_FILTER_LABELS: Record<DueFilter, string> = {
   all: 'All Due Dates', overdue: 'Overdue', yesterday: 'Due Yesterday', today: 'Due Today',
   tomorrow: 'Due Tomorrow', this_week: 'Due This Week', next_week: 'Due Next Week',
 }
-const DATE_FILTER_LABELS: Record<DateFilter, string> = {
-  all: 'All Dates', today: 'Today', yesterday: 'Yesterday', this_week: 'This Week', older: 'Older',
-}
 
 const dayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+const money = (value: number) => `£${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 /** Days-from-today filter for the Open Invoices due-date dropdown - "This
     week"/"Next week" mean the calendar week (Mon-Sun) relative to today, not
@@ -40,21 +40,11 @@ function matchesDueFilter(dueDate: string, filter: DueFilter): boolean {
   return true
 }
 
-/** Item 11 - group/batch invoices sensibly by (issue) date. Implemented as a
-    filter dropdown, same UI pattern as the existing due-date filter above,
-    rather than fighting DataTable's own column sort/pagination with
-    injected header rows - the admin can already sort the Date column
-    newest/oldest via its header. */
-function matchesDateFilter(date: string, filter: DateFilter): boolean {
-  if (filter === 'all' || !date) return filter === 'all'
-  const issued = dayStart(new Date(`${date}T00:00:00`))
-  if (Number.isNaN(issued)) return false
-  const today = dayStart(new Date())
-  const diffDays = Math.round((today - issued) / 86_400_000)
-  if (filter === 'today') return diffDays === 0
-  if (filter === 'yesterday') return diffDays === 1
-  if (filter === 'this_week') return diffDays >= 2 && diffDays <= 6
-  return diffDays > 6
+function matchesDateRange(date: string, from: string, to: string): boolean {
+  if (!date) return !from && !to
+  if (from && date < from) return false
+  if (to && date > to) return false
+  return true
 }
 
 export function InvoicesPage({ invoices, customers, creditNotes = [], allocations = [], onOpenCreditNote, onNavigate, onRecordPayment, onSendReminder, onRegeneratePdf, customerId, onClearCustomerFilter }: {
@@ -69,16 +59,18 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
   onSendReminder?: (invoice: Invoice, customer: Customer, stage: ReminderStage) => void
   onRegeneratePdf?: (invoice: Invoice, customer: Customer) => Promise<void>
   /** Scopes the view to one customer's invoices - the "Open Invoices" link
-      on a customer record (item 10-11) lands here instead of the general
-      profile modal. */
+      on a customer record lands here instead of the general profile modal. */
   customerId?: string | null
   onClearCustomerFilter?: () => void
 }) {
   const [tab, setTab] = useState<'open' | 'paid'>('open')
   const [query, setQuery] = useState('')
   const [dueFilter, setDueFilter] = useState<DueFilter>('all')
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
-  const [viewFile, setViewFile] = useState<{ id: string; title: string } | null>(null)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [reminderDueOnly, setReminderDueOnly] = useState(false)
+  const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null)
   const [payingId, setPayingId] = useState<string | null>(null)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
 
@@ -107,12 +99,15 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
     return classified.filter(({ invoice, kind, customer }) => {
       if (!wanted.includes(kind)) return false
       if (tab === 'open' && !matchesDueFilter(invoice.dueDate, dueFilter)) return false
-      if (!matchesDateFilter(invoice.date ?? '', dateFilter)) return false
+      if (!matchesDateRange(invoice.date ?? '', dateFrom, dateTo)) return false
+      if (tab === 'open' && reminderDueOnly && !isReminderDueToday(invoice)) return false
       if (!needle) return true
       const haystack = `${customer?.companyName ?? ''} ${customer?.customerNumber ?? ''} ${invoice.invoiceNumber}`.toLowerCase()
       return haystack.includes(needle)
     })
-  }, [classified, tab, query, dueFilter, dateFilter])
+  }, [classified, tab, query, dueFilter, dateFrom, dateTo, reminderDueOnly])
+
+  const groups = useMemo(() => groupByDate(filtered, item => item.invoice.date ?? '', sortDirection), [filtered, sortDirection])
 
   const markPaid = async (invoice: Invoice) => {
     if (!onRecordPayment) return
@@ -121,30 +116,16 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
     finally { setPayingId(null) }
   }
 
-  const regenerate = async (invoice: Invoice, customer?: Customer) => {
-    if (!onRegeneratePdf || !customer) return
-    setRegeneratingId(invoice.id)
-    try { await onRegeneratePdf(invoice, customer) }
+  const regenerate = async () => {
+    if (!onRegeneratePdf || !viewInvoice) return
+    const customer = customerById.get(viewInvoice.customerId)
+    if (!customer) return
+    setRegeneratingId(viewInvoice.id)
+    try { await onRegeneratePdf(viewInvoice, customer) }
     finally { setRegeneratingId(null) }
   }
 
-  const pdfActions = (invoice: Invoice, customer?: Customer) => (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      <Button className="btn-sm" variant="secondary" disabled={!invoice.sourceDocumentId} onClick={() => setViewFile({ id: invoice.sourceDocumentId!, title: `Original — Invoice ${invoice.invoiceNumber}` })}>
-        {invoice.sourceDocumentId ? 'View Original' : 'No Original'}
-      </Button>
-      <Button className="btn-sm" variant="secondary" disabled={!invoice.canonicalDocumentId} onClick={() => setViewFile({ id: invoice.canonicalDocumentId!, title: `Generated — Invoice ${invoice.invoiceNumber}` })}>
-        {invoice.canonicalDocumentId ? 'View Generated' : 'No Generated PDF'}
-      </Button>
-      {onRegeneratePdf && customer && (
-        <Button className="btn-sm" variant="ghost" disabled={regeneratingId === invoice.id} onClick={() => regenerate(invoice, customer)}>
-          {regeneratingId === invoice.id ? 'Regenerating…' : 'Regenerate'}
-        </Button>
-      )}
-    </div>
-  )
-
-  const openRows = useMemo(() => filtered.map(({ invoice, customer, kind }) => {
+  const openRow = (invoice: Invoice, customer: Customer | undefined, kind: 'open' | 'overdue' | 'paid') => {
     const notes = notesByInvoiceId.get(invoice.id) ?? []
     return (
       <tr key={invoice.id}>
@@ -152,11 +133,10 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
         <td>{customer?.customerNumber ?? '—'}</td>
         <td>{invoice.invoiceNumber}</td>
         <td>{invoice.date || '—'}</td>
-        <td>{invoice.dueDate}</td>
-        <td>£{invoice.amount.toFixed(2)}</td>
-        <td>£{invoiceOutstanding(invoice).toFixed(2)}</td>
+        <td>{money(invoice.amount)}</td>
+        <td>{money(invoiceOutstanding(invoice))}</td>
         <td>
-          <span className={`ps-badge ${kind === 'overdue' ? 'ps-badge-red' : 'ps-badge-green'}`}>{kind === 'overdue' ? 'Overdue' : invoiceDisplayStatus(invoice)}</span>
+          <span className={`ps-badge ${kind === 'overdue' ? 'ps-badge-red' : kind === 'paid' ? 'ps-badge-green' : ''}`}>{kind === 'overdue' ? 'Overdue' : invoiceDisplayStatus(invoice)}</span>
           {notes.length > 0 && <div style={{ marginTop: 4 }}>{notes.map(note => (
             <button key={note.id} type="button" onClick={() => onOpenCreditNote?.(note.id)}
               style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: onOpenCreditNote ? 'pointer' : 'default', color: '#1d4ed8', fontSize: 11.5, textDecoration: 'underline', display: 'block' }}>
@@ -164,11 +144,11 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
             </button>
           ))}</div>}
         </td>
-        <td>{pdfActions(invoice, customer)}</td>
+        <td>{kind === 'paid' ? <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span> : (customer && onSendReminder ? <ReminderStatusButton invoice={invoice} onSend={() => onSendReminder(invoice, customer, kind === 'overdue' ? '21-plus' : 'day-14')} /> : <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span>)}</td>
         <td>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {onSendReminder && customer && <Button className="btn-sm" onClick={() => onSendReminder(invoice, customer, kind === 'overdue' ? '21-plus' : 'day-14')}>Send Reminder</Button>}
-            {onRecordPayment && <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}>
+            <Button className="btn-sm" variant="secondary" onClick={() => setViewInvoice(invoice)}>View Invoice</Button>
+            {kind !== 'paid' && onRecordPayment && <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}>
               <input type="checkbox" checked={false} disabled={payingId === invoice.id} onChange={() => markPaid(invoice)} />
               {payingId === invoice.id ? 'Saving…' : 'Paid'}
             </label>}
@@ -177,21 +157,7 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
         </td>
       </tr>
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [filtered, notesByInvoiceId, onOpenCreditNote, onRecordPayment, onSendReminder, onRegeneratePdf, payingId, regeneratingId, onNavigate])
-
-  const paidRows = useMemo(() => filtered.map(({ invoice, customer }) => (
-    <tr key={invoice.id}>
-      <td>{customer?.companyName ?? invoice.customerId}</td>
-      <td>{customer?.customerNumber ?? '—'}</td>
-      <td>{invoice.invoiceNumber}</td>
-      <td>£{invoice.amount.toFixed(2)}</td>
-      <td>{invoice.date || '—'}</td>
-      <td>Paid</td>
-      <td>{pdfActions(invoice, customer)}</td>
-    </tr>
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  )), [filtered])
+  }
 
   return (
     <div className="stack">
@@ -199,9 +165,9 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
         <Card title={`${scopedCustomer.companyName} — Open Invoices`} actions={onClearCustomerFilter && <Button variant="secondary" className="btn-sm" onClick={onClearCustomerFilter}>Back to All Invoices</Button>}>
           <div className="customer-finance-grid">
             <div><span>Account Number</span><strong>{scopedCustomer.customerNumber}</strong></div>
-            <div><span>Outstanding Balance</span><strong>£{(scopedCustomer.balance ?? 0).toFixed(2)}</strong></div>
-            <div><span>Credit Limit</span><strong>£{(scopedCustomer.creditLimit ?? 0).toFixed(2)}</strong></div>
-            <div><span>Available Credit</span><strong>£{Math.max(0, (scopedCustomer.creditLimit ?? 0) - (scopedCustomer.balance ?? 0)).toFixed(2)}</strong></div>
+            <div><span>Outstanding Balance</span><strong>{money(scopedCustomer.balance ?? 0)}</strong></div>
+            <div><span>Credit Limit</span><strong>{money(scopedCustomer.creditLimit ?? 0)}</strong></div>
+            <div><span>Available Credit</span><strong>{money(Math.max(0, (scopedCustomer.creditLimit ?? 0) - (scopedCustomer.balance ?? 0)))}</strong></div>
             <div><span>Open Invoices</span><strong>{openCount}</strong></div>
             <div><span>Overdue Invoices</span><strong>{overdueCount}</strong></div>
           </div>
@@ -209,35 +175,63 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
       )}
 
       <div className="invoice-tabs">
-        <button className={`invoice-tab${tab === 'open' ? ' active' : ''}`} onClick={() => setTab('open')}>Open Invoices ({openCount + overdueCount})</button>
+        <button className={`invoice-tab${tab === 'open' ? ' active' : ''}`} onClick={() => setTab('open')}>Unpaid Invoices ({openCount + overdueCount})</button>
         <button className={`invoice-tab${tab === 'paid' ? ' active' : ''}`} onClick={() => setTab('paid')}>Paid Invoices ({paidCount})</button>
       </div>
 
-      <Card title={tab === 'open' ? 'Open Invoices' : 'Paid Invoices'} actions={
+      <Card title="Filters">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input className="search-input" style={{ flex: '1 1 240px' }} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer, account number or invoice number…" />
           {tab === 'open' && (
             <select className="search-input" style={{ minWidth: 150 }} value={dueFilter} onChange={e => setDueFilter(e.target.value as DueFilter)} aria-label="Filter by due date">
               {(Object.keys(DUE_FILTER_LABELS) as DueFilter[]).map(key => <option key={key} value={key}>{DUE_FILTER_LABELS[key]}</option>)}
             </select>
           )}
-          <select className="search-input" style={{ minWidth: 130 }} value={dateFilter} onChange={e => setDateFilter(e.target.value as DateFilter)} aria-label="Filter by invoice date">
-            {(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(key => <option key={key} value={key}>{DATE_FILTER_LABELS[key]}</option>)}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#4b5563' }}>
+            From <input type="date" className="search-input" style={{ minWidth: 140 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#4b5563' }}>
+            To <input type="date" className="search-input" style={{ minWidth: 140 }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          </label>
+          <select className="search-input" style={{ minWidth: 130 }} value={sortDirection} onChange={e => setSortDirection(e.target.value as SortDirection)} aria-label="Sort by date">
+            <option value="desc">Newest First</option>
+            <option value="asc">Oldest First</option>
           </select>
-          <input className="search-input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer, account number or invoice number…" />
+          {tab === 'open' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#4b5563' }}>
+              <input type="checkbox" checked={reminderDueOnly} onChange={e => setReminderDueOnly(e.target.checked)} />
+              Reminder due today
+            </label>
+          )}
         </div>
-      }>
-        {tab === 'open' ? (
-          <DataTable columns={['Customer', 'Account', 'Invoice No', 'Invoice Date', 'Due Date', 'Amount', 'Outstanding', 'Status', 'PDFs', 'Actions']}>
-            {openRows}
-          </DataTable>
-        ) : (
-          <DataTable columns={['Customer', 'Account', 'Invoice No', 'Amount', 'Invoice Date', 'Status', 'PDFs']}>
-            {paidRows}
-          </DataTable>
-        )}
       </Card>
 
-      <StoredFileModal fileId={viewFile?.id ?? null} title={viewFile?.title ?? ''} onClose={() => setViewFile(null)} />
+      <DateAccordion
+        groups={groups}
+        emptyMessage={tab === 'open' ? 'No unpaid invoices match these filters.' : 'No paid invoices match these filters.'}
+        renderGroup={group => (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th><th>Account</th><th>Invoice No</th><th>Invoice Date</th><th>Amount</th>
+                  <th>Outstanding</th><th>Status</th><th>Reminder Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.items.map(({ invoice, customer, kind }) => openRow(invoice, customer, kind))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      />
+
+      <InvoiceDocumentsModal
+        invoice={viewInvoice}
+        onClose={() => setViewInvoice(null)}
+        onRegenerate={onRegeneratePdf ? regenerate : undefined}
+        regenerating={Boolean(viewInvoice && regeneratingId === viewInvoice.id)}
+      />
     </div>
   )
 }

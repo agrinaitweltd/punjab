@@ -77,6 +77,11 @@ export function mapInvoice(r: any): Invoice {
     totalVat: r.total_vat === undefined ? undefined : Number(r.total_vat),
     packages: r.packages === undefined ? undefined : Number(r.packages),
     importedMetadata: r.imported_metadata ?? undefined,
+    lastReminderSentAt: r.last_reminder_sent_at ?? undefined,
+    lastReminderStage: r.last_reminder_stage ?? undefined,
+    lastReminderSentBy: r.last_reminder_sent_by ?? undefined,
+    lastReminderRecipient: r.last_reminder_recipient ?? undefined,
+    lastReminderProviderMessageId: r.last_reminder_provider_message_id ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

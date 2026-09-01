@@ -18,7 +18,7 @@ import { getCreditStatus, creditWarningLabel } from '../../lib/creditControl'
 import { SALESMEN } from '../../lib/salesmen'
 import { parseFinancialDocument, type ImportedCreditNote, type ImportedFinancialDocument, type ImportedLegacyInvoice } from '../../lib/invoiceImport'
 import { matchImportedCustomer } from '../../lib/importMatching'
-import { invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
+import { classifyInvoice, invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 import { importFailureMessage } from '../../lib/importErrors'
 import { showAppError, showSuccess } from '../../lib/appDialogs'
 import { StagedProgress } from '../../components/ui/StagedProgress'
@@ -167,13 +167,61 @@ export function CustomersPage({
     () =>
       customers.filter((item) => {
         if (Boolean(item.archived) !== showArchived) return false
-        const source = `${item.companyName} ${item.contactPerson} ${item.email} ${item.customerNumber}`.toLowerCase()
+        const matchingInvoiceNumbers = invoices.filter(i => i.customerId === item.id).map(i => i.invoiceNumber).join(' ')
+        const source = `${item.companyName} ${item.contactPerson} ${item.email} ${item.customerNumber} ${item.address} ${item.registeredAddress ?? ''} ${matchingInvoiceNumbers}`.toLowerCase()
         return source.includes(query.toLowerCase())
       }),
-    [customers, query, showArchived],
+    [customers, invoices, query, showArchived],
   )
   const archivedCount = useMemo(() => customers.filter(c => c.archived).length, [customers])
   const fmtMoney = (value: number | undefined | null) => `£${(value ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  // Item 3 - sections instead of one continuous list. A customer needing
+  // review (auto-created placeholder contact details, or blocked) takes
+  // priority over its payment state; otherwise overdue (any invoice past
+  // the 21-day grace period, same classifyInvoice() rule used throughout
+  // the app) beats a merely-open balance, which beats fully clear.
+  const customerStats = useMemo(() => {
+    const map = new Map<string, { openInvoices: number; lastInvoiceDate: string; overdue: boolean }>()
+    for (const customer of customers) map.set(customer.id, { openInvoices: 0, lastInvoiceDate: '', overdue: false })
+    for (const invoice of invoices) {
+      const stat = map.get(invoice.customerId)
+      if (!stat) continue
+      if (invoiceOutstanding(invoice) > 0) stat.openInvoices += 1
+      if (classifyInvoice(invoice) === 'overdue') stat.overdue = true
+      if ((invoice.date ?? '') > stat.lastInvoiceDate) stat.lastInvoiceDate = invoice.date ?? ''
+    }
+    return map
+  }, [customers, invoices])
+
+  type CustomerSection = 'needs-review' | 'overdue' | 'active' | 'clear'
+  const sectionFor = (customer: Customer): CustomerSection => {
+    if (customer.blocked || customer.email?.endsWith('@pending.punjab.local') || customer.customerNumber?.startsWith('AUTO')) return 'needs-review'
+    const stat = customerStats.get(customer.id)
+    if (stat?.overdue) return 'overdue'
+    if ((customer.balance ?? 0) > 0) return 'active'
+    return 'clear'
+  }
+
+  const [section, setSection] = useState<CustomerSection>('active')
+  const [groupBy, setGroupBy] = useState<'recent' | 'az' | 'account' | 'balance' | 'lastInvoice'>('recent')
+
+  const sectioned = useMemo(() => filtered.filter(c => showArchived || sectionFor(c) === section), [filtered, section, showArchived, customerStats])
+  const sectionCounts = useMemo(() => {
+    const counts: Record<CustomerSection, number> = { 'needs-review': 0, overdue: 0, active: 0, clear: 0 }
+    for (const customer of filtered) counts[sectionFor(customer)] += 1
+    return counts
+  }, [filtered, customerStats])
+
+  const sortedCustomers = useMemo(() => {
+    const list = [...sectioned]
+    if (groupBy === 'az') list.sort((a, b) => a.companyName.localeCompare(b.companyName))
+    else if (groupBy === 'account') list.sort((a, b) => a.customerNumber.localeCompare(b.customerNumber, undefined, { numeric: true }))
+    else if (groupBy === 'balance') list.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+    else if (groupBy === 'lastInvoice') list.sort((a, b) => (customerStats.get(b.id)?.lastInvoiceDate ?? '').localeCompare(customerStats.get(a.id)?.lastInvoiceDate ?? ''))
+    else list.sort((a, b) => (b.lastActivity ?? '').localeCompare(a.lastActivity ?? ''))
+    return list
+  }, [sectioned, groupBy, customerStats])
 
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault()
@@ -564,16 +612,46 @@ export function CustomersPage({
         )}
       </Modal>
 
-      <Card title="Customers" actions={<Input label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, contact, email or number" />}>
-        <DataTable columns={['Company', 'Contact', 'Email', 'Number', 'Delivery Area', 'Terms', 'Status', 'Actions']}>
-          {filtered.map((customer) => (
+      <Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Input label="Search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, account number, invoice number, postcode or gate/unit…" />
+          {!showArchived && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="invoice-tabs">
+                {([
+                  ['active', 'Active / Open'], ['overdue', 'Overdue'], ['clear', 'Clear / Paid'], ['needs-review', 'Needs Review'],
+                ] as const).map(([key, label]) => (
+                  <button key={key} className={`invoice-tab${section === key ? ' active' : ''}`} onClick={() => setSection(key)}>
+                    {label} ({sectionCounts[key]})
+                  </button>
+                ))}
+              </div>
+              <select className="search-input" style={{ minWidth: 170 }} value={groupBy} onChange={e => setGroupBy(e.target.value as typeof groupBy)} aria-label="Group customers by">
+                <option value="recent">Recent Activity</option>
+                <option value="az">A–Z</option>
+                <option value="account">Account Number</option>
+                <option value="balance">Highest Balance</option>
+                <option value="lastInvoice">Most Recent Invoice</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card title={showArchived ? 'Archived Customers' : undefined}>
+        <DataTable columns={['Account', 'Customer', 'Outstanding', 'Open Invoices', 'Last Invoice', 'Status', 'Last Activity', 'Actions']}>
+          {(showArchived ? filtered : sortedCustomers).map((customer) => {
+            const stat = customerStats.get(customer.id)
+            return (
             <tr key={customer.id}>
-              <td>{customer.companyName}</td>
-              <td>{customer.contactPerson}</td>
-              <td>{customer.email}</td>
               <td>{customer.customerNumber}</td>
-              <td>{customer.deliveryArea || '—'}</td>
-              <td>{customer.paymentTerms}</td>
+              <td>
+                <div style={{ fontWeight: 600 }}>{customer.companyName}</div>
+                <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{customer.contactPerson}</div>
+              </td>
+              <td>{fmtMoney(customer.balance)}</td>
+              <td>{stat?.openInvoices ?? 0}</td>
+              <td>{stat?.lastInvoiceDate || '—'}</td>
               <td>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {customer.blocked ? (
@@ -589,6 +667,7 @@ export function CustomersPage({
                   })()}
                 </div>
               </td>
+              <td>{customer.lastActivity ? new Date(customer.lastActivity).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
               <td>
                 <div className="table-actions" style={{ display: 'flex', gap: 6 }}>
                   {showArchived ? (
@@ -621,12 +700,12 @@ export function CustomersPage({
                 </div>
               </td>
             </tr>
-          ))}
+          )})}
         </DataTable>
-        {filtered.length === 0 && (
+        {(showArchived ? filtered : sortedCustomers).length === 0 && (
           <EmptyState
-            title={showArchived ? "No archived customers" : "No customers yet"}
-            description={showArchived ? "Customers you archive will appear here for restoring later." : "Create your first customer login above."}
+            title={showArchived ? "No archived customers" : "No customers in this section"}
+            description={showArchived ? "Customers you archive will appear here for restoring later." : "Try a different section, or clear your search."}
           />
         )}
       </Card>

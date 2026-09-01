@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Customer, Invoice, NotificationLog, WhatsAppLog } from '../../types'
 import { Card } from '../../components/ui/Card'
-import { DataTable } from '../../components/ui/Table'
+import { DateAccordion } from '../../components/ui/DateAccordion'
 import type { CommunicationDeliveryLog } from '../../services/communicationLogService'
 import { CommunicationDetailModal } from '../../components/CommunicationDetailModal'
+import { groupByDate } from '../../lib/dateGrouping'
 
 type Row = {
   id: string
@@ -21,6 +22,7 @@ export function CommunicationHistoryPage({ customers, invoices, emailLogs, deliv
   customers: Customer[]; invoices: Invoice[]; emailLogs: NotificationLog[]; deliveryLogs: CommunicationDeliveryLog[]; whatsappLogs: WhatsAppLog[]; onNavigate: (p: string) => void
 }) {
   const [detail, setDetail] = useState<CommunicationDeliveryLog | null>(null)
+  const [query, setQuery] = useState('')
 
   // Every email send (reminder, invoice, receipt...) now lands in
   // communication_logs (deliveryLogs) with a full recipient/subject/body -
@@ -62,6 +64,14 @@ export function CommunicationHistoryPage({ customers, invoices, emailLogs, deliv
   ].sort((a, b) => b.date.localeCompare(a.date))
   const failed = rows.filter(x => x.status === 'Failed').length
 
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(x => `${x.customer} ${x.invoice} ${x.action} ${x.channel} ${x.status}`.toLowerCase().includes(q))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, query])
+  const groups = useMemo(() => groupByDate(filteredRows, x => x.date, 'desc'), [filteredRows])
+
   return (
     <div className="stack">
       <div className="page-heading"><div><h1>Communication History</h1><p>Email, WhatsApp, reminders, payment confirmations and failed sends in one audit trail.</p></div></div>
@@ -70,24 +80,38 @@ export function CommunicationHistoryPage({ customers, invoices, emailLogs, deliv
         <Card title="Failed Notifications"><p className="metric">{failed}</p></Card>
       </div>
       <Card title="Automation & Send Log">
-        <DataTable columns={['Date', 'Customer / Recipient', 'Invoice', 'Action', 'Channel / Sender', 'Status', 'Error', 'Actions']}>
-          {rows.map(x => (
-            <tr key={x.id}>
-              <td>{x.date.slice(0, 16).replace('T', ' ') || '—'}</td>
-              <td>{x.customer}</td>
-              <td>{x.invoice}</td>
-              <td>{x.action}</td>
-              <td>{x.channel}</td>
-              <td><span className={`status-badge ${x.status === 'Failed' ? 'danger' : x.status === 'Sent' ? 'info' : 'warning'}`}>{x.status}</span></td>
-              <td title={x.error}>{x.status === 'Failed' ? (x.error.slice(0, 70) || 'Send failed') : '—'}</td>
-              <td>
-                {x.status === 'Failed'
-                  ? <button className="btn btn-secondary btn-sm" onClick={() => onNavigate(x.channel === 'WhatsApp' ? 'communication-history' : 'reminders-due-today')}>Retry</button>
-                  : <button className="btn btn-secondary btn-sm" onClick={() => setDetail(x.detail)}>View</button>}
-              </td>
-            </tr>
-          ))}
-        </DataTable>
+        <label className="data-table-search" style={{ marginBottom: 12 }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer, invoice, action, channel, status…" aria-label="Search communication history" />
+        </label>
+        <DateAccordion
+          groups={groups}
+          emptyMessage="No communications yet."
+          renderGroup={group => (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Time</th><th>Customer / Recipient</th><th>Invoice</th><th>Action</th><th>Channel / Sender</th><th>Status</th><th>Error</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {group.items.map(x => (
+                    <tr key={x.id}>
+                      <td>{x.date.slice(11, 16) || '—'}</td>
+                      <td>{x.customer}</td>
+                      <td>{x.invoice}</td>
+                      <td>{x.action}</td>
+                      <td>{x.channel}</td>
+                      <td><span className={`status-badge ${x.status === 'Failed' ? 'danger' : x.status === 'Sent' ? 'info' : 'warning'}`}>{x.status}</span></td>
+                      <td title={x.error}>{x.status === 'Failed' ? (x.error.slice(0, 70) || 'Send failed') : '—'}</td>
+                      <td>
+                        {x.status === 'Failed'
+                          ? <button className="btn btn-secondary btn-sm" onClick={() => onNavigate(x.channel === 'WhatsApp' ? 'communication-history' : 'reminders-due-today')}>Retry</button>
+                          : <button className="btn btn-secondary btn-sm" onClick={() => setDetail(x.detail)}>View</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        />
       </Card>
       <CommunicationDetailModal log={detail} customers={customers} invoices={invoices} onClose={() => setDetail(null)} />
     </div>

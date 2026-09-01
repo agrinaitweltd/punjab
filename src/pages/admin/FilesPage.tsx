@@ -9,6 +9,7 @@ import { confirmAction } from "../../lib/appDialogs"
 import { supabase } from "../../lib/supabase"
 import { runtimeTable } from "../../lib/runtimeMode"
 import { groupByDate } from "../../lib/dateGrouping"
+import { DateAccordion } from "../../components/ui/DateAccordion"
 
 const fmtSize = (b: number) => b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`
 
@@ -28,12 +29,14 @@ const documentTypeLabel = (f: StoredFile) => {
   if (f.documentRole === 'canonical_invoice') return 'Generated Invoice'
   if (f.documentRole === 'credit_note_source') return 'Credit Note'
   if (f.documentRole === 'legacy_source' && f.invoiceId) return 'Original Invoice'
+  if (f.documentRole === 'statement_source') return 'Statement'
   return categoryFor(f)
 }
 const documentSubtitle = (f: StoredFile) => {
   if (f.documentRole === 'canonical_invoice') return 'Punjab Exotic Foods PDF'
   if (f.documentRole === 'credit_note_source') return 'Source Credit Note'
   if (f.documentRole === 'legacy_source' && f.invoiceId) return 'Source PDF'
+  if (f.documentRole === 'statement_source') return 'Original Statement'
   return null
 }
 const documentReference = (f: StoredFile) => f.invoiceNumber ?? f.creditNoteNumber ?? '—'
@@ -72,6 +75,7 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
   const [view, setView] = useState<'folders' | 'generated' | 'statements'>('folders')
   const [statements, setStatements] = useState<StatementRecord[]>([])
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc')
+  const [docTypeFilter, setDocTypeFilter] = useState<'All' | 'Invoices' | 'Credit Notes' | 'Statements' | 'Generated PDFs' | 'Needs Review'>('All')
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async (showSpinner = true) => {
@@ -129,8 +133,17 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
   // internal uploads that have nothing to do with an invoice/credit note.
   const generatedDocs = useMemo(
     () => files.filter(f => (f.documentRole && f.documentRole !== 'general') || isPendingReviewDoc(f))
+      .filter(f => {
+        if (docTypeFilter === 'All') return true
+        if (docTypeFilter === 'Needs Review') return isPendingReviewDoc(f)
+        if (docTypeFilter === 'Invoices') return f.documentRole === 'legacy_source' && Boolean(f.invoiceId)
+        if (docTypeFilter === 'Generated PDFs') return f.documentRole === 'canonical_invoice'
+        if (docTypeFilter === 'Credit Notes') return f.documentRole === 'credit_note_source'
+        if (docTypeFilter === 'Statements') return f.documentRole === 'statement_source'
+        return true
+      })
       .filter(f => !folderQuery.trim() || `${f.name} ${f.customerName} ${documentReference(f)}`.toLowerCase().includes(folderQuery.trim().toLowerCase())),
-    [files, folderQuery],
+    [files, folderQuery, docTypeFilter],
   )
   const generatedGroups = useMemo(() => groupByDate(generatedDocs, f => f.uploadedAt || '', sortDirection), [generatedDocs, sortDirection])
 
@@ -140,6 +153,7 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
     const q = folderQuery.trim().toLowerCase()
     return inFolder && (category === 'All' || categoryFor(f) === category) && (!q || `${f.name} ${f.note ?? ''}`.toLowerCase().includes(q) || (selected !== INTERNAL && folders.some(c => c.id === selected)))
   })
+  const folderGroups = useMemo(() => groupByDate(folderFiles, f => f.uploadedAt || ''), [folderFiles])
 
   const onPick = async (f: File | undefined) => {
     if (!f) return
@@ -259,9 +273,15 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
               {sortDirection === 'desc' ? 'Newest First' : 'Oldest First'}
             </Button>
           </div>
-          {generatedGroups.map(group => (
-            <div key={group.label} style={{ marginBottom: 20 }}>
-              <h3 style={{ fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6b7a70', margin: '0 0 8px' }}>{group.label}</h3>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '0 0 14px' }}>
+            {(['All', 'Invoices', 'Credit Notes', 'Statements', 'Generated PDFs', 'Needs Review'] as const).map(chip => (
+              <button key={chip} type="button" className={`doc-type-chip${docTypeFilter === chip ? ' active' : ''}`} onClick={() => setDocTypeFilter(chip)}>{chip}</button>
+            ))}
+          </div>
+          <DateAccordion
+            groups={generatedGroups}
+            emptyMessage="No invoice or credit-note documents yet."
+            renderGroup={group => (
               <div className="ps-table-wrap">
                 <table className="ps-table">
                   <thead><tr><th>Document</th><th>Customer</th><th>Account No.</th><th>Reference</th><th>Received</th><th>Source</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
@@ -297,9 +317,8 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
                   </tbody>
                 </table>
               </div>
-            </div>
-          ))}
-          {generatedDocs.length === 0 && <div className="db-empty">No invoice or credit-note documents yet.</div>}
+            )}
+          />
         </div>
       ) : (
       <div className="doc-layout">
@@ -375,37 +394,43 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
           ) : folderFiles.length === 0 ? (
             <div className="db-empty">No files in this folder yet — upload the first one above.</div>
           ) : (
-            <div className="fl-list">
-              {folderFiles.map(f => {
-                const kind = fileKind(f.type, f.name)
-                const canPreview = f.type.startsWith("image/") || f.type === "application/pdf"
-                return (
-                  <div key={f.id} className="fl-row">
-                    <span className="fl-kind" style={{ background: kind.bg, color: kind.color }}>{kind.label}</span>
-                    <div className="fl-info">
-                      <div className="fl-name">
-                        {f.name}{" "}
-                        {f.documentRole && f.documentRole !== 'general' && (
-                          <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>
-                            {documentTypeLabel(f)}{documentSubtitle(f) ? ` — ${documentSubtitle(f)}` : ''}
-                          </span>
-                        )}
+            <DateAccordion
+              groups={folderGroups}
+              defaultOpenCount={folderGroups.length}
+              renderGroup={group => (
+                <div className="fl-list">
+                  {group.items.map(f => {
+                    const kind = fileKind(f.type, f.name)
+                    const canPreview = f.type.startsWith("image/") || f.type === "application/pdf"
+                    return (
+                      <div key={f.id} className="fl-row">
+                        <span className="fl-kind" style={{ background: kind.bg, color: kind.color }}>{kind.label}</span>
+                        <div className="fl-info">
+                          <div className="fl-name">
+                            {f.name}{" "}
+                            {f.documentRole && f.documentRole !== 'general' && (
+                              <span className={`doc-role-badge ${f.documentRole === 'legacy_source' ? 'source' : 'generated'}`}>
+                                {documentTypeLabel(f)}{documentSubtitle(f) ? ` — ${documentSubtitle(f)}` : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="fl-meta">
+                            {f.note && <>{f.note} · </>}
+                            {fmtSize(f.size)} · {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                          </div>
+                        </div>
+                        <div className="fl-actions">
+                          {canPreview && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>Preview</Button>}
+                          <Button variant="secondary" className="btn-sm" onClick={() => startRename(f)}>Rename</Button>
+                          <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
+                          <Button variant="danger" className="btn-sm" onClick={() => remove(f)}>Delete</Button>
+                        </div>
                       </div>
-                      <div className="fl-meta">
-                        {f.note && <>{f.note} · </>}
-                        {fmtSize(f.size)} · {f.uploadedAt ? new Date(f.uploadedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
-                      </div>
-                    </div>
-                    <div className="fl-actions">
-                      {canPreview && <Button variant="secondary" className="btn-sm" onClick={() => setPreview(f)}>Preview</Button>}
-                      <Button variant="secondary" className="btn-sm" onClick={() => startRename(f)}>Rename</Button>
-                      <a className="btn btn-secondary btn-sm" href={f.dataUri} download={f.name}>Download</a>
-                      <Button variant="danger" className="btn-sm" onClick={() => remove(f)}>Delete</Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                    )
+                  })}
+                </div>
+              )}
+            />
           )}
         </div>
       </div>

@@ -12,6 +12,7 @@ const handlers = {
   'report-error': () => import('../server/admin-actions/report-error.js'),
   'error-log': () => import('../server/admin-actions/error-log.js'),
   'reset-admin-credentials': () => import('../server/admin-actions/reset-admin-credentials.js'),
+  'send-reminder': () => import('../server/admin-actions/send-reminder.js'),
   'system-mode': () => import('../server/admin-actions/system-mode.js'),
   'system-overview': () => import('../server/admin-actions/system-overview.js'),
   'test-email-suite': () => import('../server/admin-actions/test-email-suite.js'),

@@ -58,6 +58,15 @@ export async function resetAdminCredentials(id: string, sensitiveToken: string) 
   return api<{ ok: true; simulated?: boolean; message?: string }>('/api/admin-security?action=reset-admin-credentials', { method: 'POST', body: JSON.stringify({ id }) }, sensitiveToken)
 }
 
+export type SendReminderInput = { invoiceId: string; stage: 'day-14' | 'day-21' | '21-plus'; subject: string; message: string; alsoWhatsApp: boolean }
+/** The sole path a reminder email is sent through (item 2) - the server
+    enforces the 24h cooldown atomically before doing anything else, so a
+    409 here means another send (possibly from a different admin) already
+    happened within the last 24 hours. */
+export async function sendInvoiceReminder(input: SendReminderInput) {
+  return api<{ ok: true; simulated?: boolean; nextAllowedAt?: string; sentAt?: string }>('/api/admin-security?action=send-reminder', { method: 'POST', body: JSON.stringify(input) })
+}
+
 export type EmailImportStatus = 'processing' | 'imported' | 'needs_review' | 'failed' | 'duplicate' | 'rejected'
 export type EmailImportRow = {
   id: string; message_id: string; received_at: string | null; sender: string | null; subject: string | null
@@ -67,7 +76,22 @@ export type EmailImportRow = {
   invoice_id: string | null; credit_note_id: string | null; file_id: string | null; customer_created: boolean
   error_message: string | null; processed_at: string | null; created_at: string
 }
-export async function getEmailImports() { return api<{ imports: EmailImportRow[] }>('/api/admin-security?action=email-imports', { method: 'GET' }) }
+export type EmailImportsPage = { imports: EmailImportRow[]; hasMore: boolean; counts: Partial<Record<EmailImportStatus, number>>; total: number }
+/** Cursor-paginated by received_at (newest first) via `before`; `search`
+    switches to a full-table server-side search instead (never limited to
+    already-loaded rows). `counts`/`total` always reflect the FULL table,
+    independent of how many rows are currently loaded. */
+export async function getEmailImports(opts: { before?: string; beforeId?: string; limit?: number; search?: string } = {}) {
+  const params = new URLSearchParams()
+  if (opts.search) params.set('search', opts.search)
+  else {
+    if (opts.before) params.set('before', opts.before)
+    if (opts.beforeId) params.set('beforeId', opts.beforeId)
+    if (opts.limit) params.set('limit', String(opts.limit))
+  }
+  const qs = params.toString()
+  return api<EmailImportsPage>(`/api/admin-security?action=email-imports${qs ? `&${qs}` : ''}`, { method: 'GET' })
+}
 export async function retryEmailImport(id: string, customerId?: string) {
   return api<{ ok: true; status: string }>('/api/admin-security?action=email-imports', { method: 'POST', body: JSON.stringify({ id, customerId }) })
 }

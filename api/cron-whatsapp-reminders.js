@@ -1,22 +1,14 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { brandedEmail, sendTransactionalEmail, summaryTable } from '../server/email-system.js'
+import { normalizePhone, storedInvoicePdf, sendWhatsAppDocumentServer } from '../server/reminderShared.js'
 
 function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false
   return timingSafeEqual(Buffer.from(a), Buffer.from(b))
 }
 
-const ULTRAMSG_BASE = 'https://api.ultramsg.com/instance186201'
 const OVERDUE_BUCKETS = [1, 3, 7, 14]
-const APPROVED_INVOICE_TEMPLATE_ID = 'punjab-approved-letterhead-v1'
-
-function normalizePhone(raw) {
-  let digits = String(raw || '').replace(/[^\d+]/g, '')
-  if (digits.startsWith('+')) digits = digits.slice(1)
-  if (digits.startsWith('0')) digits = '44' + digits.slice(1)
-  return /^\d{8,15}$/.test(digits) ? digits : null
-}
 
 function daysBetween(firstIso, secondIso) {
   const first = new Date(`${firstIso}T00:00:00`)
@@ -34,15 +26,6 @@ async function sendEmail(key, to, subject, html, attachments, simulated, options
   return sendTransactionalEmail({ apiKey: key, category: 'notifications', to, subject, html, attachments, ...options })
 }
 
-async function sendWhatsApp(token, phone, message, file, simulated) {
-  if (simulated) return { ok: true, response: 'TEST MODE - WhatsApp document simulated. Nothing was sent.' }
-  if (!token) return { ok: false, response: 'WhatsApp provider is not configured' }
-  const body = new URLSearchParams({ token, to: phone, caption: message, filename: file.name, document: file.dataUri })
-  const response = await fetch(`${ULTRAMSG_BASE}/messages/document`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
-  const data = await response.json().catch(() => ({}))
-  return { ok: response.ok && data?.sent !== false && !data?.error, response: JSON.stringify(data) }
-}
-
 export function reminderStage(invoice, today) {
   if (!invoice?.date || !invoice?.due_date) return null
   const invoiceAge = daysBetween(invoice.date, today)
@@ -52,26 +35,6 @@ export function reminderStage(invoice, today) {
   if (daysOverdue === 0) return 'due-today'
   if (daysOverdue === -7) return 'seven-days-before-due'
   return OVERDUE_BUCKETS.includes(daysOverdue) ? `overdue-${daysOverdue}` : null
-}
-
-export function storedInvoicePdf(files, invoice) {
-  const expectedNumber = String(invoice?.invoice_number || '').trim().toLowerCase()
-  const expectedAmount = Number(invoice?.amount)
-  if (!invoice?.id || !invoice?.customer_id || !expectedNumber || !Number.isFinite(expectedAmount)) return null
-  const candidates = []
-  for (const row of files) {
-    let metadata = {}
-    try { metadata = JSON.parse(row.timestamp || '{}') } catch { /* legacy metadata */ }
-    if (metadata.customerId !== invoice.customer_id || metadata.invoiceId !== invoice.id) continue
-    if (String(metadata.invoiceNumber || '').trim().toLowerCase() !== expectedNumber) continue
-    if (!Number.isFinite(Number(metadata.invoiceAmount)) || Math.abs(Number(metadata.invoiceAmount) - expectedAmount) > 0.005) continue
-    if (metadata.documentRole !== 'canonical_invoice' || metadata.templateId !== APPROVED_INVOICE_TEMPLATE_ID) continue
-    if (metadata.type !== 'application/pdf' && !String(row.action || '').startsWith('data:application/pdf')) continue
-    const dataUri = String(row.action || '')
-    if (!dataUri.startsWith('data:application/pdf;base64,') || dataUri.indexOf(',') < 0) continue
-    candidates.push({ name: String(row.customer_name || `FILE:Invoice-${invoice.invoice_number}.pdf`).slice(5), dataUri, base64: dataUri.slice(dataUri.indexOf(',') + 1), createdAt: row.created_at || '' })
-  }
-  return candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null
 }
 
 export default async function handler(req, res) {
@@ -134,7 +97,7 @@ export default async function handler(req, res) {
     const whatsappKey = `${invoice.id}:${stage}:whatsapp`
     if (phone && !sentKeys.has(whatsappKey)) {
       if (!testMode) await new Promise(resolve => setTimeout(resolve, 1200))
-      const sent = await sendWhatsApp(process.env.ULTRAMSG_TOKEN, phone, message, pdf, testMode)
+      const sent = await sendWhatsAppDocumentServer(process.env.ULTRAMSG_TOKEN, phone, message, pdf, testMode)
       whatsapp = sent.ok
       await admin.from(table('whatsapp_logs')).insert({ customer_id: invoice.customer_id, customer_name: customer.company_name, phone, message, type: 'Payment Reminder', status: sent.ok ? 'Sent' : 'Failed', response: sent.response, sent_at: sent.ok ? new Date().toISOString() : null, created_by: testMode ? 'Cron simulation (Test Mode)' : 'Cron (08:00 daily)' })
       await admin.from(table('notification_logs')).upsert({ invoice_id: invoice.id, customer_id: invoice.customer_id, channel: 'whatsapp', status: sent.ok ? 'Sent' : 'Failed', sent_at: sent.ok ? new Date().toISOString() : null, error: sent.ok ? null : sent.response, reminder_stage: stage, idempotency_key: whatsappKey }, { onConflict: 'idempotency_key' })

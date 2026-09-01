@@ -1,5 +1,19 @@
 import type { Customer, Invoice } from '../types'
-import { invoiceOutstanding } from './creditNotes'
+import { invoiceOutstanding, classifyInvoice } from './creditNotes'
+
+const daysBetween = (fromIso: string, toIso: string) => Math.round((new Date(`${toIso}T00:00:00`).getTime() - new Date(`${fromIso}T00:00:00`).getTime()) / 86_400_000)
+
+/** True if this unpaid invoice is currently at (or past) the point where an
+    admin should be sending a 14-day, 21-day, or 21+ overdue reminder today -
+    the same three-way classification RemindersPage's "Due Today" queue
+    uses, exposed here so other pages (the Invoices list's "Reminder due"
+    filter) can reuse it instead of re-deriving it. */
+export function isReminderDueToday(invoice: Invoice, today: string = new Date().toISOString().slice(0, 10)): boolean {
+  if (invoiceOutstanding(invoice) <= 0) return false
+  if (invoice.date && daysBetween(invoice.date, today) === 14) return true
+  if (invoice.date && daysBetween(invoice.date, today) === 21) return true
+  return classifyInvoice(invoice) === 'overdue'
+}
 
 /** The three reminder stages an admin can send from - matches the
     `reminder_stage` values the (now-manual) reminder workflow writes to

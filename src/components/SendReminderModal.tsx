@@ -52,7 +52,9 @@ export function SendReminderModal({
     try {
       await onSend({ subject: subject.trim(), message: message.trim(), alsoWhatsApp: alsoWhatsApp && hasPhone })
       onClose()
-    } catch { setError("Couldn't send this reminder — please try again.") }
+    } catch (reason) {
+      setError(reason instanceof Error && reason.message ? reason.message : "Couldn't send this reminder — please try again.")
+    }
   }
 
   return (

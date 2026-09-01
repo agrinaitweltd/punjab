@@ -3,8 +3,10 @@ import type { CreditNote, CreditNoteAllocation, Customer, Invoice, SupportTicket
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
 import { Input, Select, TextArea } from "../../components/ui/Input"
+import { DateAccordion } from "../../components/ui/DateAccordion"
 import { invoiceOutstanding } from "../../lib/creditNotes"
 import { confirmAction, showNotice } from "../../lib/appDialogs"
+import { groupByDate } from "../../lib/dateGrouping"
 
 type IssueMode = "invoice" | "account"
 
@@ -60,6 +62,8 @@ export function CreditNotesPage({
     ).sort((a, b) => b.date.localeCompare(a.date))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creditNotes, query, statusFilter, customers])
+
+  const groups = useMemo(() => groupByDate(filtered, note => note.date, 'desc'), [filtered])
 
   const totalActive = creditNotes.filter(c => c.status === "Active").reduce((s, c) => s + c.remainingBalance, 0)
   const totalIssued = creditNotes.reduce((s, c) => s + c.amount, 0)
@@ -233,43 +237,43 @@ export function CreditNotesPage({
           </div>
         </div>
         <div className="ps-table-wrap">
-          <table className="ps-table">
-            <thead><tr>
-              <th>Credit No.</th><th>Customer</th><th>Amount</th><th>Remaining</th>
-              <th>Linked</th><th>Status</th><th>Date</th><th>Actions</th>
-            </tr></thead>
-            <tbody>
-              {filtered.map(note => (
-                <tr key={note.id} className="ps-row cd-row-clickable" onClick={() => openDetail(note)}>
-                  <td><code className="ps-code">{note.creditNumber}</code></td>
-                  <td>{customerName(note.customerId)}</td>
-                  <td><strong>£{note.amount.toFixed(2)}</strong></td>
-                  <td style={{ color: note.remainingBalance > 0 ? "#15803d" : "#9ca3af" }}>£{note.remainingBalance.toFixed(2)}</td>
-                  <td style={{ color: "#6b7280" }}>{note.linkedInvoiceId ? invoiceNumber(note.linkedInvoiceId) : "Account credit"}</td>
-                  <td>
-                    <span className="ps-badge" style={note.status === "Void" ? { background: "#fee2e2", color: "#b91c1c" } : { background: "#dcfce7", color: "#15803d" }}>
-                      {note.status}
-                    </span>
-                  </td>
-                  <td style={{ color: "#6b7280" }}>{note.date}</td>
-                  <td onClick={e => e.stopPropagation()}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Button variant="secondary" className="btn-sm" onClick={() => printNote(note)}>Print</Button>
-                      {canManage && note.status === "Active" && (
-                        <Button variant="danger" className="btn-sm" onClick={() => voidNote(note)}>Void</Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af" }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: "#374151" }}>No credit notes yet</div>
-              Issue one against an invoice/ticket, or as standalone account credit.
-            </div>
-          )}
+          <DateAccordion
+            groups={groups}
+            emptyMessage="No credit notes yet. Issue one against an invoice/ticket, or as standalone account credit."
+            renderGroup={group => (
+              <table className="ps-table">
+                <thead><tr>
+                  <th>Credit No.</th><th>Customer</th><th>Amount</th><th>Remaining</th>
+                  <th>Linked</th><th>Status</th><th>Date</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {group.items.map(note => (
+                    <tr key={note.id} className="ps-row cd-row-clickable" onClick={() => openDetail(note)}>
+                      <td><code className="ps-code">{note.creditNumber}</code></td>
+                      <td>{customerName(note.customerId)}</td>
+                      <td><strong>£{note.amount.toFixed(2)}</strong></td>
+                      <td style={{ color: note.remainingBalance > 0 ? "#15803d" : "#9ca3af" }}>£{note.remainingBalance.toFixed(2)}</td>
+                      <td style={{ color: "#6b7280" }}>{note.linkedInvoiceId ? invoiceNumber(note.linkedInvoiceId) : "Account credit"}</td>
+                      <td>
+                        <span className="ps-badge" style={note.status === "Void" ? { background: "#fee2e2", color: "#b91c1c" } : { background: "#dcfce7", color: "#15803d" }}>
+                          {note.status}
+                        </span>
+                      </td>
+                      <td style={{ color: "#6b7280" }}>{note.date}</td>
+                      <td onClick={e => e.stopPropagation()}>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <Button variant="secondary" className="btn-sm" onClick={() => printNote(note)}>Print</Button>
+                          {canManage && note.status === "Active" && (
+                            <Button variant="danger" className="btn-sm" onClick={() => voidNote(note)}>Void</Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          />
         </div>
       </div>
 

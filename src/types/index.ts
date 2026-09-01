@@ -237,6 +237,17 @@ export interface Invoice {
   totalVat?: number
   packages?: number
   importedMetadata?: Record<string, unknown>
+  /** 24-hour reminder cooldown (item 2) - set atomically server-side by
+      reserve_invoice_reminder_slot() whenever a reminder is successfully
+      sent for this invoice, whatever the stage. Reading these directly off
+      the already-loaded invoice means every page that has `invoices` can
+      show correct cooldown state with no extra query, and a fresh load
+      always reflects another admin's send. */
+  lastReminderSentAt?: string
+  lastReminderStage?: string
+  lastReminderSentBy?: string
+  lastReminderRecipient?: string
+  lastReminderProviderMessageId?: string
 }
 
 export interface Payment {
