@@ -6,10 +6,11 @@ import { Card } from '../../components/ui/Card'
 import { DataTable } from '../../components/ui/Table'
 import { DateAccordion } from '../../components/ui/DateAccordion'
 import { CommunicationDetailModal } from '../../components/CommunicationDetailModal'
-import { classifyInvoice, invoiceOutstanding } from '../../lib/creditNotes'
+import { invoiceOutstanding } from '../../lib/creditNotes'
 import { formatUkPhoneForDisplay } from '../../lib/whatsapp'
 import { ReminderStatusButton } from '../../components/ReminderStatusButton'
 import { groupByDate } from '../../lib/dateGrouping'
+import { reminderMilestoneDate, reminderStageFor } from '../../lib/reminderTemplates'
 
 const money = (value: number) => `£${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const today = () => new Date().toISOString().slice(0, 10)
@@ -36,7 +37,7 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
     const unpaid = invoices.filter(invoice => invoiceOutstanding(invoice) > 0)
     const day14 = unpaid.filter(invoice => invoice.date && daysBetween(invoice.date, now) === 14)
     const day21 = unpaid.filter(invoice => invoice.date && daysBetween(invoice.date, now) === 21)
-    const overdue = unpaid.filter(invoice => classifyInvoice(invoice) === 'overdue')
+    const overdue = unpaid.filter(invoice => invoice.date && daysBetween(invoice.date, now) > 21)
     return { day14, day21, overdue }
   }, [view, invoices, now])
 
@@ -48,6 +49,20 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
   }, [view, notificationLogs])
 
   const historyGroups = useMemo(() => groupByDate(history, log => log.sentAt ?? log.scheduledFor ?? '', 'desc'), [history])
+
+  // Due-date-grouped worklist (items 4/5) - every unpaid invoice whose
+  // invoice_date + 14 (or +21) falls on a given day, grouped by that
+  // milestone date, newest first. Always computed from invoice.date -
+  // never created_at/import date/today.
+  const milestoneDays = view === 'day-14' ? 14 : 21
+  const dueItems = useMemo(() => {
+    if (view === 'due-today') return []
+    return invoices
+      .filter(invoice => invoiceOutstanding(invoice) > 0)
+      .map(invoice => ({ invoice, milestone: reminderMilestoneDate(invoice, milestoneDays as 14 | 21) }))
+      .filter((row): row is { invoice: Invoice; milestone: string } => Boolean(row.milestone))
+  }, [view, invoices, milestoneDays])
+  const dueGroups = useMemo(() => groupByDate(dueItems, row => row.milestone, 'desc'), [dueItems])
 
   const findDelivery = (log: NotificationLog): CommunicationDeliveryLog | undefined =>
     deliveryLogs.find(d => d.invoiceId === log.invoiceId && d.customerId === log.customerId && d.idempotencyKey === log.idempotencyKey)
@@ -68,6 +83,10 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
   const dueRow = (invoice: Invoice, stage: ReminderStage) => {
     const customer = customerFor(invoice.customerId)
     if (!customer) return null
+    // The milestone-grouped worklist can include invoices that have since
+    // escalated past this stage (or, rarely, aren't due yet) - only allow
+    // sending when the invoice's CURRENT stage still matches this view.
+    const currentStage = reminderStageFor(invoice)
     return (
       <tr key={invoice.id}>
         <td><strong>{customer.companyName}</strong></td>
@@ -76,7 +95,9 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
         <td>{invoice.date}</td>
         <td>{money(invoice.amount)}</td>
         <td><strong>{money(invoiceOutstanding(invoice))}</strong></td>
-        <td><ReminderStatusButton invoice={invoice} onSend={() => onSendReminder(invoice, customer, stage)} /></td>
+        <td>{currentStage === stage
+          ? <ReminderStatusButton invoice={invoice} onSend={() => onSendReminder(invoice, customer, stage)} />
+          : <span style={{ color: '#9ca3af', fontSize: 12 }}>{currentStage ? 'Escalated' : 'Not yet due'}</span>}</td>
       </tr>
     )
   }
@@ -124,7 +145,21 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
 
   return (
     <div className="stack">
-      <div className="page-heading"><div><h1>{view === 'day-14' ? '14-Day Reminders' : '21-Day Reminders'}</h1><p>History of {view === 'day-14' ? '14-day' : '21-day'} reminders sent — kept separate from the other stage so it's easy to review.</p></div></div>
+      <div className="page-heading"><div><h1>{view === 'day-14' ? '14-Day Reminders' : '21-Day Reminders'}</h1><p>Organised by reminder due date (invoice date + {milestoneDays} days) below, with the send history kept separately underneath.</p></div></div>
+      <Card title={`Due (${dueItems.length})`}>
+        <DateAccordion
+          groups={dueGroups}
+          emptyMessage="No unpaid invoices with this reminder milestone."
+          renderGroup={group => (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Customer</th><th>Account</th><th>Invoice</th><th>Invoice Date</th><th>Amount</th><th>Outstanding</th><th>Action</th></tr></thead>
+                <tbody>{group.items.map(row => dueRow(row.invoice, view as ReminderStage))}</tbody>
+              </table>
+            </div>
+          )}
+        />
+      </Card>
       <Card title={`History (${history.length})`}>
         <DateAccordion
           groups={historyGroups}

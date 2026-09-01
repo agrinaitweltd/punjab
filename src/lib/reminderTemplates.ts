@@ -1,5 +1,5 @@
 import type { Customer, Invoice } from '../types'
-import { invoiceOutstanding, classifyInvoice } from './creditNotes'
+import { invoiceOutstanding } from './creditNotes'
 
 const daysBetween = (fromIso: string, toIso: string) => Math.round((new Date(`${toIso}T00:00:00`).getTime() - new Date(`${fromIso}T00:00:00`).getTime()) / 86_400_000)
 
@@ -12,7 +12,7 @@ export function isReminderDueToday(invoice: Invoice, today: string = new Date().
   if (invoiceOutstanding(invoice) <= 0) return false
   if (invoice.date && daysBetween(invoice.date, today) === 14) return true
   if (invoice.date && daysBetween(invoice.date, today) === 21) return true
-  return classifyInvoice(invoice) === 'overdue'
+  return Boolean(invoice.date && daysBetween(invoice.date, today) > 21)
 }
 
 /** The three reminder stages an admin can send from - matches the
@@ -20,6 +20,32 @@ export function isReminderDueToday(invoice: Invoice, today: string = new Date().
     notification_logs, so history/filtering stays consistent whether a send
     came from the automated cron (historically) or this composer. */
 export type ReminderStage = 'day-14' | 'day-21' | '21-plus'
+
+/** Reminder due dates are always INVOICE DATE + N calendar days - never
+    created_at, import date, PDF-generation date, or today's date. Returns
+    null once the invoice is paid, or if it has no date to compute from. */
+export function reminderMilestoneDate(invoice: Invoice, days: 14 | 21): string | null {
+  if (!invoice.date) return null
+  const d = new Date(`${invoice.date}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return null
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Which stage (if any) an unpaid invoice is currently eligible for, based
+    purely on invoice.date - day 14 up to day 20 is the 14-day window, day
+    21 is the 21-day window, day 22+ is 21+ overdue. Returns null before day
+    14 (not due yet) or once the invoice is paid, so callers can hide/
+    disable the Send Reminder action until it's genuinely due. */
+export function reminderStageFor(invoice: Invoice, today: string = new Date().toISOString().slice(0, 10)): ReminderStage | null {
+  if (invoiceOutstanding(invoice) <= 0) return null
+  if (!invoice.date) return null
+  const days = daysBetween(invoice.date, today)
+  if (days > 21) return '21-plus'
+  if (days === 21) return 'day-21'
+  if (days >= 14) return 'day-14'
+  return null
+}
 
 export function reminderStageLabel(stage: ReminderStage): string {
   if (stage === 'day-14') return '14-Day Reminder'

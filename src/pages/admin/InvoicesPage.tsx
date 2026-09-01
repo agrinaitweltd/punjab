@@ -8,7 +8,7 @@ import { ReminderStatusButton } from '../../components/ReminderStatusButton'
 import { PdfBacklogBanner } from '../../components/PdfBacklogBanner'
 import { classifyInvoice, invoiceDisplayStatus, invoiceOutstanding } from '../../lib/creditNotes'
 import { groupByDate } from '../../lib/dateGrouping'
-import { isReminderDueToday, type ReminderStage } from '../../lib/reminderTemplates'
+import { isReminderDueToday, reminderStageFor, type ReminderStage } from '../../lib/reminderTemplates'
 
 type DueFilter = 'all' | 'overdue' | 'yesterday' | 'today' | 'tomorrow' | 'this_week' | 'next_week'
 type SortDirection = 'desc' | 'asc'
@@ -148,7 +148,12 @@ export function InvoicesPage({ invoices, customers, creditNotes = [], allocation
             </button>
           ))}</div>}
         </td>
-        <td>{kind === 'paid' ? <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span> : (customer && onSendReminder ? <ReminderStatusButton invoice={invoice} onSend={() => onSendReminder(invoice, customer, kind === 'overdue' ? '21-plus' : 'day-14')} /> : <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span>)}</td>
+        <td>{(() => {
+          if (kind === 'paid') return <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span>
+          const stage = reminderStageFor(invoice)
+          if (!customer || !onSendReminder || !stage) return <span style={{ color: '#9ca3af', fontSize: 12 }}>Not yet due</span>
+          return <ReminderStatusButton invoice={invoice} onSend={() => onSendReminder(invoice, customer, stage)} />
+        })()}</td>
         <td>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <Button className="btn-sm" variant="secondary" onClick={() => setViewInvoice(invoice)}>View Invoice</Button>

@@ -196,7 +196,12 @@ export function CustomersPage({
 
   type CustomerSection = 'needs-review' | 'overdue' | 'active' | 'clear'
   const sectionFor = (customer: Customer): CustomerSection => {
-    if (customer.blocked || customer.email?.endsWith('@pending.punjab.local') || customer.customerNumber?.startsWith('AUTO')) return 'needs-review'
+    // A placeholder @pending.punjab.local email is the DEFAULT every
+    // import path uses when no real email was on the source document - it
+    // is universal here, not a review signal, so it must not gate this.
+    // Only a genuinely blocked account or an unresolved auto-generated
+    // account number (customer identity never confirmed) means review.
+    if (customer.blocked || customer.customerNumber?.startsWith('AUTO')) return 'needs-review'
     const stat = customerStats.get(customer.id)
     if (stat?.overdue) return 'overdue'
     if ((customer.balance ?? 0) > 0) return 'active'
