@@ -10,7 +10,6 @@ import { CustomerPortal } from './pages/customer/CustomerPortal'
 import { SyncStatus } from './components/SyncStatus'
 import { CookieConsent } from './components/CookieConsent'
 import { RememberDeviceModal } from './components/RememberDeviceModal'
-import { TrustedDeviceGate, markSystemDeveloperJustLoggedIn } from './components/TrustedDeviceGate'
 import { getDeviceAccount, hasBeenPromptedToRemember, markPromptedToRemember } from './lib/deviceAuth'
 import type { User } from './types'
 import { getSystemMode } from './lib/secureAdminApi'
@@ -156,7 +155,6 @@ function App() {
     }
     setUser(loggedInUser)
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(loggedInUser)) } catch { /* ignore */ }
-    if (role === 'admin' && loggedInUser.isSystemDeveloper) markSystemDeveloperJustLoggedIn()
     setShowSwitcher(false)
     if (role !== 'admin' && !hasBeenPromptedToRemember() && !getDeviceAccount()) {
       setRememberPrompt({ role, displayName: loggedInUser.displayName, usernameOrEmail: usernameOrEmail.trim(), password })
@@ -195,11 +193,7 @@ function App() {
       <AppDialogs />
       <SuccessToastStack />
       {!user ? <LoginPage onLogin={handleLogin} error={error} /> : null}
-      {user?.role === 'admin' ? (
-        <TrustedDeviceGate isSystemDeveloper={Boolean(user.isSystemDeveloper)} staffName={user.displayName}>
-          <AdminPortal user={user} onLogout={handleLogout} />
-        </TrustedDeviceGate>
-      ) : null}
+      {user?.role === 'admin' ? <AdminPortal user={user} onLogout={handleLogout} /> : null}
       {user?.role === 'customer' ? <CustomerPortal user={user} onLogout={handleLogout} /> : null}
       <SyncStatus />
       <CookieConsent />

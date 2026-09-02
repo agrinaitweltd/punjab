@@ -76,46 +76,6 @@ export async function sendInvoiceReminder(input: SendReminderInput) {
 export async function getPdfBacklogReport() {
   return api<{ ok: true; totalChecked: number; alreadyHavePdf: number; needingRepair: number }>('/api/admin-security?action=repair-pdf-backlog', { method: 'GET' })
 }
-// System-Developer-only trusted-device lock (items 6-16) - re-verifies an
-// already-authenticated session on a saved device via WebAuthn or a 6-digit
-// passcode. Never a login path: server-gated to System Developer only via
-// requireSystemDeveloper() on every call (see server/admin-actions/trusted-device.js).
-export type TrustedDeviceSummary = { id: string; label: string | null; hasWebAuthn: boolean; hasPasscode: boolean; createdAt: string; lastUsedAt: string | null }
-function trustedDeviceApi<T>(body: Record<string, unknown>) {
-  return api<T>('/api/admin-security?action=trusted-device', { method: 'POST', body: JSON.stringify(body) })
-}
-export async function listTrustedDevices() {
-  return api<{ ok: true; devices: TrustedDeviceSummary[] }>('/api/admin-security?action=trusted-device', { method: 'GET' })
-}
-export async function saveTrustedDevice(deviceId: string, label: string) {
-  return trustedDeviceApi<{ ok: true }>({ op: 'save-device', deviceId, label })
-}
-export async function revokeTrustedDevice(deviceId: string) {
-  return trustedDeviceApi<{ ok: true }>({ op: 'revoke', deviceId })
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function webauthnRegisterOptions(deviceId: string) {
-  return trustedDeviceApi<{ ok: true; options: any }>({ op: 'webauthn-register-options', deviceId })
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function webauthnRegisterVerify(deviceId: string, response: any) {
-  return trustedDeviceApi<{ ok: true }>({ op: 'webauthn-register-verify', deviceId, response })
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function webauthnAuthOptions(deviceId: string) {
-  return trustedDeviceApi<{ ok: true; options: any }>({ op: 'webauthn-auth-options', deviceId })
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function webauthnAuthVerify(deviceId: string, response: any) {
-  return trustedDeviceApi<{ ok: true }>({ op: 'webauthn-auth-verify', deviceId, response })
-}
-export async function setDevicePasscode(deviceId: string, passcode: string) {
-  return trustedDeviceApi<{ ok: true }>({ op: 'passcode-set', deviceId, passcode })
-}
-export async function verifyDevicePasscode(deviceId: string, passcode: string) {
-  return trustedDeviceApi<{ ok: boolean; error?: string; locked?: boolean; lockedUntil?: string; attemptsRemaining?: number }>({ op: 'passcode-verify', deviceId, passcode })
-}
-
 export async function repairPdfBacklogBatch(batchSize = 20) {
   return api<{
     ok: true; simulated?: boolean; totalChecked: number; alreadyHavePdf: number; processed: number

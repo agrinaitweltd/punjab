@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { Customer, Invoice } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Modal } from "../../components/ui/Modal"
-import { listFiles, uploadFile, deleteFile, renameFile, getFileById, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
+import { listFilesPage, listFilesForCustomerLive, getFileCountsByCustomer, uploadFile, deleteFile, renameFile, getFileById, MAX_FILE_BYTES, type StoredFile } from "../../lib/fileService"
 import { getStatements } from "../../lib/statementsService"
 import type { StatementRecord } from "../../lib/secureAdminApi"
 import { confirmAction } from "../../lib/appDialogs"
@@ -56,7 +56,21 @@ const isPendingReviewDoc = (f: StoredFile) => Boolean(pendingReviewMatch(f))
 const importSource = (f: StoredFile) => /\(email import\)/i.test(f.note ?? '') ? 'Email' : 'Manual'
 
 export function FilesPage({ customers, invoices = [], onNavigate }: { customers: Customer[]; invoices?: Invoice[]; onNavigate?: (page: string) => void }) {
+  // "generated"-tab listing - paginated (item 5): a single unbounded fetch
+  // of the ~70MB file backlog was the real cause of Files/Documents loading
+  // unreliably, so this page now loads newest-first pages and offers
+  // "Load More" instead of fetching everything at once.
   const [files, setFiles] = useState<StoredFile[]>([])
+  const [filesHasMore, setFilesHasMore] = useState(false)
+  const [filesCursor, setFilesCursor] = useState<string | null>(null)
+  const [loadingMoreGenerated, setLoadingMoreGenerated] = useState(false)
+  // Lightweight (no file payload) per-folder counts for the sidebar badges.
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({})
+  // The currently-open folder's complete file list, fetched directly by
+  // customer id rather than sliced out of the paginated list above, so a
+  // folder is always shown in full regardless of how far "Load More" has
+  // been paged on the generated-documents tab.
+  const [selectedFolderFiles, setSelectedFolderFiles] = useState<StoredFile[]>([])
   const [loading, setLoading] = useState(true)
   const [folderQuery, setFolderQuery] = useState("")
   const [selected, setSelected] = useState<string>(INTERNAL)
@@ -78,21 +92,40 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
   const [docTypeFilter, setDocTypeFilter] = useState<'All' | 'Invoices' | 'Credit Notes' | 'Statements' | 'Generated PDFs' | 'Needs Review'>('All')
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  const load = async (showSpinner = true) => {
-    if (showSpinner) setLoading(true)
-    const [fileList, statementList] = await Promise.all([listFiles(), getStatements()])
-    setFiles(fileList)
+  const load = async () => {
+    const [page, counts, statementList] = await Promise.all([listFilesPage(), getFileCountsByCustomer(), getStatements()])
+    setFiles(page.files)
+    setFilesHasMore(page.hasMore)
+    setFilesCursor(page.nextCursor)
+    setFileCounts(counts)
     setStatements(statementList)
+  }
+  const loadMoreGenerated = async () => {
+    if (!filesHasMore || loadingMoreGenerated) return
+    setLoadingMoreGenerated(true)
+    const page = await listFilesPage({ before: filesCursor ?? undefined })
+    setFiles(prev => [...prev, ...page.files])
+    setFilesHasMore(page.hasMore)
+    setFilesCursor(page.nextCursor)
+    setLoadingMoreGenerated(false)
+  }
+  const loadFolder = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true)
+    const list = await listFilesForCustomerLive(selected === INTERNAL ? null : selected)
+    setSelectedFolderFiles(list)
     if (showSpinner) setLoading(false)
   }
   useEffect(() => { load() }, [])
+  useEffect(() => { loadFolder() }, [selected])
+  const loadFolderRef = useRef(loadFolder)
+  loadFolderRef.current = loadFolder
 
   /** Documents live as FILE: rows in activity_log (see fileService.ts) rather
       than their own table, so realtime here just triggers a quiet reload of
-      the already-scoped listFiles() query on any change to that table -
-      cheaper than duplicating listFiles()'s base64/metadata parsing inline,
-      and still never touches unrelated tables. Debounced so a burst of
-      changes (e.g. several files uploaded at once) reloads once, not per row. */
+      the current page/folder on any change to that table, rather than
+      duplicating the base64/metadata parsing inline - still never touches
+      unrelated tables. Debounced so a burst of changes (e.g. several files
+      uploaded at once) reloads once, not per row. */
   useEffect(() => {
     if (!supabase) return
     const client = supabase
@@ -101,17 +134,11 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
       .channel(`sync:${runtimeTable('activity_log')}:files`)
       .on('postgres_changes', { event: '*', schema: 'public', table: runtimeTable('activity_log') }, () => {
         if (timer) clearTimeout(timer)
-        timer = setTimeout(() => load(false), 400)
+        timer = setTimeout(() => { load(); loadFolderRef.current(false) }, 400)
       })
       .subscribe()
     return () => { if (timer) clearTimeout(timer); client.removeChannel(channel) }
   }, [])
-
-  const fileCounts = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const f of files) m[f.customerId ?? INTERNAL] = (m[f.customerId ?? INTERNAL] ?? 0) + 1
-    return m
-  }, [files])
 
   const folders = useMemo(() => {
     const q = folderQuery.trim().toLowerCase()
@@ -152,10 +179,9 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
   const generatedGroups = useMemo(() => groupByDate(generatedDocs, f => f.uploadedAt || '', sortDirection), [generatedDocs, sortDirection])
 
   const selectedCustomer = selected === INTERNAL ? null : customers.find(c => c.id === selected)
-  const folderFiles = files.filter(f => {
-    const inFolder = selected === INTERNAL ? !f.customerId : f.customerId === selected
+  const folderFiles = selectedFolderFiles.filter(f => {
     const q = folderQuery.trim().toLowerCase()
-    return inFolder && (category === 'All' || categoryFor(f) === category) && (!q || `${f.name} ${f.note ?? ''}`.toLowerCase().includes(q) || (selected !== INTERNAL && folders.some(c => c.id === selected)))
+    return (category === 'All' || categoryFor(f) === category) && (!q || `${f.name} ${f.note ?? ''}`.toLowerCase().includes(q) || (selected !== INTERNAL && folders.some(c => c.id === selected)))
   })
   const folderGroups = useMemo(() => groupByDate(folderFiles, f => f.uploadedAt || ''), [folderFiles])
 
@@ -175,7 +201,7 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
         selectedCustomer?.id ?? null, selectedCustomer?.companyName ?? "Internal only")
       setNote("")
       if (inputRef.current) inputRef.current.value = ""
-      await load()
+      await Promise.all([load(), loadFolder(false)])
     } catch {
       setError("Upload failed — please try again.")
     }
@@ -185,7 +211,7 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
   const remove = async (f: StoredFile) => {
     if (!await confirmAction(`Delete "${f.name}"? This cannot be undone.`)) return
     await deleteFile(f.id)
-    await load()
+    await Promise.all([load(), loadFolder(false)])
   }
 
   const startRename = (f: StoredFile) => { setRenaming(f); setRenameValue(f.name) }
@@ -193,7 +219,7 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
     if (!renaming || !renameValue.trim()) return
     await renameFile(renaming.id, renameValue.trim())
     setRenaming(null)
-    await load()
+    await Promise.all([load(), loadFolder(false)])
   }
 
   return (
@@ -330,6 +356,13 @@ export function FilesPage({ customers, invoices = [], onNavigate }: { customers:
               </div>
             )}
           />
+          {filesHasMore && (
+            <div style={{ textAlign: 'center', marginTop: 14 }}>
+              <Button variant="secondary" onClick={loadMoreGenerated} disabled={loadingMoreGenerated}>
+                {loadingMoreGenerated ? 'Loading…' : 'Load More'}
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
       <div className="doc-layout">

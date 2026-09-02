@@ -71,44 +71,156 @@ function db() {
   return supabase
 }
 
-export async function listFiles(): Promise<StoredFile[]> {
-  const { data, error } = await db()
-    .from("activity_log")
-    .select("*")
-    .like("customer_name", "FILE:%")
-    .order("created_at", { ascending: false })
-  if (error) { console.error("listFiles", error); return [] }
-  return (data ?? []).map(r => {
-    let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; creditNoteId?: string; creditNoteNumber?: string; creditNoteAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
-    try { meta = JSON.parse(r.timestamp ?? "{}") } catch { /* legacy row */ }
-    return {
-      id: r.id,
-      name: String(r.customer_name).slice(5),
-      type: meta.type ?? "application/octet-stream",
-      size: meta.size ?? 0,
-      note: meta.note ?? "",
-      uploadedAt: meta.uploadedAt ?? r.created_at ?? "",
-      dataUri: r.action ?? "",
-      customerId: meta.customerId ?? null,
-      customerName: meta.customerName ?? "Internal only",
-      invoiceId: meta.invoiceId,
-      invoiceNumber: meta.invoiceNumber,
-      invoiceAmount: meta.invoiceAmount,
-      creditNoteId: meta.creditNoteId,
-      creditNoteNumber: meta.creditNoteNumber,
-      creditNoteAmount: meta.creditNoteAmount,
-      documentRole: meta.documentRole ?? 'general',
-      templateId: meta.templateId,
-    }
-  })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapFileRow(r: any): StoredFile {
+  let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; creditNoteId?: string; creditNoteNumber?: string; creditNoteAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
+  try { meta = JSON.parse(r.timestamp ?? "{}") } catch { /* legacy row */ }
+  return {
+    id: r.id,
+    name: String(r.customer_name).slice(5),
+    type: meta.type ?? "application/octet-stream",
+    size: meta.size ?? 0,
+    note: meta.note ?? "",
+    uploadedAt: meta.uploadedAt ?? r.created_at ?? "",
+    dataUri: r.action ?? "",
+    customerId: meta.customerId ?? null,
+    customerName: meta.customerName ?? "Internal only",
+    invoiceId: meta.invoiceId,
+    invoiceNumber: meta.invoiceNumber,
+    invoiceAmount: meta.invoiceAmount,
+    creditNoteId: meta.creditNoteId,
+    creditNoteNumber: meta.creditNoteNumber,
+    creditNoteAmount: meta.creditNoteAmount,
+    documentRole: meta.documentRole ?? 'general',
+    templateId: meta.templateId,
+  }
 }
+
+/** Every stored document, unbounded - the historical backlog is now over
+    1,100 files (~70MB of base64 payload combined), so this is only safe
+    for callers that genuinely need to search the complete set server-side
+    is not possible (findInvoicePdf, listFilesForCustomer - the metadata
+    that would let Postgres filter this is JSON text, not real columns).
+    The Files/Documents PAGE itself must never call this directly - use
+    listFilesPage()/listFilesForCustomerLive() instead (item 5). */
+export async function listFiles(): Promise<StoredFile[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] | null, error: unknown
+  try {
+    ;({ data, error } = await db()
+      .from("activity_log")
+      .select("*")
+      .like("customer_name", "FILE:%")
+      .order("created_at", { ascending: false }))
+  } catch (caught) {
+    // A network hiccup rejects the fetch outright rather than resolving to
+    // { error } - every caller (Files/Documents, invoice PDF lookups, the
+    // "View Email" attachment section) already treats an empty/failed list
+    // as "nothing found yet" and shows a retry-able state, never a crash.
+    console.error("listFiles", caught)
+    return []
+  }
+  if (error) { console.error("listFiles", error); return [] }
+  return (data ?? []).map(mapFileRow)
+}
+
+/** Cursor-paginated by created_at (newest first), for the Files/Documents
+    page's own listing - a single unbounded fetch of the whole ~70MB
+    backlog was the real cause of Files/Documents loading unreliably (item
+    5): slow/mobile connections routinely timed out or dropped mid-download
+    before anything rendered. Call again with the last row's uploadedAt as
+    `before` for the next page ("Load More"), same pattern as Email Imports. */
+export async function listFilesPage(opts: { limit?: number; before?: string } = {}): Promise<{ files: StoredFile[]; hasMore: boolean; nextCursor: string | null }> {
+  const limit = opts.limit ?? 150
+  let query = db().from("activity_log").select("*").like("customer_name", "FILE:%").order("created_at", { ascending: false }).limit(limit + 1)
+  if (opts.before) query = query.lt("created_at", opts.before)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] | null, error: unknown
+  try {
+    ;({ data, error } = await query)
+  } catch (caught) {
+    console.error("listFilesPage", caught)
+    return { files: [], hasMore: false, nextCursor: null }
+  }
+  if (error) { console.error("listFilesPage", error); return { files: [], hasMore: false, nextCursor: null } }
+  const rows = data ?? []
+  const hasMore = rows.length > limit
+  const page = hasMore ? rows.slice(0, limit) : rows
+  return { files: page.map(mapFileRow), hasMore, nextCursor: page.length ? page[page.length - 1].created_at ?? null : null }
+}
+
+/** Lightweight per-customer file counts for the Files/Documents sidebar
+    badges - selects only the small `timestamp` metadata text, never the
+    base64 `action` payload, so computing counts across the whole backlog
+    doesn't require pulling ~70MB of file content. Key is the customerId,
+    or "__internal__" for files with no customer (matches FilesPage's own
+    INTERNAL sentinel). */
+export async function getFileCountsByCustomer(): Promise<Record<string, number>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] | null, error: unknown
+  try {
+    ;({ data, error } = await db().from("activity_log").select("timestamp").like("customer_name", "FILE:%"))
+  } catch (caught) {
+    console.error("getFileCountsByCustomer", caught)
+    return {}
+  }
+  if (error) { console.error("getFileCountsByCustomer", error); return {} }
+  const counts: Record<string, number> = {}
+  for (const row of data ?? []) {
+    let customerId: string | null = null
+    try { customerId = JSON.parse(row.timestamp ?? "{}").customerId ?? null } catch { /* legacy row */ }
+    const key = customerId ?? "__internal__"
+    counts[key] = (counts[key] ?? 0) + 1
+  }
+  return counts
+}
+
+/** Targeted, bounded fetch of one customer's (or, for null, "Internal
+    Only") files - used when an admin opens a folder in the Files/Documents
+    page, so browsing one folder is always complete regardless of how far
+    "Load More" has been paged on the main listing. Matches on the
+    customerId embedded in the JSON metadata text (activity_log has no real
+    customer_id column), so this stays a substring filter rather than an
+    indexed equality lookup - fine at this scale (bounded per folder, not
+    the whole table). Returns every document role (including legacy
+    sources), matching what the folder view has always shown. */
+export async function listFilesForCustomerLive(customerId: string | null): Promise<StoredFile[]> {
+  const pattern = customerId === null
+    ? '%"customerId":null%'
+    : `%"customerId":"${customerId.replace(/[%_\\]/g, m => `\\${m}`)}"%`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] | null, error: unknown
+  try {
+    ;({ data, error } = await db().from("activity_log").select("*")
+      .like("customer_name", "FILE:%")
+      .ilike("timestamp", pattern)
+      .order("created_at", { ascending: false }))
+  } catch (caught) {
+    console.error("listFilesForCustomerLive", caught)
+    return []
+  }
+  if (error) { console.error("listFilesForCustomerLive", error); return [] }
+  return (data ?? []).map(mapFileRow).filter(f => f.customerId === customerId)
+}
+
 
 /** One file by its activity_log row id - used by the Email Imports page to
  *  preview/download a stored PDF (including ones still "Needs Review",
  *  which aren't linked to a customer/invoice yet so listFilesForCustomer
  *  wouldn't find them). */
 export async function getFileById(id: string): Promise<StoredFile | null> {
-  const { data, error } = await db().from("activity_log").select("*").eq("id", id).maybeSingle()
+  // A network hiccup (brief connectivity drop, backgrounded mobile tab)
+  // makes the underlying fetch reject rather than resolve to { error } -
+  // every caller treats this as "couldn't load the file" (shows a
+  // "missing"/retry state), never as an app-crashing unhandled rejection.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any, error: unknown
+  try {
+    ;({ data, error } = await db().from("activity_log").select("*").eq("id", id).maybeSingle())
+  } catch (caught) {
+    console.error("getFileById", caught)
+    return null
+  }
   if (error || !data || !String(data.customer_name ?? '').startsWith('FILE:')) return null
   let meta: { type?: string; size?: number; note?: string; uploadedAt?: string; customerId?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; invoiceAmount?: number; creditNoteId?: string; creditNoteNumber?: string; creditNoteAmount?: number; documentRole?: StoredFile['documentRole']; templateId?: StoredFile['templateId'] } = {}
   try { meta = JSON.parse(data.timestamp ?? "{}") } catch { /* legacy row */ }

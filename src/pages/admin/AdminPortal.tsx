@@ -1191,7 +1191,6 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           onRegeneratePdf={regenerateInvoicePdf}
           customerId={invoicesCustomerFilter}
           onClearCustomerFilter={() => setInvoicesCustomerFilter(null)}
-          onRefresh={load}
         />
       )
     }
