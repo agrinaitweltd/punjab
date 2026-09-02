@@ -15,8 +15,14 @@ const basePermissions: PermissionSet = { ...EMPTY_PERMISSIONS }
 /* Grouped by function so the permission picker reads like a real access
    policy rather than a flat checkbox dump. */
 const PERM_GROUPS: { label: string; keys: (keyof PermissionSet)[] }[] = [
-  { label: "Trading",  keys: ["customers", "customersCreate", "customersDelete", "orders", "stock", "products", "prices"] },
-  { label: "Finance",  keys: ["payments", "paymentsRecord", "paymentsAllocate", "paymentsDelete", "invoicesDelete", "buyingPricesEdit", "creditNotesIssue", "extracts"] },
+  { label: "Customers",  keys: ["customers", "customersEdit", "customersCreate", "customersDelete"] },
+  { label: "Invoices",  keys: ["invoicesView", "invoicesSendReminders", "invoicesViewPdfs", "invoicesDelete"] },
+  { label: "Payments",  keys: ["payments", "paymentsRecord", "paymentsAllocate", "paymentsDelete"] },
+  { label: "Email Imports", keys: ["emailImportsView", "emailImportsReview"] },
+  { label: "Files / Documents", keys: ["filesView", "filesDownload"] },
+  { label: "Communications", keys: ["communicationsView", "communicationsSend"] },
+  { label: "Credit Notes & Statements", keys: ["creditNotesIssue", "statementsView"] },
+  { label: "Trading",  keys: ["orders", "stock", "products", "prices", "buyingPricesEdit", "extracts"] },
   { label: "Support",  keys: ["tickets", "complaints", "enquiries", "applicationsManage"] },
   { label: "Insights & Admin", keys: ["stats", "admins", "usersManage"] },
 ]
@@ -110,6 +116,7 @@ export function AdminsPage({
   onResetCredentials,
   loadRoles,
   currentUserIsSystemDeveloper = false,
+  currentUserIsSuperAdmin = false,
 }: {
   admins: AdminStaff[]
   salesmen?: Salesman[]
@@ -120,6 +127,7 @@ export function AdminsPage({
   onResetCredentials?: (id: string, sensitiveToken: string) => Promise<void>
   loadRoles?: () => Promise<AdminRole[]>
   currentUserIsSystemDeveloper?: boolean
+  currentUserIsSuperAdmin?: boolean
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing]       = useState<AdminStaff | null>(null)
@@ -212,10 +220,11 @@ export function AdminsPage({
         </p>
       </div>
 
-      {/* Super-admin notice */}
+      {/* Access notice - reflects the actual signed-in viewer, not assumed */}
       <div className="adm-super-notice">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22913f" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span>You are logged in as <strong>Super Admin</strong>. You have full control over all admin accounts.</span>
+        <span>You are logged in as <strong>{currentUserIsSystemDeveloper ? "System Developer" : currentUserIsSuperAdmin ? "Super Admin" : "Administrator"}</strong>.{" "}
+          {currentUserIsSystemDeveloper || currentUserIsSuperAdmin ? "You have full control over all admin accounts." : "You can invite and manage accounts covered by your own permissions."}</span>
       </div>
 
       {/* Admin table card */}
@@ -247,6 +256,7 @@ export function AdminsPage({
                   // (see lib/permissions.ts can()) — always show 22/22 for them
                   // rather than whatever happens to be stored on the row.
                   const permCount = admin.isSuperAdmin ? ALL_PERMISSIONS.length : ALL_PERMISSIONS.filter(k => admin.permissions[k]).length
+                  const isPending = admin.invitationStatus === 'Sent' || admin.invitationStatus === 'Pending'
                   return (
                     <tr key={admin.id}>
                       <td>
@@ -277,51 +287,55 @@ export function AdminsPage({
                         </div>
                       </td>
                       <td>
-                        <label className="adm-toggle-wrap" title={admin.active ? "Active — click to deactivate" : "Inactive — click to activate"}>
-                          <input
-                            type="checkbox"
-                            checked={admin.active !== false}
-                            disabled={admin.isSuperAdmin}
-                            onChange={e => {
-                              const active = e.target.checked
-                              setSensitiveAction({
-                                title: active ? "Enable administrator account" : "Disable administrator account",
-                                warning: active ? "The user will regain access immediately." : "The user's Supabase Auth access will be revoked.",
-                                actionLabel: active ? "Verify & Enable" : "Verify & Disable",
-                                run: async token => { await onToggleActive?.(admin.id, active, token); setSensitiveAction(null) },
-                              })
-                            }}
-                            style={{ display: "none" }}
-                          />
-                          <div className={"adm-toggle" + (admin.active !== false ? " on" : "")}>
-                            <div className="adm-toggle-knob" />
-                          </div>
-                          <span style={{ fontSize: 12, color: admin.active !== false ? "#15803d" : "#9ca3af" }}>
-                            {admin.active !== false ? "Active" : "Inactive"}
-                          </span>
-                        </label>
+                        {isPending ? (
+                          <span className="ps-badge" style={{ background: "#fef3c7", color: "#b45309" }}>Pending Invitation</span>
+                        ) : (
+                          <label className="adm-toggle-wrap" title={admin.active ? "Active — click to deactivate" : "Disabled — click to activate"}>
+                            <input
+                              type="checkbox"
+                              checked={admin.active !== false}
+                              disabled={admin.isSuperAdmin}
+                              onChange={e => {
+                                const active = e.target.checked
+                                setSensitiveAction({
+                                  title: active ? "Enable administrator account" : "Disable administrator account",
+                                  warning: active ? "The user will regain access immediately." : "The user's Supabase Auth access will be revoked.",
+                                  actionLabel: active ? "Verify & Enable" : "Verify & Disable",
+                                  run: async token => { await onToggleActive?.(admin.id, active, token); setSensitiveAction(null) },
+                                })
+                              }}
+                              style={{ display: "none" }}
+                            />
+                            <div className={"adm-toggle" + (admin.active !== false ? " on" : "")}>
+                              <div className="adm-toggle-knob" />
+                            </div>
+                            <span style={{ fontSize: 12, color: admin.active !== false ? "#15803d" : "#9ca3af" }}>
+                              {admin.active !== false ? "Active" : "Disabled"}
+                            </span>
+                          </label>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 6 }}>
                           {!admin.isSuperAdmin && (
                             <>
-                              <button className="ps-action-btn" title="Edit" onClick={() => setEditing({ ...admin })}>
+                              <button className="ps-action-btn" title="Edit Permissions" onClick={() => setEditing({ ...admin })}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                               </button>
                               {onResetCredentials && (
-                                <button className="ps-action-btn" title="Reset & Resend Setup Link" onClick={() => setSensitiveAction({
-                                  title: "Reset & resend setup link",
-                                  warning: "This immediately revokes their current password and any active sessions. They'll receive a new one-time setup link by email.",
-                                  actionLabel: "Verify & Reset Access",
+                                <button className="ps-action-btn" title={isPending ? "Resend Invite" : "Reset & Resend Setup Link"} onClick={() => setSensitiveAction({
+                                  title: isPending ? "Resend invitation" : "Reset & resend setup link",
+                                  warning: isPending ? "A fresh one-time setup link will be emailed to them; the previous link stops working." : "This immediately revokes their current password and any active sessions. They'll receive a new one-time setup link by email.",
+                                  actionLabel: isPending ? "Verify & Resend Invite" : "Verify & Reset Access",
                                   run: async token => { await onResetCredentials(admin.id, token); setSensitiveAction(null) },
                                 })}>
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                                 </button>
                               )}
-                              <button className="ps-action-btn ps-action-danger" title="Remove access" onClick={() => setSensitiveAction({
-                                title: "Remove administrator access",
-                                warning: "This safely disables the account and revokes sign-in access. Historical audit records are preserved.",
-                                actionLabel: "Verify & Remove Access",
+                              <button className="ps-action-btn ps-action-danger" title={isPending ? "Cancel Invite" : "Remove access"} onClick={() => setSensitiveAction({
+                                title: isPending ? "Cancel invitation" : "Remove administrator access",
+                                warning: isPending ? "This cancels the pending invitation and revokes the setup link. It can be re-invited later." : "This safely disables the account and revokes sign-in access. Historical audit records are preserved.",
+                                actionLabel: isPending ? "Verify & Cancel Invite" : "Verify & Remove Access",
                                 run: async token => { await onDelete?.(admin.id, token); setSensitiveAction(null) },
                               })}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
@@ -350,7 +364,7 @@ export function AdminsPage({
           <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Warehouse Manager" required />
           <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabexoticfoods.com" required />
           <Input label="Job Title" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Sales Executive" />
-          <Select label="Role" options={currentUserIsSystemDeveloper ? ["Staff", "Manager", "Supervisor", "Owner", "System Developer"] : ["Staff", "Manager", "Supervisor", "Owner"]} value={role} onChange={setRole} />
+          <Select label="Role" options={currentUserIsSystemDeveloper ? ["Staff", "Manager", "Supervisor", "Super Admin", "System Developer"] : ["Staff", "Manager", "Supervisor", "Super Admin"]} value={role} onChange={setRole} />
           <p className="wide invite-explainer">The recipient will receive a secure one-time link and choose their own password. Passwords are never created by administrators.</p>
           <div className="wide">
             <label className="form-control">
@@ -381,7 +395,7 @@ export function AdminsPage({
             <Input label="Full Name" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} required />
             <Input label="Email" type="email" value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })} required />
             <Input label="Job Title" value={editing.jobTitle ?? ""} onChange={e => setEditing({ ...editing, jobTitle: e.target.value })} placeholder="e.g. Sales Executive" />
-            <Select label="Role" options={currentUserIsSystemDeveloper ? ["Staff", "Manager", "Supervisor", "Owner", "System Developer"] : ["Staff", "Manager", "Supervisor", "Owner"]} value={editing.role} onChange={v => setEditing({ ...editing, role: v })} />
+            <Select label="Role" options={currentUserIsSystemDeveloper ? ["Staff", "Manager", "Supervisor", "Super Admin", "System Developer"] : ["Staff", "Manager", "Supervisor", "Super Admin"]} value={editing.role} onChange={v => setEditing({ ...editing, role: v })} />
             <div className="wide">
               <label className="form-control">
                 <span>Apply Role Template (optional — fills permissions below, still editable)</span>

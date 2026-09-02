@@ -27,6 +27,17 @@ export interface PermissionSet {
   creditNotesIssue?: boolean
   applicationsManage?: boolean
   usersManage?: boolean
+  customersEdit?: boolean
+  invoicesView?: boolean
+  invoicesSendReminders?: boolean
+  invoicesViewPdfs?: boolean
+  emailImportsView?: boolean
+  emailImportsReview?: boolean
+  filesView?: boolean
+  filesDownload?: boolean
+  communicationsView?: boolean
+  communicationsSend?: boolean
+  statementsView?: boolean
 }
 
 /** A named, reusable permission template an admin account can be based on
@@ -474,4 +485,10 @@ export interface AdminStaff {
       linked to them (for reviewing that salesman's orders). */
   isSalesman?: boolean
   salesmanIds?: string[]
+  /** 'Pending' | 'Sent' | 'Accepted' | 'Failed' | 'Revoked' - set by
+      invite-admin.js/reset-admin-credentials.js/manage-admin.js, cleared to
+      'Accepted' by complete-account-setup.js once the invited user sets
+      their password. Drives the Status column in AdminsPage. */
+  invitationStatus?: string
+  lastInvitedAt?: string
 }

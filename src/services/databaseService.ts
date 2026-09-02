@@ -210,6 +210,7 @@ function mapAdmin(r: any): AdminStaff {
     role: r.role ?? "Staff", jobTitle: r.job_title ?? "", active: r.active ?? true,
     isSuperAdmin: r.is_super_admin ?? false, permissions: r.permissions ?? {},
     isSalesman: r.is_salesman ?? false, salesmanIds: r.salesman_ids ?? [],
+    invitationStatus: r.invitation_status ?? undefined, lastInvitedAt: r.last_invited_at ?? undefined,
   }
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

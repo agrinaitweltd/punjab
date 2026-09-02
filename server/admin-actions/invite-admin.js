@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   const jobTitle = String(req.body?.jobTitle || '').trim()
   const isSalesman = Boolean(req.body?.isSalesman)
   const salesmanIds = Array.isArray(req.body?.salesmanIds) ? req.body.salesmanIds.map(String).slice(0, 50) : []
-  if (!name || name.length > 120 || !validEmail(email) || email.length > 254 || !['Staff', 'Manager', 'Supervisor', 'Owner', 'System Developer'].includes(role)) {
+  if (!name || name.length > 120 || !validEmail(email) || email.length > 254 || !['Staff', 'Manager', 'Supervisor', 'Super Admin', 'System Developer'].includes(role)) {
     return res.status(400).json({ error: 'Enter valid account details.' })
   }
   if (role === 'System Developer' && staff.role !== 'System Developer') return res.status(403).json({ error: 'Only a System Developer can invite another System Developer.' })
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     const placeholderHash = await bcrypt.hash(randomUUID(), 12)
     const roster = await admin.from('admin_staff').insert({
       name, username: email.split('@')[0], email, password: placeholderHash, role, job_title: jobTitle,
-      active: true, is_super_admin: role === 'System Developer', permissions,
+      active: true, is_super_admin: role === 'System Developer' || role === 'Super Admin', permissions,
       is_salesman: isSalesman, salesman_ids: salesmanIds, auth_user_id: authUser.id,
       invitation_status: 'Sent', last_invited_at: new Date().toISOString(),
     }).select('id').single()

@@ -15,7 +15,7 @@ export const mockAdmins: AdminStaff[] = [
     name: "Punjab Exotic Foods",
     email: "contact@punjabexoticfoods.co.uk",
     password: "$2b$12$uIgIQxeXAybbnWII09Oi.Ow7qpd9SjwSG2kAMbVAF5dbP71gYiiKW",
-    role: "Owner",
+    role: "Super Admin",
     active: true,
     isSuperAdmin: true,
     permissions: {

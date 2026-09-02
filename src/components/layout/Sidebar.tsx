@@ -11,9 +11,11 @@ const NAV_PERMISSION_KEY: Partial<Record<string, keyof PermissionSet>> = {
   products: "products", orders: "orders", customers: "customers", "add-customer": "customersCreate", tickets: "tickets",
   payments: "payments", "payment-proofs": "payments", "credit-control": "payments",
   "credit-notes": "creditNotesIssue", "customer-applications": "applicationsManage",
-  "reminders-due-today": "payments", "reminders-14-day": "payments", "reminders-21-day": "payments",
+  "reminders-due-today": "invoicesSendReminders", "reminders-14-day": "invoicesSendReminders", "reminders-21-day": "invoicesSendReminders",
   stats: "stats", "day-check": "stats", stock: "stock", "data-extract": "extracts",
   enquiries: "enquiries", complaints: "complaints",
+  invoices: "invoicesView", "create-invoice": "invoicesView", "invoice-numbers": "invoicesView", outstanding: "invoicesView",
+  "email-imports": "emailImportsView", files: "filesView", "communication-history": "communicationsView",
 }
 
 const ICONS = {

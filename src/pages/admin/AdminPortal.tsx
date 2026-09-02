@@ -1500,6 +1500,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           admins={admins}
           salesmen={salesmen}
           currentUserIsSystemDeveloper={user.isSystemDeveloper}
+          currentUserIsSuperAdmin={user.isSuperAdmin}
           loadRoles={getAdminRoles}
           onCreate={async (name, email, role, jobTitle, permissions, isSalesman, salesmanIds, sensitiveToken) => {
             await inviteAdmin({ name, email, role, jobTitle, permissions, isSalesman, salesmanIds }, sensitiveToken)

@@ -7,7 +7,12 @@ export const EMPTY_PERMISSIONS: PermissionSet = {
   customersCreate: false, customersDelete: false, invoicesDelete: false,
   paymentsRecord: false, paymentsDelete: false, paymentsAllocate: false,
   buyingPricesEdit: false, creditNotesIssue: false, applicationsManage: false,
-  usersManage: false,
+  usersManage: false, customersEdit: false,
+  invoicesView: false, invoicesSendReminders: false, invoicesViewPdfs: false,
+  emailImportsView: false, emailImportsReview: false,
+  filesView: false, filesDownload: false,
+  communicationsView: false, communicationsSend: false,
+  statementsView: false,
 }
 
 /** Built-in role templates — mirrors the rows seeded into admin_roles by
@@ -24,7 +29,12 @@ export const FALLBACK_ROLE_TEMPLATES: AdminRole[] = [
       admins: true, products: true, customersCreate: true, customersDelete: true,
       invoicesDelete: true, paymentsRecord: true, paymentsDelete: true,
       paymentsAllocate: true, buyingPricesEdit: true, creditNotesIssue: true,
-      applicationsManage: true, usersManage: true,
+      applicationsManage: true, usersManage: true, customersEdit: true,
+      invoicesView: true, invoicesSendReminders: true, invoicesViewPdfs: true,
+      emailImportsView: true, emailImportsReview: true,
+      filesView: true, filesDownload: true,
+      communicationsView: true, communicationsSend: true,
+      statementsView: true,
     },
   },
   {

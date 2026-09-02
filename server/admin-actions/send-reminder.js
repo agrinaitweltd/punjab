@@ -35,6 +35,12 @@ export default async function handler(req, res) {
   }
 
   try {
+    const { data: staff, error: staffError } = await admin.from('admin_staff').select('active,is_super_admin,permissions').eq('auth_user_id', user.id).maybeSingle()
+    if (staffError) throw staffError
+    if (!staff?.active || !(staff.is_super_admin || staff.permissions?.invoicesSendReminders)) {
+      return res.status(403).json({ error: 'You do not have permission to send reminders.' })
+    }
+
     if (await globalTestMode(admin)) return res.status(200).json(simulatedResult('Reminder'))
 
     const { data: invoice, error: invoiceError } = await admin.from('invoices').select('*').eq('id', invoiceId).maybeSingle()

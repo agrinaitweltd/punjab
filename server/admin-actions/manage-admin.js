@@ -24,12 +24,13 @@ export default async function handler(req, res) {
     if (action === 'update') {
       const patch = req.body?.data || {}
       const role = String(patch.role || target.data.role)
-      if (!['Staff', 'Manager', 'Supervisor', 'Owner', 'System Developer'].includes(role)) return res.status(400).json({ error: 'Invalid administrator role.' })
+      if (!['Staff', 'Manager', 'Supervisor', 'Super Admin', 'System Developer'].includes(role)) return res.status(400).json({ error: 'Invalid administrator role.' })
       if (role === 'System Developer' && staff.role !== 'System Developer') return res.status(403).json({ error: 'System Developer access required.' })
       const update = await admin.from('admin_staff').update({
         name: String(patch.name || target.data.name).trim().slice(0, 120), role,
         job_title: String(patch.jobTitle || '').trim().slice(0, 120),
         permissions: patch.permissions && typeof patch.permissions === 'object' ? patch.permissions : {},
+        is_super_admin: role === 'System Developer' || role === 'Super Admin',
         is_salesman: Boolean(patch.isSalesman), salesman_ids: Array.isArray(patch.salesmanIds) ? patch.salesmanIds.map(String).slice(0, 50) : [],
       }).eq('id', id)
       if (update.error) throw update.error

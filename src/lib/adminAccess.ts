@@ -11,6 +11,6 @@ import type { PermissionSet } from '../types/index.js'
 const ELEVATED_PERMISSION_KEYS: (keyof PermissionSet)[] = ['usersManage', 'applicationsManage', 'admins']
 
 export function isSensitiveAdminGrant(role: string, permissions: Partial<PermissionSet> | null | undefined): boolean {
-  if (role === 'System Developer' || role === 'Owner') return true
+  if (role === 'System Developer' || role === 'Super Admin') return true
   return ELEVATED_PERMISSION_KEYS.some(key => Boolean(permissions?.[key]))
 }
