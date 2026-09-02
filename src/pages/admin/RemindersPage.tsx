@@ -20,13 +20,18 @@ const daysBetween = (fromIso: string, toIso: string) => Math.round((new Date(`${
     group. "Due Today" replaces the old automatic sender's daily run (item
     13) with a manual queue an admin works through; "day-14"/"day-21" are
     the separate reminder histories item 8 asked for. */
-export function RemindersPage({ view, invoices, customers, notificationLogs, deliveryLogs, onSendReminder }: {
+const linkStyle = { background: "none", border: "none", padding: 0, font: "inherit", color: "#1f7a3a", fontWeight: 600, cursor: "pointer", textDecoration: "underline" } as const
+
+export function RemindersPage({ view, invoices, customers, notificationLogs, deliveryLogs, onSendReminder, onOpenCustomer }: {
   view: 'due-today' | 'day-14' | 'day-21'
   invoices: Invoice[]
   customers: Customer[]
   notificationLogs: NotificationLog[]
   deliveryLogs: CommunicationDeliveryLog[]
   onSendReminder: (invoice: Invoice, customer: Customer, stage: ReminderStage) => void
+  /** Jumps to the customer's invoices - the same connected-record pattern
+      used from Invoices/Payments/Dashboard. */
+  onOpenCustomer?: (customerId: string) => void
 }) {
   const [detail, setDetail] = useState<CommunicationDeliveryLog | null>(null)
   const customerFor = (id: string) => customers.find(c => c.id === id)
@@ -89,9 +94,9 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
     const currentStage = reminderStageFor(invoice)
     return (
       <tr key={invoice.id}>
-        <td><strong>{customer.companyName}</strong></td>
+        <td>{onOpenCustomer ? <button type="button" style={linkStyle} onClick={() => onOpenCustomer(customer.id)}>{customer.companyName}</button> : <strong>{customer.companyName}</strong>}</td>
         <td>{customer.customerNumber}</td>
-        <td>{invoice.invoiceNumber}</td>
+        <td>{onOpenCustomer ? <button type="button" style={linkStyle} onClick={() => onOpenCustomer(customer.id)}>{invoice.invoiceNumber}</button> : invoice.invoiceNumber}</td>
         <td>{invoice.date}</td>
         <td>{money(invoice.amount)}</td>
         <td><strong>{money(invoiceOutstanding(invoice))}</strong></td>
@@ -129,9 +134,9 @@ export function RemindersPage({ view, invoices, customers, notificationLogs, del
     const delivery = findDelivery(log)
     return (
       <tr key={log.id}>
-        <td>{customer?.companyName ?? '—'}</td>
+        <td>{customer && onOpenCustomer ? <button type="button" style={linkStyle} onClick={() => onOpenCustomer(customer.id)}>{customer.companyName}</button> : (customer?.companyName ?? '—')}</td>
         <td>{customer?.customerNumber ?? '—'}</td>
-        <td>{invoice?.invoiceNumber ?? log.invoiceId}</td>
+        <td>{customer && onOpenCustomer ? <button type="button" style={linkStyle} onClick={() => onOpenCustomer(customer.id)}>{invoice?.invoiceNumber ?? log.invoiceId}</button> : (invoice?.invoiceNumber ?? log.invoiceId)}</td>
         <td>{invoice?.date ?? '—'}</td>
         <td>{invoice ? money(invoice.amount) : '—'}</td>
         <td>{(log.sentAt ?? log.scheduledFor ?? '').slice(0, 16).replace('T', ' ')}</td>

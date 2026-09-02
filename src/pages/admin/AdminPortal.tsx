@@ -1442,12 +1442,13 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
           notificationLogs={notificationLogs}
           deliveryLogs={communicationLogs}
           onSendReminder={requestReminder}
+          onOpenCustomer={customerId => { setInvoicesCustomerFilter(customerId); navigate('invoices') }}
         />
       )
     }
 
     if (current === 'payments') {
-      return <PaymentsPage payments={payments} />
+      return <PaymentsPage payments={payments} customers={customers} invoices={invoices} onOpenCustomer={customerId => { setInvoicesCustomerFilter(customerId); navigate('invoices') }} />
     }
 
     if (current === 'expenses') {
