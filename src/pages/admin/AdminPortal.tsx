@@ -1499,7 +1499,6 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
       return (
         <AdminsPage
           admins={admins}
-          salesmen={salesmen}
           currentUserIsSystemDeveloper={user.isSystemDeveloper}
           currentUserIsSuperAdmin={user.isSuperAdmin}
           loadRoles={getAdminRoles}

@@ -1,10 +1,10 @@
 ﻿import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import type { AdminRole, AdminStaff, PermissionSet, Salesman } from "../../types"
+import type { AdminRole, AdminStaff, PermissionSet } from "../../types"
 import { Button } from "../../components/ui/Button"
 import { Input, Select } from "../../components/ui/Input"
 import { Modal } from "../../components/ui/Modal"
-import { EMPTY_PERMISSIONS, FALLBACK_ROLE_TEMPLATES } from "../../lib/permissions"
+import { EMPTY_PERMISSIONS, FALLBACK_ROLE_TEMPLATES, PERMISSION_LABELS } from "../../lib/permissions"
 import { isSensitiveAdminGrant } from "../../lib/adminAccess"
 import { SensitiveActionDialog } from "../../components/SensitiveActionDialog"
 
@@ -43,72 +43,32 @@ function PermGrid({ perms, onChange }: { perms: PermissionSet; onChange: (p: Per
         </button>
       </div>
       <div className="adm-perm-groups">
-        {PERM_GROUPS.map(group => (
-          <div key={group.label} className="adm-perm-group">
-            <p className="adm-perm-group-title">{group.label}</p>
-            <div className="adm-perm-chips">
-              {group.keys.map(key => (
-                <button
-                  key={key} type="button"
-                  className={"adm-perm-chip" + (perms[key] ? " on" : "")}
-                  onClick={() => onChange({ ...perms, [key]: !perms[key] })}
-                >
-                  {perms[key] && (
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                  )}
-                  {key}
-                </button>
-              ))}
+        {PERM_GROUPS.map(group => {
+          const groupOn = group.keys.filter(k => perms[k]).length
+          return (
+            <div key={group.label} className="adm-perm-group">
+              <p className="adm-perm-group-title">
+                <span>{group.label}</span>
+                <span className="adm-perm-group-count">{groupOn}/{group.keys.length}</span>
+              </p>
+              <div className="adm-perm-grid">
+                {group.keys.map(key => (
+                  <label key={key} className={"adm-perm-check" + (perms[key] ? " on" : "")}>
+                    <input type="checkbox" checked={Boolean(perms[key])} onChange={() => onChange({ ...perms, [key]: !perms[key] })} />
+                    <span>{PERMISSION_LABELS[key]}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
-    </div>
-  )
-}
-
-function SalesmanLinker({ salesmen, isSalesman, salesmanIds, onChange }: {
-  salesmen: Salesman[]; isSalesman: boolean; salesmanIds: string[]
-  onChange: (isSalesman: boolean, salesmanIds: string[]) => void
-}) {
-  return (
-    <div className="wide">
-      <label className="form-control">
-        <span>Is this admin also a salesman?</span>
-      </label>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button type="button" onClick={() => onChange(true, salesmanIds)}
-          style={{ flex: 1, padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: isSalesman ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: isSalesman ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: isSalesman ? "#14532d" : "#374151" }}>
-          Yes
-        </button>
-        <button type="button" onClick={() => onChange(false, [])}
-          style={{ flex: 1, padding: "8px 14px", borderRadius: 10, cursor: "pointer", border: !isSalesman ? "2px solid #1f7a3a" : "1.5px solid #e5e7eb", background: !isSalesman ? "#f0fdf4" : "#fff", fontWeight: 700, fontSize: 13, color: !isSalesman ? "#14532d" : "#374151" }}>
-          No
-        </button>
-      </div>
-      {isSalesman && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {salesmen.length === 0 && <p style={{ fontSize: 12.5, color: "#9ca3af", margin: 0 }}>No Sales Users yet — add one from the Sales Users page first.</p>}
-          {salesmen.map(s => {
-            const on = salesmanIds.includes(s.id)
-            return (
-              <button key={s.id} type="button"
-                onClick={() => onChange(true, on ? salesmanIds.filter(id => id !== s.id) : [...salesmanIds, s.id])}
-                className={"adm-perm-chip" + (on ? " on" : "")}>
-                {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
-                #{s.number} {s.name}
-              </button>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
 
 export function AdminsPage({
   admins,
-  salesmen = [],
   onCreate,
   onUpdate,
   onDelete,
@@ -119,7 +79,6 @@ export function AdminsPage({
   currentUserIsSuperAdmin = false,
 }: {
   admins: AdminStaff[]
-  salesmen?: Salesman[]
   onCreate: (name: string, email: string, role: string, jobTitle: string, permissions: PermissionSet, isSalesman: boolean, salesmanIds: string[], sensitiveToken?: string) => Promise<void>
   onUpdate?: (id: string, data: Partial<AdminStaff>, sensitiveToken: string) => Promise<void>
   onDelete?: (id: string, sensitiveToken: string) => Promise<void>
@@ -136,8 +95,6 @@ export function AdminsPage({
   const [jobTitle, setJobTitle]     = useState("")
   const [role, setRole]             = useState("Staff")
   const [perms, setPerms]           = useState<PermissionSet>(basePermissions)
-  const [isSalesman, setIsSalesman] = useState(false)
-  const [salesmanIds, setSalesmanIds] = useState<string[]>([])
   const [roleTemplates, setRoleTemplates] = useState<AdminRole[]>(FALLBACK_ROLE_TEMPLATES)
   const [formError, setFormError]   = useState("")
   const [creating, setCreating]     = useState(false)
@@ -151,7 +108,7 @@ export function AdminsPage({
 
   const resetForm = () => {
     setName(""); setEmail(""); setJobTitle(""); setRole("Staff"); setPerms(basePermissions)
-    setIsSalesman(false); setSalesmanIds([]); setFormError("")
+    setFormError("")
   }
 
   const applyTemplate = (templateId: string, target: "create" | "edit") => {
@@ -178,7 +135,7 @@ export function AdminsPage({
     if (!isSensitiveAdminGrant(role, perms)) {
       setCreating(true)
       try {
-        await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, isSalesman, salesmanIds)
+        await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, false, [])
         resetForm(); setShowCreate(false)
       } catch (error) {
         setFormError(error instanceof Error ? error.message : "Couldn't send the invitation — please try again.")
@@ -191,7 +148,7 @@ export function AdminsPage({
       warning: "A one-time account setup link will be emailed to " + email.trim() + ". No password will be created or sent by you.",
       actionLabel: "Verify & Send Invitation",
       run: async token => {
-        await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, isSalesman, salesmanIds, token)
+        await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, false, [], token)
         resetForm(); setShowCreate(false); setSensitiveAction(null)
       },
     })
@@ -359,8 +316,6 @@ export function AdminsPage({
       {/* Create modal */}
       <Modal open={showCreate} title="Invite Admin" onClose={() => setShowCreate(false)}>
         <form className="form-grid" onSubmit={submitCreate}>
-          <SalesmanLinker salesmen={salesmen} isSalesman={isSalesman} salesmanIds={salesmanIds}
-            onChange={(v, ids) => { setIsSalesman(v); setSalesmanIds(ids) }} />
           <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Warehouse Manager" required />
           <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@punjabexoticfoods.com" required />
           <Input label="Job Title" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Sales Executive" />
@@ -390,8 +345,6 @@ export function AdminsPage({
       <Modal open={Boolean(editing)} title="Edit Admin Account" onClose={() => setEditing(null)}>
         {editing && (
           <form className="form-grid" onSubmit={submitEdit}>
-            <SalesmanLinker salesmen={salesmen} isSalesman={editing.isSalesman ?? false} salesmanIds={editing.salesmanIds ?? []}
-              onChange={(v, ids) => setEditing({ ...editing, isSalesman: v, salesmanIds: ids })} />
             <Input label="Full Name" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} required />
             <Input label="Email" type="email" value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })} required />
             <Input label="Job Title" value={editing.jobTitle ?? ""} onChange={e => setEditing({ ...editing, jobTitle: e.target.value })} placeholder="e.g. Sales Executive" />

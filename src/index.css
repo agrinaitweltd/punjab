@@ -1250,8 +1250,12 @@ tbody tr:hover td { background: #fafbfc; }
   font-family: inherit; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 99px; cursor: pointer;
 }
 .adm-perm-all.on { background: var(--green-500); color: #fff; border-color: var(--green-500); }
-.adm-perm-groups { display: flex; flex-direction: column; gap: 12px; }
-.adm-perm-group-title { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 6px; }
+.adm-perm-groups { display: flex; flex-direction: column; gap: 18px; }
+.adm-perm-group-title {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; margin: 0 0 7px;
+}
+.adm-perm-group-count { font-size: 10.5px; font-weight: 700; color: #b5bdb8; text-transform: none; letter-spacing: 0; }
 .adm-perm-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .adm-perm-chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px;
@@ -1261,6 +1265,16 @@ tbody tr:hover td { background: #fafbfc; }
 }
 .adm-perm-chip:hover { border-color: #c8d6cc; }
 .adm-perm-chip.on { background: var(--green-500); color: #fff; border-color: var(--green-500); }
+.adm-perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 10px; }
+.adm-perm-check {
+  display: flex; align-items: center; gap: 9px; padding: 9px 11px;
+  border: 1.5px solid var(--border); border-radius: 9px; background: #fff;
+  font-size: 13px; font-weight: 600; color: #374151; cursor: pointer;
+  transition: all 0.13s; line-height: 1.25;
+}
+.adm-perm-check:hover { border-color: #c8d6cc; background: #fafdfb; }
+.adm-perm-check.on { border-color: var(--green-400); background: var(--green-50); color: #14532d; }
+.adm-perm-check input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--green-500); flex-shrink: 0; cursor: pointer; }
 /* ══════════════════════════════════════════
    ADMIN DASHBOARD — stat strip + primary btn
 ══════════════════════════════════════════ */
