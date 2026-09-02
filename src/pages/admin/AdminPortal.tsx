@@ -135,6 +135,7 @@ import { SubAccountApprovalsPage } from './SubAccountApprovalsPage'
 import { RemindersPage } from './RemindersPage'
 import { NotificationsPage } from './NotificationsPage'
 import { SettingsPage } from './SettingsPage'
+import { TutorialTour } from '../../components/TutorialTour'
 import { SimpleModulePage } from './SimpleModulePage'
 import { StockPage } from './StockPage'
 import { TicketsPage } from './TicketsPage'
@@ -153,6 +154,11 @@ import { getNotifications, markNotificationRead, markAllNotificationsRead, mapNo
 import type { AppNotification } from '../../types'
 
 export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => void }) {
+  // Auto-starts once, on the first login after tutorial_completed_at is
+  // still null - never again after it's finished or skipped (see
+  // TutorialTour.tsx). "Watch Tutorial Again" in Settings re-opens this
+  // without touching that stored completion state.
+  const [tutorialOpen, setTutorialOpen] = useState(() => !user.tutorialCompletedAt)
   const [current, setCurrent] = useState('dashboard')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -713,10 +719,10 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     // account. The endpoint and RLS policy behind it allow the same.
     if (current === 'login-activity') return <LoginActivityPage />
     if (['system-overview', 'system-users', 'audit-logs', 'error-log', 'test-mode', 'backup-recovery', 'system-health', 'security'].includes(current)) {
-      return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
+      return user.isSystemDeveloper ? <SystemDeveloperPage section={current} /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} onWatchTutorial={() => setTutorialOpen(true)} />
     }
     if (current === 'database-reset') {
-      return user.isSystemDeveloper ? <DatabaseResetPage /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
+      return user.isSystemDeveloper ? <DatabaseResetPage /> : <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} onWatchTutorial={() => setTutorialOpen(true)} />
     }
     if (current === 'communication-history') return <CommunicationHistoryPage customers={customers} invoices={invoices} emailLogs={notificationLogs} deliveryLogs={communicationLogs} whatsappLogs={whatsappLogs} onNavigate={navigate} />
 
@@ -1547,7 +1553,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
     }
 
     if (current === 'settings') {
-      return <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} />
+      return <SettingsPage onNavigate={navigate} isSystemDeveloper={user.isSystemDeveloper} onWatchTutorial={() => setTutorialOpen(true)} />
     }
 
     return <NotFoundPage onNavigate={navigate} />
@@ -1575,6 +1581,7 @@ export function AdminPortal({ user, onLogout }: { user: User; onLogout: () => vo
         onClose={() => setReminderTarget(null)}
         onSend={sendManualReminder}
       />
+      <TutorialTour open={tutorialOpen} user={user} onNavigate={navigate} onClose={() => setTutorialOpen(false)} />
     </AppLayout>
   )
 }

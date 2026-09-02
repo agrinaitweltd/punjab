@@ -80,6 +80,7 @@ class AuthService {
           isSuperAdmin: data.is_super_admin ?? false,
           isSystemDeveloper: data.role === "System Developer",
           permissions: { ...(data.permissions ?? {}), customers: true, customersCreate: true },
+          tutorialCompletedAt: data.tutorial_completed_at ?? null,
         }
         return this.currentUser
       }

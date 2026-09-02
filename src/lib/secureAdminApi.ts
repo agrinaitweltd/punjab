@@ -58,6 +58,12 @@ export async function resetAdminCredentials(id: string, sensitiveToken: string) 
   return api<{ ok: true; simulated?: boolean; message?: string }>('/api/admin-security?action=reset-admin-credentials', { method: 'POST', body: JSON.stringify({ id }) }, sensitiveToken)
 }
 
+/** Marks the signed-in admin's own first-time guided tour as seen (finished
+    or skipped), so it doesn't auto-start again next login. */
+export async function markTutorialSeen() {
+  return api<{ ok: true }>('/api/admin-security?action=mark-tutorial-seen', { method: 'POST', body: '{}' })
+}
+
 export type SendReminderInput = { invoiceId: string; stage: 'day-14' | 'day-21' | '21-plus'; subject: string; message: string; alsoWhatsApp: boolean }
 /** The sole path a reminder email is sent through (item 2) - the server
     enforces the 24h cooldown atomically before doing anything else, so a

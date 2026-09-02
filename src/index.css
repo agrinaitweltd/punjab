@@ -1275,6 +1275,32 @@ tbody tr:hover td { background: #fafbfc; }
 .adm-perm-check:hover { border-color: #c8d6cc; background: #fafdfb; }
 .adm-perm-check.on { border-color: var(--green-400); background: var(--green-50); color: #14532d; }
 .adm-perm-check input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--green-500); flex-shrink: 0; cursor: pointer; }
+
+/* ── GUIDED TOUR ── */
+.tour-overlay {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(13, 24, 18, 0.4);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 20px;
+}
+.tour-card {
+  background: #fff; border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,0.28);
+  width: 100%; max-width: 420px; padding: 20px 22px 18px; margin-bottom: 12px;
+}
+.tour-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.tour-step-label { font-size: 11px; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; }
+.tour-skip { background: none; border: none; padding: 0; font-size: 12.5px; font-weight: 700; color: #6b7280; cursor: pointer; text-decoration: underline; }
+.tour-title { font-size: 17px; font-weight: 800; color: #111827; margin: 0 0 6px; }
+.tour-body { font-size: 13.5px; color: #4b5563; line-height: 1.5; margin: 0 0 16px; }
+.tour-dots { display: flex; gap: 5px; margin-bottom: 16px; flex-wrap: wrap; }
+.tour-dot { width: 6px; height: 6px; border-radius: 99px; background: #e5e7eb; }
+.tour-dot.active { background: var(--green-500); width: 16px; }
+.tour-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 520px) {
+  .tour-overlay { padding: 0; align-items: flex-end; }
+  .tour-card { max-width: 100%; border-radius: 18px 18px 0 0; margin-bottom: 0; padding: 18px 18px 20px; }
+}
+
 /* ══════════════════════════════════════════
    ADMIN DASHBOARD — stat strip + primary btn
 ══════════════════════════════════════════ */

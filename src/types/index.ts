@@ -63,6 +63,10 @@ export interface User {
   isSuperAdmin?: boolean
   isSystemDeveloper?: boolean
   permissions?: PermissionSet
+  /** Set once the first-time guided tour is finished or skipped - null/
+      undefined means it should auto-start on this login. Untouched by a
+      manual "Watch Tutorial Again" replay from Settings. */
+  tutorialCompletedAt?: string | null
   /** Set when this session is a customer's sub-account rather than the main
       login — `id` above is still the parent customer's id (so all data
       loads scoped to them), this just narrows what the portal shows. */
