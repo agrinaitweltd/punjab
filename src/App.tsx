@@ -30,14 +30,19 @@ if (typeof window !== 'undefined') {
   })
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
-  constructor(props: { children: ReactNode }) {
+/** Only a System Developer sees the raw crash message (and the schema.sql
+    hint below it) - everyone else gets a safe, generic message. A crash
+    before login (isSystemDeveloper undefined) also gets the safe message,
+    since nobody's role is known yet at that point. */
+class ErrorBoundary extends Component<{ children: ReactNode; isSystemDeveloper?: boolean }, { error: string | null }> {
+  constructor(props: { children: ReactNode; isSystemDeveloper?: boolean }) {
     super(props)
     this.state = { error: null }
   }
   static getDerivedStateFromError(e: Error) { return { error: e.message } }
   render() {
     if (this.state.error) {
+      const showTechnical = this.props.isSystemDeveloper
       return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f7f2', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: '36px 40px', maxWidth: 480, boxShadow: '0 4px 24px rgba(0,0,0,0.10)', textAlign: 'center' }}>
@@ -53,10 +58,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: string |
               </svg>
             </div>
             <h2 style={{ fontSize: 20, fontWeight: 800, color: '#111827', marginBottom: 8 }}>Something went wrong</h2>
-            <p style={{ fontSize: 13.5, color: '#6b7280', marginBottom: 20 }}>{this.state.error}</p>
-            <p style={{ fontSize: 12.5, color: '#9ca3af' }}>
-              If Supabase tables are not set up yet, run <strong>src/lib/schema.sql</strong> in your Supabase SQL editor first.
+            <p style={{ fontSize: 13.5, color: '#6b7280', marginBottom: 20 }}>
+              {showTechnical ? this.state.error : 'Unable to complete this action right now. Please try again shortly.'}
             </p>
+            {showTechnical && (
+              <p style={{ fontSize: 12.5, color: '#9ca3af' }}>
+                If Supabase tables are not set up yet, run <strong>src/lib/schema.sql</strong> in your Supabase SQL editor first.
+              </p>
+            )}
             <button onClick={() => this.setState({ error: null })} style={{ marginTop: 20, padding: '9px 20px', background: '#22913f', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
               Try Again
             </button>
@@ -189,7 +198,7 @@ function App() {
   }
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary isSystemDeveloper={user?.role === 'admin' && user.isSystemDeveloper}>
       <AppDialogs />
       <SuccessToastStack />
       {!user ? <LoginPage onLogin={handleLogin} error={error} /> : null}

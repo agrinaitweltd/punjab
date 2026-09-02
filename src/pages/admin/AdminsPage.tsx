@@ -98,6 +98,7 @@ export function AdminsPage({
   const [roleTemplates, setRoleTemplates] = useState<AdminRole[]>(FALLBACK_ROLE_TEMPLATES)
   const [formError, setFormError]   = useState("")
   const [creating, setCreating]     = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const [sensitiveAction, setSensitiveAction] = useState<null | {
     title: string; warning?: string; actionLabel: string; run: (token: string) => Promise<void>
   }>(null)
@@ -122,12 +123,18 @@ export function AdminsPage({
     }
   }
 
-  const submitCreate = async (e: FormEvent) => {
+  // Validate and move to the review step - the invitation itself only
+  // actually sends from confirmSend, once Malik has seen exactly what
+  // she's about to grant and confirmed it.
+  const submitCreate = (e: FormEvent) => {
     e.preventDefault()
     setFormError("")
     if (!name.trim() || !email.trim()) { setFormError("Name and email are required."); return }
     if (admins.some(a => a.email.toLowerCase() === email.trim().toLowerCase())) { setFormError("An admin with that email already exists."); return }
+    setReviewOpen(true)
+  }
 
+  const confirmSend = async () => {
     // Routine, low-privilege invites (the common case) go straight through -
     // only granting an elevated role or a user/app-management permission
     // needs a fresh password re-check. Keeps this in sync with the same
@@ -136,13 +143,15 @@ export function AdminsPage({
       setCreating(true)
       try {
         await onCreate(name.trim(), email.trim(), role, jobTitle.trim(), perms, false, [])
-        resetForm(); setShowCreate(false)
+        resetForm(); setShowCreate(false); setReviewOpen(false)
       } catch (error) {
+        setReviewOpen(false)
         setFormError(error instanceof Error ? error.message : "Couldn't send the invitation — please try again.")
       } finally { setCreating(false) }
       return
     }
 
+    setReviewOpen(false)
     setSensitiveAction({
       title: "Send administrator invitation",
       warning: "A one-time account setup link will be emailed to " + email.trim() + ". No password will be created or sent by you.",
@@ -333,12 +342,55 @@ export function AdminsPage({
           <PermGrid perms={perms} onChange={setPerms} />
           {formError && <p className="wide" style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{formError}</p>}
           <div className="wide actions-row">
-            <Button type="submit" disabled={creating}>
-              {creating ? "Sending Invitation…" : isSensitiveAdminGrant(role, perms) ? "Continue to Verification" : "Send Invitation"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setShowCreate(false)} disabled={creating}>Cancel</Button>
+            <Button type="submit">Review Invitation</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Review modal - shown before anything is actually sent */}
+      <Modal open={reviewOpen} title="Review Invitation" onClose={() => setReviewOpen(false)}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "#f9fafb", border: "1px solid #eef1ef", borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5 }}><span style={{ color: "#6b7280" }}>Email</span><strong style={{ color: "#111827" }}>{email.trim()}</strong></div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5 }}><span style={{ color: "#6b7280" }}>Role</span><strong style={{ color: "#111827" }}>{role}</strong></div>
+            {jobTitle.trim() && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5 }}><span style={{ color: "#6b7280" }}>Job Title</span><strong style={{ color: "#111827" }}>{jobTitle.trim()}</strong></div>}
+          </div>
+          <div>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 8px" }}>Permissions granted</p>
+            {ALL_PERMISSIONS.every(k => !perms[k]) ? (
+              <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>No extra permissions - this account will only be able to sign in.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {PERM_GROUPS.map(group => {
+                  const granted = group.keys.filter(k => perms[k])
+                  if (!granted.length) return null
+                  return (
+                    <div key={group.label}>
+                      <p style={{ fontSize: 11.5, fontWeight: 800, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 4px" }}>{group.label}</p>
+                      <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 3 }}>
+                        {granted.map(k => (
+                          <li key={k} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#14532d" }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22913f" strokeWidth="3" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
+                            {PERMISSION_LABELS[k]}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <p className="invite-explainer" style={{ margin: 0 }}>A secure one-time setup link will be emailed to {email.trim() || "this address"}. No password will be created or sent by you.</p>
+          {formError && <p style={{ color: "#b91c1c", fontSize: 13, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", margin: 0 }}>{formError}</p>}
+          <div className="actions-row">
+            <Button onClick={confirmSend} disabled={creating}>
+              {creating ? "Sending Invitation…" : isSensitiveAdminGrant(role, perms) ? "Continue to Verification" : "Send Invite"}
+            </Button>
+            <Button variant="secondary" onClick={() => setReviewOpen(false)} disabled={creating}>Back</Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Edit modal */}
